@@ -88,9 +88,9 @@ const navSections: NavSection[] = [
   {
     label: "Purchases",
     items: [
-      { label: "Vendors", icon: ShoppingBag },
+      { label: "Vendors", to: "/purchases/vendors", icon: ShoppingBag },
       { label: "Purchase Orders", to: "/purchases/orders", icon: FileCheck },
-      { label: "Bills", icon: Receipt },
+      { label: "Bills", to: "/purchases/bills", icon: Receipt },
     ],
   },
   {

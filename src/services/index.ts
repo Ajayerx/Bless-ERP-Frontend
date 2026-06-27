@@ -59,10 +59,21 @@ export type {
   BankAccount, BankAccountListResponse, BankAccountFormData,
   JournalEntry, JournalEntryListResponse, JournalEntryFormData,
 } from "@/modules/accounting/types"
-export { purchaseOrderService } from "@/modules/purchases/services"
+export {
+  purchaseOrderService,
+  vendorService,
+  billService,
+} from "@/modules/purchases/services"
 export type {
   PurchaseOrder,
   PurchaseOrderListResponse,
   PurchaseOrderFormData,
+  Vendor,
+  VendorListResponse,
+  VendorFormData,
+  Bill,
+  BillListResponse,
+  BillFormData,
+  BillStatus,
 } from "@/modules/purchases/types"
 export { apiClient, ApiError } from "./api-client"

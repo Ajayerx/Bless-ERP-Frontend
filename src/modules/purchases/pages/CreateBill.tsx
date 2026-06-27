@@ -6,7 +6,7 @@ import { motion } from "framer-motion"
 import { ArrowLeft, Plus, Trash2, Save, Search, ChevronDown } from "lucide-react"
 import Topbar from "@/components/layout/Topbar"
 import { Button, Card, CardContent, CardHeader, CardTitle } from "@/components/ui"
-import { purchaseOrderService } from "@/services"
+import { billService, vendorService } from "@/services"
 import type { Product } from "@/services/invoices.service"
 import { formatCurrency } from "@/lib/utils"
 
@@ -43,47 +43,41 @@ function createEmptyLine(): LineItemForm {
   }
 }
 
-export default function CreatePurchaseOrder() {
+export default function CreateBill() {
   const navigate = useNavigate()
 
   const [vendorId, setVendorId] = useState("")
   const [vendorName, setVendorName] = useState("")
-  const [vendorContact, setVendorContact] = useState("")
   const [billTo, setBillTo] = useState("")
-  const [shippingAddress, setShippingAddress] = useState("")
   const [issueDate, setIssueDate] = useState(new Date().toISOString().slice(0, 10))
-  const [deliveryDate, setDeliveryDate] = useState(() => {
-    const d = new Date(); d.setDate(d.getDate() + 14); return d.toISOString().slice(0, 10)
+  const [dueDate, setDueDate] = useState(() => {
+    const d = new Date(); d.setDate(d.getDate() + 30); return d.toISOString().slice(0, 10)
   })
   const [notes, setNotes] = useState("")
   const [lineItems, setLineItems] = useState<LineItemForm[]>([createEmptyLine()])
   const [saving, setSaving] = useState(false)
-  const [vendors, setVendors] = useState<Array<{ id: string; name: string; contactName: string; billingAddress: string; shippingAddress: string }>>([])
+  const [vendors, setVendors] = useState<Array<{ id: string; name: string; billingAddress: string }>>([])
   const [vendorSearch, setVendorSearch] = useState("")
   const [vendorDropdownOpen, setVendorDropdownOpen] = useState(false)
   const [products, setProducts] = useState<Product[]>([])
   const [productDropdowns, setProductDropdowns] = useState<Record<string, { open: boolean; search: string }>>({})
 
   useEffect(() => {
-    fetch("/api/vendors").then(r => r.json()).then((body) => {
-      const items = body.data?.items ?? body.data ?? []
-      const vendorList = items.map((v: any) => ({
-        id: v.id, name: v.name, contactName: v.contactName,
-        billingAddress: v.billingAddress, shippingAddress: v.shippingAddress,
-      }))
-      setVendors(vendorList)
+    vendorService.list({ pageSize: 100 }).then((res) => {
+      setVendors(res.items.map((v) => ({
+        id: v.id, name: v.name, billingAddress: v.billingAddress,
+      })))
     })
     fetch("/api/products").then(r => r.json()).then((body) => setProducts(body.data))
   }, [])
 
   const filteredVendors = vendors.filter(
-    (v) => v.name.toLowerCase().includes(vendorSearch.toLowerCase()) ||
-      v.contactName.toLowerCase().includes(vendorSearch.toLowerCase())
+    (v) => v.name.toLowerCase().includes(vendorSearch.toLowerCase())
   )
 
   const selectVendor = (v: typeof vendors[number]) => {
-    setVendorId(v.id); setVendorName(v.name); setVendorContact(v.contactName)
-    setBillTo(v.billingAddress); setShippingAddress(v.shippingAddress)
+    setVendorId(v.id); setVendorName(v.name)
+    setBillTo(v.billingAddress)
     setVendorSearch(v.name); setVendorDropdownOpen(false)
   }
 
@@ -122,12 +116,12 @@ export default function CreatePurchaseOrder() {
     if (!vendorId) return
     setSaving(true)
     try {
-      await purchaseOrderService.create({
-        vendorId, vendorName, vendorContact, billTo, shippingAddress, issueDate, deliveryDate, notes,
+      await billService.create({
+        vendorId, vendorName, billTo, issueDate, dueDate, notes,
         lineItems: lineItems.map(({ id: _id, ...rest }) => rest),
         subtotal, gst: gstAmount, qst: qstAmount, total: grandTotal,
       })
-      navigate("/purchases/orders")
+      navigate("/purchases/bills")
     } finally {
       setSaving(false)
     }
@@ -148,20 +142,20 @@ export default function CreatePurchaseOrder() {
       >
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <button onClick={() => navigate("/purchases/orders")}
+            <button onClick={() => navigate("/purchases/bills")}
               className="p-2 rounded-[10px] text-muted hover:text-body hover:bg-gray-100 transition-colors">
               <ArrowLeft size={20} />
             </button>
             <div>
-              <h1 className="text-2xl font-bold text-heading">New Purchase Order</h1>
-              <p className="text-sm text-muted mt-0.5">Create a new purchase order for a vendor.</p>
+              <h1 className="text-2xl font-bold text-heading">New Bill</h1>
+              <p className="text-sm text-muted mt-0.5">Record a bill from a vendor.</p>
             </div>
           </div>
           <div className="flex items-center gap-3">
-            <Button variant="secondary" onClick={() => navigate("/purchases/orders")}>Cancel</Button>
+            <Button variant="secondary" onClick={() => navigate("/purchases/bills")}>Cancel</Button>
             <Button onClick={handleSave} disabled={saving || !vendorId} loading={saving}>
               <Save size={16} />
-              {saving ? "Saving..." : "Save Purchase Order"}
+              {saving ? "Saving..." : "Save Bill"}
             </Button>
           </div>
         </div>
@@ -190,7 +184,6 @@ export default function CreatePurchaseOrder() {
                         <button key={v.id} type="button" onClick={() => selectVendor(v)}
                           className="w-full text-left px-4 py-2.5 text-sm transition-colors text-body hover:bg-gray-50">
                           <span className="font-medium">{v.name}</span>
-                          <span className="text-xs text-muted ml-2">{v.contactName}</span>
                         </button>
                       ))
                     )}
@@ -198,16 +191,10 @@ export default function CreatePurchaseOrder() {
                 )}
               </div>
               {vendorName && (
-                <>
-                  <div>
-                    <label className={labelClass}>Bill To</label>
-                    <textarea value={billTo} onChange={(e) => setBillTo(e.target.value)} rows={2} className={inputClass} />
-                  </div>
-                  <div>
-                    <label className={labelClass}>Shipping Address</label>
-                    <textarea value={shippingAddress} onChange={(e) => setShippingAddress(e.target.value)} rows={2} className={inputClass} />
-                  </div>
-                </>
+                <div>
+                  <label className={labelClass}>Bill To</label>
+                  <textarea value={billTo} onChange={(e) => setBillTo(e.target.value)} rows={2} className={inputClass} />
+                </div>
               )}
             </CardContent>
           </Card>
@@ -219,12 +206,12 @@ export default function CreatePurchaseOrder() {
             <CardContent className="space-y-3">
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className={labelClass}>Order Date</label>
+                  <label className={labelClass}>Issue Date</label>
                   <input type="date" value={issueDate} onChange={(e) => setIssueDate(e.target.value)} className={inputClass} />
                 </div>
                 <div>
-                  <label className={labelClass}>Delivery Date</label>
-                  <input type="date" value={deliveryDate} onChange={(e) => setDeliveryDate(e.target.value)} className={inputClass} />
+                  <label className={labelClass}>Due Date</label>
+                  <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} className={inputClass} />
                 </div>
               </div>
               <div>

@@ -37,6 +37,11 @@ import FollowUps from "./modules/crm/pages/FollowUps"
 import PurchaseOrders from "./modules/purchases/pages/PurchaseOrders"
 import PurchaseOrderDetail from "./modules/purchases/pages/PurchaseOrderDetail"
 import CreatePurchaseOrder from "./modules/purchases/pages/CreatePurchaseOrder"
+import Vendors from "./modules/purchases/pages/Vendors"
+import VendorDetail from "./modules/purchases/pages/VendorDetail"
+import Bills from "./modules/purchases/pages/Bills"
+import BillDetail from "./modules/purchases/pages/BillDetail"
+import CreateBill from "./modules/purchases/pages/CreateBill"
 import Expenses from "./modules/accounting/pages/Expenses"
 import ExpenseDetail from "./modules/accounting/pages/ExpenseDetail"
 import CreateExpense from "./modules/accounting/pages/CreateExpense"
@@ -119,9 +124,14 @@ function App() {
         <Route path="accounting/journal-entries" element={<JournalEntries />} />
         <Route path="accounting/journal-entries/new" element={<CreateJournalEntry />} />
         <Route path="accounting/journal-entries/:id" element={<JournalEntryDetail />} />
+        <Route path="purchases/vendors" element={<Vendors />} />
+        <Route path="purchases/vendors/:id" element={<VendorDetail />} />
         <Route path="purchases/orders" element={<PurchaseOrders />} />
         <Route path="purchases/orders/new" element={<CreatePurchaseOrder />} />
         <Route path="purchases/orders/:id" element={<PurchaseOrderDetail />} />
+        <Route path="purchases/bills" element={<Bills />} />
+        <Route path="purchases/bills/new" element={<CreateBill />} />
+        <Route path="purchases/bills/:id" element={<BillDetail />} />
         <Route path="reports" element={<Reports />} />
         <Route path="hrms" element={<HrmsDashboard />} />
         <Route path="hrms/employees" element={<Employees />} />

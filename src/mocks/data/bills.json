@@ -1,0 +1,65 @@
+[
+  {
+    "id": "bil_001", "number": "BILL-2026-0001",
+    "vendorId": "ven_001", "vendorName": "Global Supplies Inc",
+    "billTo": "123 Industrial Blvd, Suite 100, Springfield, IL 62701",
+    "issueDate": "2026-06-01", "dueDate": "2026-06-30",
+    "lineItems": [
+      { "id": "bli_101", "productId": "prd_001", "productName": "Widget Pro", "sku": "WP-100", "quantity": 50, "price": 24.50, "taxRate": 0.05, "taxLabel": "GST", "total": 1225.00 },
+      { "id": "bli_102", "productId": "prd_004", "productName": "Silicone Sealant 300ml", "sku": "SE-400", "quantity": 100, "price": 4.20, "taxRate": 0.05, "taxLabel": "GST", "total": 420.00 }
+    ],
+    "subtotal": 1645.00, "gst": 82.25, "qst": 0, "total": 1727.25,
+    "status": "paid", "notes": "PO-2026-0001 — Paid via wire transfer",
+    "createdAt": "2026-06-01T10:00:00Z"
+  },
+  {
+    "id": "bil_002", "number": "BILL-2026-0002",
+    "vendorId": "ven_002", "vendorName": "Midwest Hardware Co",
+    "billTo": "456 Contractor Way, Austin, TX 73301",
+    "issueDate": "2026-06-05", "dueDate": "2026-07-05",
+    "lineItems": [
+      { "id": "bli_103", "productId": "prd_002", "productName": "Bolt Grade 8 - M12x50", "sku": "BG-200", "quantity": 5000, "price": 0.42, "taxRate": 0.05, "taxLabel": "GST", "total": 2100.00 },
+      { "id": "bli_104", "productId": "prd_006", "productName": "Ball Bearing 6205-2RS", "sku": "BR-600", "quantity": 1000, "price": 3.10, "taxRate": 0.09975, "taxLabel": "QST", "total": 3100.00 }
+    ],
+    "subtotal": 5200.00, "gst": 105.00, "qst": 309.23, "total": 5614.23,
+    "status": "pending", "notes": "PO-2026-0002 — Partial delivery received",
+    "createdAt": "2026-06-05T09:00:00Z"
+  },
+  {
+    "id": "bil_003", "number": "BILL-2026-0003",
+    "vendorId": "ven_003", "vendorName": "Precision Parts Ltd",
+    "billTo": "789 Manufacturing Pkwy, Detroit, MI 48201",
+    "issueDate": "2026-06-10", "dueDate": "2026-07-10",
+    "lineItems": [
+      { "id": "bli_105", "productId": "prd_007", "productName": "Conveyor Belt 12\" x 20ft", "sku": "CB-700", "quantity": 2, "price": 180.00, "taxRate": 0.05, "taxLabel": "GST", "total": 360.00 }
+    ],
+    "subtotal": 360.00, "gst": 18.00, "qst": 0, "total": 378.00,
+    "status": "overdue", "notes": "PO-2026-0003 — Overdue, sent reminder",
+    "createdAt": "2026-06-10T14:00:00Z"
+  },
+  {
+    "id": "bil_004", "number": "BILL-2026-0004",
+    "vendorId": "ven_004", "vendorName": "Coastal Industrial Supply",
+    "billTo": "900 Harbor Blvd, New Orleans, LA 70112",
+    "issueDate": "2026-06-15", "dueDate": "2026-07-15",
+    "lineItems": [
+      { "id": "bli_106", "productId": "prd_005", "productName": "Fuel Filter FF-5329", "sku": "FL-500", "quantity": 200, "price": 12.15, "taxRate": 0.05, "taxLabel": "GST", "total": 2430.00 }
+    ],
+    "subtotal": 2430.00, "gst": 121.50, "qst": 0, "total": 2551.50,
+    "status": "draft", "notes": "Awaiting approval before booking",
+    "createdAt": "2026-06-15T11:00:00Z"
+  },
+  {
+    "id": "bil_005", "number": "BILL-2026-0005",
+    "vendorId": "ven_006", "vendorName": "Northern Steel Corp",
+    "billTo": "50 Steelworks Ave, Hamilton, ON L8N 1A1",
+    "issueDate": "2026-06-18", "dueDate": "2026-07-18",
+    "lineItems": [
+      { "id": "bli_107", "productId": "prd_003", "productName": "Hydraulic Tube 3/4\"", "sku": "HT-300", "quantity": 500, "price": 6.25, "taxRate": 0.05, "taxLabel": "GST", "total": 3125.00 },
+      { "id": "bli_108", "productId": "prd_009", "productName": "Pneumatic Nailer P90", "sku": "PN-900", "quantity": 10, "price": 94.50, "taxRate": 0.05, "taxLabel": "GST", "total": 945.00 }
+    ],
+    "subtotal": 4070.00, "gst": 203.50, "qst": 0, "total": 4273.50,
+    "status": "cancelled", "notes": "Order cancelled — incorrect specs",
+    "createdAt": "2026-06-18T08:00:00Z"
+  }
+]
