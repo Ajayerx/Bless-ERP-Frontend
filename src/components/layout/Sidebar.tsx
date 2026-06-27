@@ -5,7 +5,6 @@ import { NavLink, useLocation } from "react-router-dom"
 import { motion, AnimatePresence } from "framer-motion"
 import {
   LayoutDashboard,
-  TrendingUp,
   Users,
   FileText,
   ShoppingCart,
@@ -35,6 +34,7 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  Sparkles,
   type LucideIcon,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
@@ -70,7 +70,8 @@ const navSections: NavSection[] = [
   {
     label: "Inventory",
     items: [
-      { label: "Products", icon: Package },
+      { label: "Overview", to: "/inventory", icon: LayoutDashboard },
+      { label: "Products", to: "/products", icon: Package },
       { label: "Warehouses", icon: Warehouse },
       { label: "Stock Transfer", icon: ArrowLeftRight },
       { label: "Stock Count", icon: ClipboardCheck },
@@ -120,8 +121,13 @@ const navSections: NavSection[] = [
   },
 ]
 
+const sectionAnim = {
+  hidden: { height: 0, opacity: 0 },
+  visible: { height: "auto", opacity: 1 },
+}
+
 export default function Sidebar() {
-  const { logout, user } = useAuth()
+  const { logout } = useAuth()
   const location = useLocation()
   const [collapsed, setCollapsed] = useState(false)
   const [expandedSections, setExpandedSections] = useState<string[]>(
@@ -150,25 +156,28 @@ export default function Sidebar() {
       )}
     >
       {/* Logo */}
-      <div className="h-16 flex items-center px-4 border-b border-border shrink-0">
+      <div className="h-16 flex items-center px-4 border-b border-border shrink-0 bg-gradient-to-r from-primary-600/5 to-transparent">
         {collapsed ? (
-          <div className="w-9 h-9 rounded-[10px] bg-primary-600 flex items-center justify-center text-white font-bold text-sm mx-auto">
+          <div className="w-9 h-9 rounded-[10px] bg-gradient-to-br from-primary-500 to-primary-700 flex items-center justify-center text-white font-bold text-sm mx-auto shadow-sm">
             B
           </div>
         ) : (
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-[10px] bg-primary-600 flex items-center justify-center text-white font-bold text-sm">
+            <div className="w-9 h-9 rounded-[10px] bg-gradient-to-br from-primary-500 to-primary-700 flex items-center justify-center text-white font-bold text-sm shadow-sm">
               B
             </div>
-            <span className="text-lg font-bold text-heading tracking-tight">
-              BlessERP
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="text-lg font-bold text-heading tracking-tight">
+                BlessERP
+              </span>
+              <Sparkles size={14} className="text-primary-400" />
+            </div>
           </div>
         )}
       </div>
 
       {/* Navigation */}
-      <div className="flex-1 overflow-y-auto overflow-x-hidden px-3 py-3 space-y-1">
+      <div className="flex-1 overflow-y-auto overflow-x-hidden px-3 py-3 space-y-0.5 [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-gray-200 [&::-webkit-scrollbar-track]:transparent">
         {navSections.map((section) => {
           const isExpanded = expandedSections.includes(section.label)
           const hasActiveChild = section.items.some((item) => isActive(item.to))
@@ -179,16 +188,27 @@ export default function Sidebar() {
                 <button
                   onClick={() => toggleSection(section.label)}
                   className={cn(
-                    "flex items-center justify-between w-full px-2 py-1.5 text-xs font-semibold text-muted uppercase tracking-wider hover:text-body transition-colors rounded-lg",
-                    hasActiveChild && "text-primary-600"
+                    "flex items-center justify-between w-full px-2 py-1.5 text-xs font-semibold uppercase tracking-wider transition-colors rounded-lg group",
+                    hasActiveChild
+                      ? "text-primary-600"
+                      : "text-muted hover:text-body"
                   )}
                 >
-                  {section.label}
+                  <span className="flex items-center gap-2">
+                    <span className={cn(
+                      "w-1 h-3 rounded-full transition-colors",
+                      hasActiveChild ? "bg-primary-500" : "bg-transparent group-hover:bg-gray-300"
+                    )} />
+                    {section.label}
+                  </span>
                   <motion.div
                     animate={{ rotate: isExpanded ? 180 : 0 }}
-                    transition={{ duration: 0.2 }}
+                    transition={{ duration: 0.25, ease: "easeInOut" }}
                   >
-                    <ChevronDown size={12} />
+                    <ChevronDown size={12} className={cn(
+                      "transition-colors",
+                      hasActiveChild ? "text-primary-400" : "text-muted"
+                    )} />
                   </motion.div>
                 </button>
               )}
@@ -196,10 +216,12 @@ export default function Sidebar() {
               <AnimatePresence initial={false}>
                 {isExpanded && (
                   <motion.div
-                    initial={collapsed ? false : { height: 0, opacity: 0 }}
-                    animate={{ height: "auto", opacity: 1 }}
-                    exit={{ height: 0, opacity: 0 }}
-                    transition={{ duration: 0.2 }}
+                    key={`${section.label}-${collapsed}`}
+                    variants={!collapsed ? sectionAnim : undefined}
+                    initial={!collapsed ? "hidden" : undefined}
+                    animate={!collapsed ? "visible" : undefined}
+                    exit={!collapsed ? "hidden" : undefined}
+                    transition={{ duration: 0.2, ease: "easeInOut" }}
                     className="overflow-hidden"
                   >
                     <div className="space-y-0.5 pb-1">
@@ -217,43 +239,51 @@ export default function Sidebar() {
                                     : "text-muted hover:bg-gray-100 hover:text-body"
                                 )}
                               >
-                                <item.icon
-                                  size={18}
-                                  className={cn(
-                                    "shrink-0 transition-colors",
-                                    active && "text-primary-600"
-                                  )}
-                                />
-                                {!collapsed && (
-                                  <>
-                                    <span>{item.label}</span>
-                                    {item.badge && (
-                                      <span className="ml-auto bg-primary-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">
-                                        {item.badge}
-                                      </span>
-                                    )}
-                                  </>
-                                )}
                                 {active && !collapsed && (
                                   <motion.div
-                                    layoutId="sidebar-active"
-                                    className="absolute inset-0 rounded-[10px] bg-primary-50 -z-10"
-                                    transition={{ type: "spring", stiffness: 380, damping: 30 }}
+                                    layoutId="sidebar-active-bg"
+                                    className="absolute inset-0 rounded-[10px] bg-primary-50"
+                                    transition={{ type: "spring", stiffness: 400, damping: 35 }}
                                   />
                                 )}
+                                <span className="relative z-10 flex items-center gap-3 w-full">
+                                  <item.icon
+                                    size={18}
+                                    className={cn(
+                                      "shrink-0 transition-colors",
+                                      active && "text-primary-600"
+                                    )}
+                                  />
+                                  {!collapsed && (
+                                    <>
+                                      <span>{item.label}</span>
+                                      {item.badge && (
+                                        <span className="ml-auto bg-primary-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">
+                                          {item.badge}
+                                        </span>
+                                      )}
+                                    </>
+                                  )}
+                                </span>
                               </NavLink>
                             ) : (
-                              <div
-                                className={cn(
-                                  "flex items-center gap-3 px-3 py-2 rounded-[10px] text-sm font-medium transition-colors cursor-not-allowed",
-                                  "text-muted opacity-50"
-                                )}
-                                title="Coming soon"
-                              >
-                                <item.icon size={18} className="shrink-0" />
-                                {!collapsed && (
-                                  <span>{item.label}</span>
-                                )}
+                              <div className="group relative">
+                                <div
+                                  className={cn(
+                                    "flex items-center gap-3 px-3 py-2 rounded-[10px] text-sm font-medium transition-colors cursor-not-allowed",
+                                    "text-muted/40"
+                                  )}
+                                >
+                                  <item.icon size={18} className="shrink-0" />
+                                  {!collapsed && (
+                                    <span className="flex items-center justify-between w-full">
+                                      {item.label}
+                                      <span className="text-[9px] font-semibold text-muted/30 uppercase tracking-wider border border-border/50 rounded-full px-1.5 py-0.5">
+                                        Soon
+                                      </span>
+                                    </span>
+                                  )}
+                                </div>
                               </div>
                             )}
                           </div>
@@ -266,10 +296,13 @@ export default function Sidebar() {
             </div>
           )
         })}
+
+        {/* Scroll fade hint */}
+        <div className="sticky bottom-0 h-6 bg-gradient-to-t from-sidebar to-transparent pointer-events-none -mx-3" />
       </div>
 
       {/* Bottom section */}
-      <div className="border-t border-border p-3 space-y-0.5">
+      <div className="border-t border-border p-3 space-y-0.5 bg-sidebar">
         <NavLink
           to="/settings"
           className={cn(
@@ -295,7 +328,7 @@ export default function Sidebar() {
       {/* Collapse toggle */}
       <button
         onClick={() => setCollapsed(!collapsed)}
-        className="absolute -right-3 top-20 w-6 h-6 bg-white border border-border rounded-full flex items-center justify-center text-muted hover:text-body shadow-sm transition-colors"
+        className="absolute -right-3 top-[72px] w-6 h-6 bg-white border border-border rounded-full flex items-center justify-center text-muted hover:text-body shadow-sm hover:shadow-md transition-all duration-200 z-10"
       >
         {collapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
       </button>

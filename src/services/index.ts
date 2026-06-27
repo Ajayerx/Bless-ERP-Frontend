@@ -6,6 +6,8 @@ export type {
   KpiMetric,
   SalesMonth,
   ActivityItem,
+  TopCustomer,
+  InventoryAlert,
 } from "./dashboard.service"
 export { customerService } from "./customers.service"
 export type {
@@ -19,7 +21,6 @@ export type {
   InvoiceFormData,
   InvoiceListResponse,
   LineItem,
-  Product,
 } from "./invoices.service"
 export { paymentService } from "./payments.service"
 export type {
@@ -28,5 +29,7 @@ export type {
   RecordPaymentData,
 } from "./payments.service"
 export { reportService } from "./reports.service"
-export type { TaxSummary, TaxBreakdownRow } from "./reports.service"
+export type { TaxSummary, TaxBreakdownRow, SalesSummary, StockReport, StockReportItem } from "./reports.service"
+export { productService } from "./products.service"
+export type { Product, ProductListResponse } from "./products.service"
 export { apiClient, ApiError } from "./api-client"

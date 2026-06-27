@@ -25,6 +25,20 @@
       "value": 1248,
       "trend": 8.1,
       "trendDirection": "up"
+    },
+    "inventoryValue": {
+      "label": "Inventory Value",
+      "value": 178420,
+      "currency": "USD",
+      "trend": 3.2,
+      "trendDirection": "up"
+    },
+    "cashFlow": {
+      "label": "Cash Flow",
+      "value": 42680,
+      "currency": "USD",
+      "trend": 8.7,
+      "trendDirection": "up"
     }
   },
   "salesOverTime": [
@@ -34,6 +48,18 @@
     { "month": "Apr", "revenue": 45600, "orders": 173 },
     { "month": "May", "revenue": 52300, "orders": 196 },
     { "month": "Jun", "revenue": 67100, "orders": 234 }
+  ],
+  "topCustomers": [
+    { "name": "Acme Corp", "revenue": 2879.63 },
+    { "name": "Delta Export Group", "revenue": 8778.00 },
+    { "name": "Maple Leaf Industries", "revenue": 7964.25 },
+    { "name": "Crown Royal Packaging", "revenue": 6886.95 },
+    { "name": "Prairie Grain Co.", "revenue": 6814.50 }
+  ],
+  "inventoryAlerts": [
+    { "name": "Widget Pro", "sku": "WP-100", "stock": 3, "threshold": 10 },
+    { "name": "Welding Cable 2/0 50ft", "sku": "WC-1000", "stock": 8, "threshold": 15 },
+    { "name": "Stainless Steel Sheet 4x8 16ga", "sku": "SS-1200", "stock": 25, "threshold": 30 }
   ],
   "recentActivity": [
     {

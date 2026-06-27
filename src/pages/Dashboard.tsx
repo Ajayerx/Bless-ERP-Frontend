@@ -1,17 +1,16 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import { useNavigate } from "react-router-dom"
 import { motion } from "framer-motion"
 import {
   DollarSign,
   TrendingUp,
   TrendingDown,
   Package,
-  Users,
   FileText,
   Plus,
   UserPlus,
-  ShoppingCart,
   ArrowLeftRight,
   CreditCard,
   ArrowRight,
@@ -36,7 +35,7 @@ import { Card, CardContent, CardHeader, CardTitle, Badge } from "@/components/ui
 import { Skeleton } from "@/components/ui/skeleton"
 import { dashboardService, invoiceService } from "@/services"
 import type { DashboardData, Invoice } from "@/services"
-import { formatCurrency, formatNumber, formatDate, cn } from "@/lib/utils"
+import { formatCurrency, cn } from "@/lib/utils"
 
 const containerVariants = {
   hidden: { opacity: 0 },
@@ -48,7 +47,7 @@ const containerVariants = {
 
 const itemVariants = {
   hidden: { opacity: 0, y: 12 },
-  show: { opacity: 1, y: 0, transition: { type: "spring", stiffness: 300, damping: 30 } },
+  show: { opacity: 1, y: 0, transition: { type: "spring" as const, stiffness: 300, damping: 30 } },
 }
 
 function MiniSparkline({ data, color }: { data: { value: number }[]; color: string }) {
@@ -68,7 +67,7 @@ function MiniSparkline({ data, color }: { data: { value: number }[]; color: stri
   )
 }
 
-const statusConfig: Record<string, { variant: "success" | "warning" | "danger" | "info"; icon: React.ReactNode }> = {
+const statusConfig: Record<string, { variant: "success" | "warning" | "danger" | "info" | "default"; icon: React.ReactNode }> = {
   paid: { variant: "success", icon: <CheckCircle2 size={14} /> },
   sent: { variant: "info", icon: <Clock size={14} /> },
   overdue: { variant: "danger", icon: <AlertTriangle size={14} /> },
@@ -85,6 +84,7 @@ const quickActions = [
 ]
 
 export default function Dashboard() {
+  const navigate = useNavigate()
   const [dashData, setDashData] = useState<DashboardData | null>(null)
   const [invoices, setInvoices] = useState<Invoice[]>([])
   const [loading, setLoading] = useState(true)
@@ -154,9 +154,9 @@ export default function Dashboard() {
     },
     {
       title: "Inventory Value",
-      value: "$178,420",
-      change: 3.2,
-      up: true,
+      value: kpis?.inventoryValue ? formatCurrency(kpis.inventoryValue.value) : "$0",
+      change: kpis?.inventoryValue?.trend ?? 0,
+      up: (kpis?.inventoryValue?.trendDirection ?? "up") === "up",
       icon: Package,
       color: "text-purple-600",
       bg: "bg-purple-50",
@@ -164,9 +164,9 @@ export default function Dashboard() {
     },
     {
       title: "Cash Flow",
-      value: "$42,680",
-      change: 8.7,
-      up: true,
+      value: kpis?.cashFlow ? formatCurrency(kpis.cashFlow.value) : "$0",
+      change: kpis?.cashFlow?.trend ?? 0,
+      up: (kpis?.cashFlow?.trendDirection ?? "up") === "up",
       icon: TrendingUp,
       color: "text-success-600",
       bg: "bg-success-50",
@@ -192,7 +192,7 @@ export default function Dashboard() {
             <h1 className="text-2xl font-bold text-heading">Welcome back</h1>
             <p className="text-sm text-muted mt-1">{today}</p>
           </div>
-          <button className="inline-flex items-center gap-2 px-5 py-2.5 bg-primary-600 text-white font-semibold rounded-[12px] hover:bg-primary-700 transition-all duration-200 shadow-sm hover:shadow-md active:scale-[0.98]">
+          <button onClick={() => navigate("/invoices/new")} className="inline-flex items-center gap-2 px-5 py-2.5 bg-primary-600 text-white font-semibold rounded-[12px] hover:bg-primary-700 transition-all duration-200 shadow-sm hover:shadow-md active:scale-[0.98]">
             <Plus size={18} />
             New Invoice
           </button>
@@ -294,7 +294,7 @@ export default function Dashboard() {
                         boxShadow: "0px 4px 12px rgba(0,0,0,0.08)",
                         padding: "8px 12px",
                       }}
-                      formatter={(value: number) => [formatCurrency(value), "Revenue"]}
+                      formatter={(value) => [formatCurrency(value as number), "Revenue"]}
                     />
                     <Area
                       type="monotone"
@@ -313,7 +313,7 @@ export default function Dashboard() {
           <Card>
             <CardHeader>
               <CardTitle>Recent Invoices</CardTitle>
-              <button className="text-xs font-semibold text-primary-600 hover:text-primary-700 flex items-center gap-1">
+              <button onClick={() => navigate("/invoices")} className="text-xs font-semibold text-primary-600 hover:text-primary-700 flex items-center gap-1">
                 View All <ArrowRight size={12} />
               </button>
             </CardHeader>
@@ -359,16 +359,10 @@ export default function Dashboard() {
             </CardHeader>
             <CardContent className="p-0">
               <div className="divide-y divide-border">
-                {[
-                  { name: "Acme Corp", revenue: 2879.63, initials: "AC" },
-                  { name: "Delta Export Group", revenue: 8778.00, initials: "DE" },
-                  { name: "Maple Leaf Industries", revenue: 7964.25, initials: "ML" },
-                  { name: "Crown Royal Packaging", revenue: 6886.95, initials: "CR" },
-                  { name: "Prairie Grain Co.", revenue: 6814.50, initials: "PG" },
-                ].map((c) => (
+                {(dashData?.topCustomers ?? []).map((c) => (
                   <div key={c.name} className="flex items-center gap-3 px-6 py-3.5 hover:bg-gray-50 transition-colors">
                     <div className="w-8 h-8 rounded-[10px] bg-primary-100 text-primary-700 flex items-center justify-center text-xs font-bold">
-                      {c.initials}
+                      {c.name.split(" ").map((w: string) => w[0]).join("").slice(0, 2).toUpperCase()}
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-semibold text-heading">{c.name}</p>
@@ -378,6 +372,11 @@ export default function Dashboard() {
                     </span>
                   </div>
                 ))}
+                {(!dashData?.topCustomers || dashData.topCustomers.length === 0) && (
+                  <div className="px-6 py-8 text-center">
+                    <p className="text-sm text-muted">No customer data yet.</p>
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -386,15 +385,11 @@ export default function Dashboard() {
           <Card>
             <CardHeader>
               <CardTitle>Inventory Alerts</CardTitle>
-              <Badge variant="danger">3 low stock</Badge>
+              <Badge variant="danger">{dashData?.inventoryAlerts?.length ?? 0} low stock</Badge>
             </CardHeader>
             <CardContent className="p-0">
               <div className="divide-y divide-border">
-                {[
-                  { name: "Widget Pro", sku: "WP-100", stock: 3, threshold: 10 },
-                  { name: "Welding Cable 2/0 50ft", sku: "WC-1000", stock: 8, threshold: 15 },
-                  { name: "Stainless Steel Sheet", sku: "SS-1200", stock: 25, threshold: 30 },
-                ].map((item) => (
+                {(dashData?.inventoryAlerts ?? []).map((item) => (
                   <div key={item.sku} className="flex items-center gap-3 px-6 py-3.5 hover:bg-gray-50 transition-colors">
                     <div className="w-8 h-8 rounded-[10px] bg-danger-50 text-danger-600 flex items-center justify-center">
                       <Package size={15} />
@@ -411,6 +406,11 @@ export default function Dashboard() {
                     </div>
                   </div>
                 ))}
+                {(!dashData?.inventoryAlerts || dashData.inventoryAlerts.length === 0) && (
+                  <div className="px-6 py-8 text-center">
+                    <p className="text-sm text-muted">No inventory alerts.</p>
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -425,6 +425,7 @@ export default function Dashboard() {
                 {quickActions.map((action) => (
                   <button
                     key={action.label}
+                    onClick={() => navigate(action.to)}
                     className="flex flex-col items-center gap-2 p-4 rounded-[14px] border border-border hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 bg-surface"
                   >
                     <div className={cn("p-3 rounded-[10px]", action.color)}>

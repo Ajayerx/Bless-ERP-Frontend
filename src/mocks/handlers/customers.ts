@@ -14,11 +14,10 @@ export const customerHandlers = [
     let filtered = customers
     if (search) {
       filtered = customers.filter(
-        (c) =>
+        (c: any) =>
           c.name.toLowerCase().includes(search) ||
           c.contactName.toLowerCase().includes(search) ||
-          c.email.toLowerCase().includes(search) ||
-          c.company?.toLowerCase().includes(search)
+          c.email.toLowerCase().includes(search)
       )
     }
 

@@ -8,10 +8,8 @@ import {
   Plus,
   Trash2,
   Save,
-  Loader2,
   Search,
   ChevronDown,
-  Receipt,
 } from "lucide-react"
 import Topbar from "@/components/layout/Topbar"
 import { Button, Card, CardContent, CardHeader, CardTitle } from "@/components/ui"
@@ -19,8 +17,8 @@ import {
   invoiceService,
   customerService,
   type Customer,
-  type Product,
 } from "@/services"
+import type { Product } from "@/services/invoices.service"
 import { formatCurrency, cn } from "@/lib/utils"
 
 interface LineItemForm {

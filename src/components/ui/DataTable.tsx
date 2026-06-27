@@ -199,7 +199,7 @@ export default function DataTable<T>({
             <button
               onClick={() => goToPage(currentPage - 1)}
               disabled={currentPage <= 1}
-              className="p-2 rounded-[10px] text-muted hover:text-body hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              className="p-2 rounded-[10px] text-muted hover:text-body hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-primary-500/30 transition-colors"
             >
               <ChevronLeft size={16} />
             </button>
@@ -212,7 +212,7 @@ export default function DataTable<T>({
                   key={p}
                   onClick={() => goToPage(p)}
                   className={cn(
-                    "w-8 h-8 rounded-[10px] text-xs font-semibold transition-colors",
+                    "w-8 h-8 rounded-[10px] text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-primary-500/30",
                     p === currentPage
                       ? "bg-primary-600 text-white shadow-sm"
                       : "text-muted hover:bg-gray-100"
@@ -225,7 +225,7 @@ export default function DataTable<T>({
             <button
               onClick={() => goToPage(currentPage + 1)}
               disabled={currentPage >= totalPages}
-              className="p-2 rounded-[10px] text-muted hover:text-body hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              className="p-2 rounded-[10px] text-muted hover:text-body hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-primary-500/30 transition-colors"
             >
               <ChevronRight size={16} />
             </button>
