@@ -37,6 +37,16 @@ import FollowUps from "./modules/crm/pages/FollowUps"
 import PurchaseOrders from "./modules/purchases/pages/PurchaseOrders"
 import PurchaseOrderDetail from "./modules/purchases/pages/PurchaseOrderDetail"
 import CreatePurchaseOrder from "./modules/purchases/pages/CreatePurchaseOrder"
+import Expenses from "./modules/accounting/pages/Expenses"
+import ExpenseDetail from "./modules/accounting/pages/ExpenseDetail"
+import CreateExpense from "./modules/accounting/pages/CreateExpense"
+import Taxes from "./modules/accounting/pages/Taxes"
+import BankAccounts from "./modules/accounting/pages/BankAccounts"
+import BankAccountDetail from "./modules/accounting/pages/BankAccountDetail"
+import CreateBankAccount from "./modules/accounting/pages/CreateBankAccount"
+import JournalEntries from "./modules/accounting/pages/JournalEntries"
+import JournalEntryDetail from "./modules/accounting/pages/JournalEntryDetail"
+import CreateJournalEntry from "./modules/accounting/pages/CreateJournalEntry"
 import HrmsDashboard from "./modules/hrms/pages/HrmsDashboard"
 import Employees from "./modules/hrms/employees/pages/Employees"
 import EmployeeDetail from "./modules/hrms/employees/pages/EmployeeDetail"
@@ -99,6 +109,16 @@ function App() {
         <Route path="crm/opportunities" element={<Opportunities />} />
         <Route path="crm/opportunities/:id" element={<OpportunityDetail />} />
         <Route path="crm/follow-ups" element={<FollowUps />} />
+        <Route path="accounting/expenses" element={<Expenses />} />
+        <Route path="accounting/expenses/new" element={<CreateExpense />} />
+        <Route path="accounting/expenses/:id" element={<ExpenseDetail />} />
+        <Route path="accounting/taxes" element={<Taxes />} />
+        <Route path="accounting/bank-accounts" element={<BankAccounts />} />
+        <Route path="accounting/bank-accounts/new" element={<CreateBankAccount />} />
+        <Route path="accounting/bank-accounts/:id" element={<BankAccountDetail />} />
+        <Route path="accounting/journal-entries" element={<JournalEntries />} />
+        <Route path="accounting/journal-entries/new" element={<CreateJournalEntry />} />
+        <Route path="accounting/journal-entries/:id" element={<JournalEntryDetail />} />
         <Route path="purchases/orders" element={<PurchaseOrders />} />
         <Route path="purchases/orders/new" element={<CreatePurchaseOrder />} />
         <Route path="purchases/orders/:id" element={<PurchaseOrderDetail />} />

@@ -52,6 +52,13 @@ export type {
   FollowUp,
   FollowUpListResponse,
 } from "@/modules/crm/types"
+export { accountingService } from "@/modules/accounting/services"
+export type {
+  Expense, ExpenseListResponse, ExpenseFormData,
+  TaxSummaryData,
+  BankAccount, BankAccountListResponse, BankAccountFormData,
+  JournalEntry, JournalEntryListResponse, JournalEntryFormData,
+} from "@/modules/accounting/types"
 export { purchaseOrderService } from "@/modules/purchases/services"
 export type {
   PurchaseOrder,

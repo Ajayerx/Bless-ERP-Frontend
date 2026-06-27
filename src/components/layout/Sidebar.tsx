@@ -96,10 +96,10 @@ const navSections: NavSection[] = [
   {
     label: "Accounting",
     items: [
-      { label: "Expenses", icon: Wallet },
-      { label: "Taxes", icon: Landmark },
-      { label: "Bank Accounts", icon: Banknote },
-      { label: "Journal Entries", icon: BookOpen },
+      { label: "Expenses", to: "/accounting/expenses", icon: Wallet },
+      { label: "Taxes", to: "/accounting/taxes", icon: Landmark },
+      { label: "Bank Accounts", to: "/accounting/bank-accounts", icon: Banknote },
+      { label: "Journal Entries", to: "/accounting/journal-entries", icon: BookOpen },
     ],
   },
   {

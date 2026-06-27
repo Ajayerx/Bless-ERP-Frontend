@@ -10,6 +10,7 @@ import { quotationHandlers } from "./quotations"
 import { salesOrderHandlers } from "./sales-orders"
 import { crmHandlers } from "./crm"
 import { purchaseOrderHandlers } from "./purchases"
+import { accountingHandlers } from "./accounting"
 
 export const handlers = [
   ...authHandlers,
@@ -24,4 +25,5 @@ export const handlers = [
   ...salesOrderHandlers,
   ...crmHandlers,
   ...purchaseOrderHandlers,
+  ...accountingHandlers,
 ]
