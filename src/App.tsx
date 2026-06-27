@@ -27,6 +27,13 @@ import CreateQuotation from "./pages/CreateQuotation"
 import SalesOrders from "./pages/SalesOrders"
 import SalesOrderDetail from "./pages/SalesOrderDetail"
 import CreateSalesOrder from "./pages/CreateSalesOrder"
+import Contacts from "./modules/crm/pages/Contacts"
+import ContactDetail from "./modules/crm/pages/ContactDetail"
+import Leads from "./modules/crm/pages/Leads"
+import LeadDetail from "./modules/crm/pages/LeadDetail"
+import Opportunities from "./modules/crm/pages/Opportunities"
+import OpportunityDetail from "./modules/crm/pages/OpportunityDetail"
+import FollowUps from "./modules/crm/pages/FollowUps"
 import HrmsDashboard from "./modules/hrms/pages/HrmsDashboard"
 import Employees from "./modules/hrms/employees/pages/Employees"
 import EmployeeDetail from "./modules/hrms/employees/pages/EmployeeDetail"
@@ -82,6 +89,13 @@ function App() {
         <Route path="sales-orders" element={<SalesOrders />} />
         <Route path="sales-orders/new" element={<CreateSalesOrder />} />
         <Route path="sales-orders/:id" element={<SalesOrderDetail />} />
+        <Route path="crm/contacts" element={<Contacts />} />
+        <Route path="crm/contacts/:id" element={<ContactDetail />} />
+        <Route path="crm/leads" element={<Leads />} />
+        <Route path="crm/leads/:id" element={<LeadDetail />} />
+        <Route path="crm/opportunities" element={<Opportunities />} />
+        <Route path="crm/opportunities/:id" element={<OpportunityDetail />} />
+        <Route path="crm/follow-ups" element={<FollowUps />} />
         <Route path="reports" element={<Reports />} />
         <Route path="hrms" element={<HrmsDashboard />} />
         <Route path="hrms/employees" element={<Employees />} />

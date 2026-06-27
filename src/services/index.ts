@@ -36,4 +36,20 @@ export { quotationService } from "./quotations.service"
 export type { Quotation, QuotationListResponse, QuotationFormData } from "./quotations.service"
 export { salesOrderService } from "./sales-orders.service"
 export type { SalesOrder, SalesOrderListResponse, SalesOrderFormData } from "./sales-orders.service"
+export {
+  contactService,
+  leadService,
+  opportunityService,
+  followUpService,
+} from "@/modules/crm/services"
+export type {
+  Contact,
+  ContactListResponse,
+  Lead,
+  LeadListResponse,
+  Opportunity,
+  OpportunityListResponse,
+  FollowUp,
+  FollowUpListResponse,
+} from "@/modules/crm/types"
 export { apiClient, ApiError } from "./api-client"

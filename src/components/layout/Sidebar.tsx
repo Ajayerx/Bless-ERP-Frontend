@@ -79,10 +79,10 @@ const navSections: NavSection[] = [
   {
     label: "CRM",
     items: [
-      { label: "Contacts", icon: Phone },
-      { label: "Leads", icon: Target },
-      { label: "Opportunities", icon: Zap },
-      { label: "Follow Ups", icon: UserPlus },
+      { label: "Contacts", to: "/crm/contacts", icon: Phone },
+      { label: "Leads", to: "/crm/leads", icon: Target },
+      { label: "Opportunities", to: "/crm/opportunities", icon: Zap },
+      { label: "Follow Ups", to: "/crm/follow-ups", icon: UserPlus },
     ],
   },
   {
