@@ -106,10 +106,11 @@ const navSections: NavSection[] = [
   {
     label: "HRMS",
     items: [
-      { label: "Employees", icon: Users2 },
-      { label: "Attendance", icon: CalendarDays },
-      { label: "Payroll", icon: DollarSign },
-      { label: "Leave", icon: CalendarOff },
+      { label: "Overview", to: "/hrms", icon: LayoutDashboard },
+      { label: "Employees", to: "/hrms/employees", icon: Users2 },
+      { label: "Attendance", to: "/hrms/attendance", icon: CalendarDays },
+      { label: "Payroll", to: "/hrms/payroll", icon: DollarSign },
+      { label: "Leave", to: "/hrms/leave", icon: CalendarOff },
     ],
   },
   {

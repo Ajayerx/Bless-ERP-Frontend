@@ -15,6 +15,13 @@ import Payments from "./pages/Payments"
 import CreatePayment from "./pages/CreatePayment"
 import PaymentDetail from "./pages/PaymentDetail"
 import Reports from "./pages/Reports"
+import HrmsDashboard from "./modules/hrms/pages/HrmsDashboard"
+import Employees from "./modules/hrms/employees/pages/Employees"
+import EmployeeDetail from "./modules/hrms/employees/pages/EmployeeDetail"
+import Attendance from "./modules/hrms/attendance/pages/Attendance"
+import Payroll from "./modules/hrms/payroll/pages/Payroll"
+import PayrollDetail from "./modules/hrms/payroll/pages/PayrollDetail"
+import Leave from "./modules/hrms/leave/pages/Leave"
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAuth()
@@ -52,6 +59,13 @@ function App() {
         <Route path="payments/create" element={<CreatePayment />} />
         <Route path="payments/:id" element={<PaymentDetail />} />
         <Route path="reports" element={<Reports />} />
+        <Route path="hrms" element={<HrmsDashboard />} />
+        <Route path="hrms/employees" element={<Employees />} />
+        <Route path="hrms/employees/:id" element={<EmployeeDetail />} />
+        <Route path="hrms/attendance" element={<Attendance />} />
+        <Route path="hrms/payroll" element={<Payroll />} />
+        <Route path="hrms/payroll/:id" element={<PayrollDetail />} />
+        <Route path="hrms/leave" element={<Leave />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>

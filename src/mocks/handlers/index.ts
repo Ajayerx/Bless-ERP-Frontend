@@ -4,6 +4,7 @@ import { customerHandlers } from "./customers"
 import { invoiceHandlers } from "./invoices"
 import { paymentHandlers } from "./payments"
 import { reportHandlers } from "./reports"
+import { hrmsHandlers } from "./hrms"
 
 export const handlers = [
   ...authHandlers,
@@ -12,4 +13,5 @@ export const handlers = [
   ...invoiceHandlers,
   ...paymentHandlers,
   ...reportHandlers,
+  ...hrmsHandlers,
 ]
