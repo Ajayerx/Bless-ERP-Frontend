@@ -1,0 +1,70 @@
+{
+  "kpis": {
+    "totalRevenue": {
+      "label": "Total Revenue",
+      "value": 284500,
+      "currency": "USD",
+      "trend": 12.5,
+      "trendDirection": "up"
+    },
+    "outstandingInvoices": {
+      "label": "Outstanding Invoices",
+      "value": 48200,
+      "currency": "USD",
+      "trend": -3.2,
+      "trendDirection": "down"
+    },
+    "lowStockProducts": {
+      "label": "Low Stock Products",
+      "value": 12,
+      "trend": 0,
+      "trendDirection": "neutral"
+    },
+    "totalCustomers": {
+      "label": "Total Customers",
+      "value": 1248,
+      "trend": 8.1,
+      "trendDirection": "up"
+    }
+  },
+  "salesOverTime": [
+    { "month": "Jan", "revenue": 38500, "orders": 142 },
+    { "month": "Feb", "revenue": 41200, "orders": 158 },
+    { "month": "Mar", "revenue": 39800, "orders": 151 },
+    { "month": "Apr", "revenue": 45600, "orders": 173 },
+    { "month": "May", "revenue": 52300, "orders": 196 },
+    { "month": "Jun", "revenue": 67100, "orders": 234 }
+  ],
+  "recentActivity": [
+    {
+      "id": "act_001",
+      "type": "invoice",
+      "message": "Invoice #INV-2026-0042 was paid by Acme Corp",
+      "timestamp": "2026-06-25T14:32:00Z"
+    },
+    {
+      "id": "act_002",
+      "type": "customer",
+      "message": "New customer registered: Northern Manufacturing Ltd",
+      "timestamp": "2026-06-25T11:15:00Z"
+    },
+    {
+      "id": "act_003",
+      "type": "stock",
+      "message": "Stock alert: Widget Pro (SKU: WP-100) has only 3 units left",
+      "timestamp": "2026-06-25T09:45:00Z"
+    },
+    {
+      "id": "act_004",
+      "type": "invoice",
+      "message": "Invoice #INV-2026-0043 was created for Quebec Retail Inc.",
+      "timestamp": "2026-06-24T16:20:00Z"
+    },
+    {
+      "id": "act_005",
+      "type": "payment",
+      "message": "Payment of $12,400 received from Maple Leaf Industries",
+      "timestamp": "2026-06-24T10:05:00Z"
+    }
+  ]
+}

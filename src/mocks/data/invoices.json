@@ -1,0 +1,290 @@
+[
+  {
+    "id": "inv_001",
+    "number": "INV-2026-0042",
+    "customerId": "cus_001",
+    "customerName": "Acme Corp",
+    "billTo": "1200 Main Street, Suite 400, New York, NY 10001",
+    "issueDate": "2026-06-15",
+    "dueDate": "2026-07-15",
+    "status": "paid",
+    "lineItems": [
+      { "id": "li_001", "productId": "prd_001", "productName": "Widget Pro", "sku": "WP-100", "quantity": 50, "price": 49.99, "taxRate": 0.05, "taxLabel": "GST", "total": 2499.50 },
+      { "id": "li_002", "productId": "prd_005", "productName": "Fuel Filter FF-5329", "sku": "FL-500", "quantity": 10, "price": 24.30, "taxRate": 0.05, "taxLabel": "GST", "total": 243.00 }
+    ],
+    "subtotal": 2742.50,
+    "gst": 137.13,
+    "qst": 0,
+    "total": 2879.63,
+    "createdAt": "2026-06-15T09:30:00Z"
+  },
+  {
+    "id": "inv_002",
+    "number": "INV-2026-0043",
+    "customerId": "cus_002",
+    "customerName": "Quebec Retail Inc.",
+    "billTo": "450 Boulevard Charest, Quebec City, QC G1K 3J7",
+    "issueDate": "2026-06-18",
+    "dueDate": "2026-07-18",
+    "status": "sent",
+    "lineItems": [
+      { "id": "li_003", "productId": "prd_003", "productName": "Hydraulic Tube 3/4\"", "sku": "HT-300", "quantity": 200, "price": 12.50, "taxRate": 0.05, "taxLabel": "GST", "total": 2500.00 },
+      { "id": "li_004", "productId": "prd_007", "productName": "Conveyor Belt 12\" x 20ft", "sku": "CB-700", "quantity": 3, "price": 345.00, "taxRate": 0.05, "taxLabel": "GST", "total": 1035.00 },
+      { "id": "li_005", "productId": "prd_015", "productName": "Hydraulic Fluid 20L", "sku": "HD-1500", "quantity": 10, "price": 68.00, "taxRate": 0.09975, "taxLabel": "QST", "total": 680.00 }
+    ],
+    "subtotal": 4215.00,
+    "gst": 210.75,
+    "qst": 420.45,
+    "total": 4846.20,
+    "createdAt": "2026-06-18T11:00:00Z"
+  },
+  {
+    "id": "inv_003",
+    "number": "INV-2026-0041",
+    "customerId": "cus_003",
+    "customerName": "Maple Leaf Industries",
+    "billTo": "88 Queen Street West, Toronto, ON M5V 2H4",
+    "issueDate": "2026-06-10",
+    "dueDate": "2026-07-10",
+    "status": "overdue",
+    "lineItems": [
+      { "id": "li_006", "productId": "prd_010", "productName": "Welding Cable 2/0 50ft", "sku": "WC-1000", "quantity": 15, "price": 156.00, "taxRate": 0.05, "taxLabel": "GST", "total": 2340.00 },
+      { "id": "li_007", "productId": "prd_012", "productName": "Stainless Steel Sheet 4x8 16ga", "sku": "SS-1200", "quantity": 20, "price": 215.00, "taxRate": 0.05, "taxLabel": "GST", "total": 4300.00 },
+      { "id": "li_008", "productId": "prd_009", "productName": "Pneumatic Nailer P90", "sku": "PN-900", "quantity": 5, "price": 189.00, "taxRate": 0.05, "taxLabel": "GST", "total": 945.00 }
+    ],
+    "subtotal": 7585.00,
+    "gst": 379.25,
+    "qst": 0,
+    "total": 7964.25,
+    "createdAt": "2026-06-10T08:15:00Z"
+  },
+  {
+    "id": "inv_004",
+    "number": "INV-2026-0040",
+    "customerId": "cus_005",
+    "customerName": "Pacific West Distributors",
+    "billTo": "200 Granville Street, Vancouver, BC V6C 1S4",
+    "issueDate": "2026-06-05",
+    "dueDate": "2026-07-05",
+    "status": "paid",
+    "lineItems": [
+      { "id": "li_009", "productId": "prd_011", "productName": "Lubricant Pump 5L", "sku": "LP-1100", "quantity": 8, "price": 42.00, "taxRate": 0.05, "taxLabel": "GST", "total": 336.00 },
+      { "id": "li_010", "productId": "prd_006", "productName": "Ball Bearing 6205-2RS", "sku": "BR-600", "quantity": 100, "price": 6.45, "taxRate": 0.05, "taxLabel": "GST", "total": 645.00 }
+    ],
+    "subtotal": 981.00,
+    "gst": 49.05,
+    "qst": 0,
+    "total": 1030.05,
+    "createdAt": "2026-06-05T14:20:00Z"
+  },
+  {
+    "id": "inv_005",
+    "number": "INV-2026-0039",
+    "customerId": "cus_008",
+    "customerName": "West Coast Auto Parts",
+    "billTo": "550 5th Avenue SW, Calgary, AB T2P 0M6",
+    "issueDate": "2026-05-28",
+    "dueDate": "2026-06-28",
+    "status": "overdue",
+    "lineItems": [
+      { "id": "li_011", "productId": "prd_005", "productName": "Fuel Filter FF-5329", "sku": "FL-500", "quantity": 80, "price": 24.30, "taxRate": 0.05, "taxLabel": "GST", "total": 1944.00 },
+      { "id": "li_012", "productId": "prd_013", "productName": "V-Belt A-52", "sku": "VL-1300", "quantity": 150, "price": 11.95, "taxRate": 0.05, "taxLabel": "GST", "total": 1792.50 },
+      { "id": "li_013", "productId": "prd_002", "productName": "Bolt Grade 8 - M12x50", "sku": "BG-200", "quantity": 2000, "price": 0.89, "taxRate": 0.05, "taxLabel": "GST", "total": 1780.00 }
+    ],
+    "subtotal": 5516.50,
+    "gst": 275.83,
+    "qst": 0,
+    "total": 5792.33,
+    "createdAt": "2026-05-28T10:30:00Z"
+  },
+  {
+    "id": "inv_006",
+    "number": "INV-2026-0038",
+    "customerId": "cus_009",
+    "customerName": "Eastern Pharma Solutions",
+    "billTo": "200 Main Street, Moncton, NB E1C 1E4",
+    "issueDate": "2026-05-20",
+    "dueDate": "2026-06-20",
+    "status": "paid",
+    "lineItems": [
+      { "id": "li_014", "productId": "prd_004", "productName": "Silicone Sealant 300ml", "sku": "SE-400", "quantity": 300, "price": 8.75, "taxRate": 0.05, "taxLabel": "GST", "total": 2625.00 },
+      { "id": "li_015", "productId": "prd_008", "productName": "Gasket Sheet 1/16\" x 36\"", "sku": "GS-800", "quantity": 50, "price": 18.20, "taxRate": 0.05, "taxLabel": "GST", "total": 910.00 }
+    ],
+    "subtotal": 3535.00,
+    "gst": 176.75,
+    "qst": 0,
+    "total": 3711.75,
+    "createdAt": "2026-05-20T13:45:00Z"
+  },
+  {
+    "id": "inv_007",
+    "number": "INV-2026-0037",
+    "customerId": "cus_012",
+    "customerName": "Coastal Trading Post",
+    "billTo": "10 Waterfront Drive, St. John's, NL A1C 1A1",
+    "issueDate": "2026-05-15",
+    "dueDate": "2026-06-15",
+    "status": "paid",
+    "lineItems": [
+      { "id": "li_016", "productId": "prd_014", "productName": "Compression Spring 2\"x4\"", "sku": "CP-1400", "quantity": 500, "price": 3.40, "taxRate": 0.05, "taxLabel": "GST", "total": 1700.00 },
+      { "id": "li_017", "productId": "prd_001", "productName": "Widget Pro", "sku": "WP-100", "quantity": 10, "price": 49.99, "taxRate": 0.05, "taxLabel": "GST", "total": 499.90 }
+    ],
+    "subtotal": 2199.90,
+    "gst": 110.00,
+    "qst": 0,
+    "total": 2309.90,
+    "createdAt": "2026-05-15T09:00:00Z"
+  },
+  {
+    "id": "inv_008",
+    "number": "INV-2026-0036",
+    "customerId": "cus_014",
+    "customerName": "Delta Export Group",
+    "billTo": "1200 Burrard Street, Vancouver, BC V6Z 2C7",
+    "issueDate": "2026-05-10",
+    "dueDate": "2026-06-10",
+    "status": "sent",
+    "lineItems": [
+      { "id": "li_018", "productId": "prd_010", "productName": "Welding Cable 2/0 50ft", "sku": "WC-1000", "quantity": 25, "price": 156.00, "taxRate": 0.05, "taxLabel": "GST", "total": 3900.00 },
+      { "id": "li_019", "productId": "prd_007", "productName": "Conveyor Belt 12\" x 20ft", "sku": "CB-700", "quantity": 8, "price": 345.00, "taxRate": 0.05, "taxLabel": "GST", "total": 2760.00 },
+      { "id": "li_020", "productId": "prd_015", "productName": "Hydraulic Fluid 20L", "sku": "HD-1500", "quantity": 25, "price": 68.00, "taxRate": 0.05, "taxLabel": "GST", "total": 1700.00 }
+    ],
+    "subtotal": 8360.00,
+    "gst": 418.00,
+    "qst": 0,
+    "total": 8778.00,
+    "createdAt": "2026-05-10T07:30:00Z"
+  },
+  {
+    "id": "inv_009",
+    "number": "INV-2026-0035",
+    "customerId": "cus_017",
+    "customerName": "Highland Construction",
+    "billTo": "55 Clyde Street, Sydney, NS B1P 3Y7",
+    "issueDate": "2026-05-01",
+    "dueDate": "2026-06-01",
+    "status": "paid",
+    "lineItems": [
+      { "id": "li_021", "productId": "prd_009", "productName": "Pneumatic Nailer P90", "sku": "PN-900", "quantity": 12, "price": 189.00, "taxRate": 0.05, "taxLabel": "GST", "total": 2268.00 },
+      { "id": "li_022", "productId": "prd_003", "productName": "Hydraulic Tube 3/4\"", "sku": "HT-300", "quantity": 150, "price": 12.50, "taxRate": 0.05, "taxLabel": "GST", "total": 1875.00 }
+    ],
+    "subtotal": 4143.00,
+    "gst": 207.15,
+    "qst": 0,
+    "total": 4350.15,
+    "createdAt": "2026-05-01T15:00:00Z"
+  },
+  {
+    "id": "inv_010",
+    "number": "INV-2026-0034",
+    "customerId": "cus_020",
+    "customerName": "Crown Royal Packaging",
+    "billTo": "600 Derry Road, Mississauga, ON L5N 7E2",
+    "issueDate": "2026-04-22",
+    "dueDate": "2026-05-22",
+    "status": "overdue",
+    "lineItems": [
+      { "id": "li_023", "productId": "prd_004", "productName": "Silicone Sealant 300ml", "sku": "SE-400", "quantity": 500, "price": 8.75, "taxRate": 0.05, "taxLabel": "GST", "total": 4375.00 },
+      { "id": "li_024", "productId": "prd_008", "productName": "Gasket Sheet 1/16\" x 36\"", "sku": "GS-800", "quantity": 120, "price": 18.20, "taxRate": 0.05, "taxLabel": "GST", "total": 2184.00 }
+    ],
+    "subtotal": 6559.00,
+    "gst": 327.95,
+    "qst": 0,
+    "total": 6886.95,
+    "createdAt": "2026-04-22T11:20:00Z"
+  },
+  {
+    "id": "inv_011",
+    "number": "INV-2026-0033",
+    "customerId": "cus_002",
+    "customerName": "Quebec Retail Inc.",
+    "billTo": "450 Boulevard Charest, Quebec City, QC G1K 3J7",
+    "issueDate": "2026-04-15",
+    "dueDate": "2026-05-15",
+    "status": "paid",
+    "lineItems": [
+      { "id": "li_025", "productId": "prd_011", "productName": "Lubricant Pump 5L", "sku": "LP-1100", "quantity": 12, "price": 42.00, "taxRate": 0.09975, "taxLabel": "QST", "total": 504.00 },
+      { "id": "li_026", "productId": "prd_013", "productName": "V-Belt A-52", "sku": "VL-1300", "quantity": 80, "price": 11.95, "taxRate": 0.09975, "taxLabel": "QST", "total": 956.00 }
+    ],
+    "subtotal": 1460.00,
+    "gst": 73.00,
+    "qst": 145.64,
+    "total": 1678.64,
+    "createdAt": "2026-04-15T10:10:00Z"
+  },
+  {
+    "id": "inv_012",
+    "number": "INV-2026-0032",
+    "customerId": "cus_025",
+    "customerName": "Boreal Forest Products",
+    "billTo": "1000 Boulevard du Parc, Trois-Rivieres, QC G9A 5L3",
+    "issueDate": "2026-04-08",
+    "dueDate": "2026-05-08",
+    "status": "draft",
+    "lineItems": [
+      { "id": "li_027", "productId": "prd_006", "productName": "Ball Bearing 6205-2RS", "sku": "BR-600", "quantity": 300, "price": 6.45, "taxRate": 0.05, "taxLabel": "GST", "total": 1935.00 },
+      { "id": "li_028", "productId": "prd_012", "productName": "Stainless Steel Sheet 4x8 16ga", "sku": "SS-1200", "quantity": 10, "price": 215.00, "taxRate": 0.05, "taxLabel": "GST", "total": 2150.00 }
+    ],
+    "subtotal": 4085.00,
+    "gst": 204.25,
+    "qst": 0,
+    "total": 4289.25,
+    "createdAt": "2026-04-08T16:45:00Z"
+  },
+  {
+    "id": "inv_013",
+    "number": "INV-2026-0031",
+    "customerId": "cus_006",
+    "customerName": "Prairie Grain Co.",
+    "billTo": "100 Portage Avenue, Winnipeg, MB R3B 2H9",
+    "issueDate": "2026-03-25",
+    "dueDate": "2026-04-25",
+    "status": "paid",
+    "lineItems": [
+      { "id": "li_029", "productId": "prd_015", "productName": "Hydraulic Fluid 20L", "sku": "HD-1500", "quantity": 30, "price": 68.00, "taxRate": 0.05, "taxLabel": "GST", "total": 2040.00 },
+      { "id": "li_030", "productId": "prd_002", "productName": "Bolt Grade 8 - M12x50", "sku": "BG-200", "quantity": 5000, "price": 0.89, "taxRate": 0.05, "taxLabel": "GST", "total": 4450.00 }
+    ],
+    "subtotal": 6490.00,
+    "gst": 324.50,
+    "qst": 0,
+    "total": 6814.50,
+    "createdAt": "2026-03-25T09:30:00Z"
+  },
+  {
+    "id": "inv_014",
+    "number": "INV-2026-0030",
+    "customerId": "cus_004",
+    "customerName": "Northern Manufacturing Ltd.",
+    "billTo": "1500 Rue Sherbrooke, Montreal, QC H3H 1A1",
+    "issueDate": "2026-03-12",
+    "dueDate": "2026-04-12",
+    "status": "cancelled",
+    "lineItems": [
+      { "id": "li_031", "productId": "prd_001", "productName": "Widget Pro", "sku": "WP-100", "quantity": 25, "price": 49.99, "taxRate": 0.05, "taxLabel": "GST", "total": 1249.75 }
+    ],
+    "subtotal": 1249.75,
+    "gst": 62.49,
+    "qst": 0,
+    "total": 1312.24,
+    "createdAt": "2026-03-12T13:00:00Z"
+  },
+  {
+    "id": "inv_015",
+    "number": "INV-2026-0029",
+    "customerId": "cus_016",
+    "customerName": "Sunrise Bakery Supplies",
+    "billTo": "300 Rue Principale, Gatineau, QC J8X 4A1",
+    "issueDate": "2026-03-05",
+    "dueDate": "2026-04-05",
+    "status": "paid",
+    "lineItems": [
+      { "id": "li_032", "productId": "prd_004", "productName": "Silicone Sealant 300ml", "sku": "SE-400", "quantity": 48, "price": 8.75, "taxRate": 0.09975, "taxLabel": "QST", "total": 420.00 },
+      { "id": "li_033", "productId": "prd_014", "productName": "Compression Spring 2\"x4\"", "sku": "CP-1400", "quantity": 200, "price": 3.40, "taxRate": 0.09975, "taxLabel": "QST", "total": 680.00 }
+    ],
+    "subtotal": 1100.00,
+    "gst": 55.00,
+    "qst": 109.73,
+    "total": 1264.73,
+    "createdAt": "2026-03-05T08:45:00Z"
+  }
+]

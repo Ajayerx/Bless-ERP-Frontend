@@ -1,0 +1,17 @@
+[
+  { "id": "prd_001", "sku": "WP-100", "name": "Widget Pro", "price": 49.99, "stock": 3, "unit": "ea" },
+  { "id": "prd_002", "sku": "BG-200", "name": "Bolt Grade 8 - M12x50", "price": 0.89, "stock": 4500, "unit": "ea" },
+  { "id": "prd_003", "sku": "HT-300", "name": "Hydraulic Tube 3/4\"", "price": 12.50, "stock": 280, "unit": "ft" },
+  { "id": "prd_004", "sku": "SE-400", "name": "Silicone Sealant 300ml", "price": 8.75, "stock": 150, "unit": "ea" },
+  { "id": "prd_005", "sku": "FL-500", "name": "Fuel Filter FF-5329", "price": 24.30, "stock": 62, "unit": "ea" },
+  { "id": "prd_006", "sku": "BR-600", "name": "Ball Bearing 6205-2RS", "price": 6.45, "stock": 800, "unit": "ea" },
+  { "id": "prd_007", "sku": "CB-700", "name": "Conveyor Belt 12\" x 20ft", "price": 345.00, "stock": 15, "unit": "ea" },
+  { "id": "prd_008", "sku": "GS-800", "name": "Gasket Sheet 1/16\" x 36\"", "price": 18.20, "stock": 95, "unit": "ea" },
+  { "id": "prd_009", "sku": "PN-900", "name": " pneumatic Nailer P90", "price": 189.00, "stock": 22, "unit": "ea" },
+  { "id": "prd_010", "sku": "WC-1000", "name": "Welding Cable 2/0 50ft", "price": 156.00, "stock": 8, "unit": "ea" },
+  { "id": "prd_011", "sku": "LP-1100", "name": "Lubricant Pump 5L", "price": 42.00, "stock": 40, "unit": "ea" },
+  { "id": "prd_012", "sku": "SS-1200", "name": "Stainless Steel Sheet 4x8 16ga", "price": 215.00, "stock": 25, "unit": "ea" },
+  { "id": "prd_013", "sku": "VL-1300", "name": "V-Belt A-52", "price": 11.95, "stock": 320, "unit": "ea" },
+  { "id": "prd_014", "sku": "CP-1400", "name": "Compression Spring 2\"x4\"", "price": 3.40, "stock": 1200, "unit": "ea" },
+  { "id": "prd_015", "sku": "HD-1500", "name": "Hydraulic Fluid 20L", "price": 68.00, "stock": 55, "unit": "ea" }
+]

@@ -1,0 +1,98 @@
+[
+  {
+    "id": "pay_001",
+    "invoiceId": "inv_001",
+    "invoiceNumber": "INV-2026-0042",
+    "customerName": "Acme Corp",
+    "amount": 2879.63,
+    "paymentDate": "2026-06-20",
+    "paymentMethod": "bank_transfer",
+    "reference": "WIRE-20260620-ACME",
+    "notes": "Paid in full via wire transfer",
+    "createdAt": "2026-06-20T14:30:00Z"
+  },
+  {
+    "id": "pay_002",
+    "invoiceId": "inv_004",
+    "invoiceNumber": "INV-2026-0040",
+    "customerName": "Pacific West Distributors",
+    "amount": 1030.05,
+    "paymentDate": "2026-06-18",
+    "paymentMethod": "check",
+    "reference": "CHK-4412",
+    "notes": "Check received and deposited",
+    "createdAt": "2026-06-18T10:15:00Z"
+  },
+  {
+    "id": "pay_003",
+    "invoiceId": "inv_006",
+    "invoiceNumber": "INV-2026-0038",
+    "customerName": "Eastern Pharma Solutions",
+    "amount": 3711.75,
+    "paymentDate": "2026-06-12",
+    "paymentMethod": "credit_card",
+    "reference": "TXN-8A3F2C",
+    "notes": "Paid via online portal",
+    "createdAt": "2026-06-12T16:45:00Z"
+  },
+  {
+    "id": "pay_004",
+    "invoiceId": "inv_007",
+    "invoiceNumber": "INV-2026-0037",
+    "customerName": "Coastal Trading Post",
+    "amount": 2309.90,
+    "paymentDate": "2026-06-08",
+    "paymentMethod": "bank_transfer",
+    "reference": "WIRE-20260608-CTP",
+    "notes": "",
+    "createdAt": "2026-06-08T09:20:00Z"
+  },
+  {
+    "id": "pay_005",
+    "invoiceId": "inv_009",
+    "invoiceNumber": "INV-2026-0035",
+    "customerName": "Highland Construction",
+    "amount": 4350.15,
+    "paymentDate": "2026-05-28",
+    "paymentMethod": "check",
+    "reference": "CHK-4398",
+    "notes": "Payment for May delivery",
+    "createdAt": "2026-05-28T11:00:00Z"
+  },
+  {
+    "id": "pay_006",
+    "invoiceId": "inv_011",
+    "invoiceNumber": "INV-2026-0033",
+    "customerName": "Quebec Retail Inc.",
+    "amount": 1678.64,
+    "paymentDate": "2026-05-10",
+    "paymentMethod": "credit_card",
+    "reference": "TXN-7B2D1E",
+    "notes": "",
+    "createdAt": "2026-05-10T13:30:00Z"
+  },
+  {
+    "id": "pay_007",
+    "invoiceId": "inv_013",
+    "invoiceNumber": "INV-2026-0031",
+    "customerName": "Prairie Grain Co.",
+    "amount": 6814.50,
+    "paymentDate": "2026-04-18",
+    "paymentMethod": "bank_transfer",
+    "reference": "WIRE-20260418-PGC",
+    "notes": "Annual bulk payment",
+    "createdAt": "2026-04-18T08:00:00Z"
+  },
+  {
+    "id": "pay_008",
+    "invoiceId": "inv_015",
+    "invoiceNumber": "INV-2026-0029",
+    "customerName": "Sunrise Bakery Supplies",
+    "amount": 1264.73,
+    "paymentDate": "2026-03-28",
+    "paymentMethod": "check",
+    "reference": "CHK-4351",
+    "notes": "",
+    "createdAt": "2026-03-28T15:45:00Z"
+  }
+]
