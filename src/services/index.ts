@@ -32,18 +32,8 @@ export { reportService } from "./reports.service"
 export type { TaxSummary, TaxBreakdownRow, SalesSummary, StockReport, StockReportItem } from "./reports.service"
 export { productService } from "./products.service"
 export type { Product, ProductListResponse } from "./products.service"
-export { inventoryService } from "@/modules/inventory/services"
-export type {
-  Warehouse,
-  WarehouseListResponse,
-  StockTransfer,
-  StockTransferListResponse,
-  StockTransferItem,
-  StockCount,
-  StockCountListResponse,
-  StockCountItem,
-  InventoryMovement,
-  InventoryMovementListResponse,
-  InventorySummary,
-} from "@/modules/inventory/types"
+export { quotationService } from "./quotations.service"
+export type { Quotation, QuotationListResponse, QuotationFormData } from "./quotations.service"
+export { salesOrderService } from "./sales-orders.service"
+export type { SalesOrder, SalesOrderListResponse, SalesOrderFormData } from "./sales-orders.service"
 export { apiClient, ApiError } from "./api-client"

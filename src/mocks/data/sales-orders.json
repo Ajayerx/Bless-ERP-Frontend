@@ -1,0 +1,72 @@
+[
+  {
+    "id": "so_001", "number": "SO-2026-0001",
+    "customerId": "cus_001", "customerName": "Acme Corp", "customerContact": "John Smith",
+    "billTo": "123 Industrial Blvd, Suite 100, Springfield, IL 62701",
+    "shippingAddress": "123 Industrial Blvd, Loading Dock B, Springfield, IL 62701",
+    "issueDate": "2026-06-02", "deliveryDate": "2026-06-16",
+    "lineItems": [
+      { "id": "li_101", "productId": "prd_001", "productName": "Widget Pro", "sku": "WP-100", "quantity": 10, "price": 49.99, "taxRate": 0.05, "taxLabel": "GST", "total": 499.90 },
+      { "id": "li_102", "productId": "prd_004", "productName": "Silicone Sealant 300ml", "sku": "SE-400", "quantity": 24, "price": 8.75, "taxRate": 0.05, "taxLabel": "GST", "total": 210.00 }
+    ],
+    "subtotal": 709.90, "gst": 35.50, "qst": 0, "total": 745.40,
+    "status": "delivered", "notes": "Delivered ahead of schedule",
+    "createdAt": "2026-06-02T10:00:00Z"
+  },
+  {
+    "id": "so_002", "number": "SO-2026-0002",
+    "customerId": "cus_003", "customerName": "BuildRight Construction", "customerContact": "Sarah Connor",
+    "billTo": "456 Contractor Way, Austin, TX 73301",
+    "shippingAddress": "456 Contractor Way, Austin, TX 73301",
+    "issueDate": "2026-06-06", "deliveryDate": "2026-06-20",
+    "lineItems": [
+      { "id": "li_103", "productId": "prd_007", "productName": "Conveyor Belt 12\" x 20ft", "sku": "CB-700", "quantity": 3, "price": 345.00, "taxRate": 0.09975, "taxLabel": "QST", "total": 1035.00 },
+      { "id": "li_104", "productId": "prd_009", "productName": "Pneumatic Nailer P90", "sku": "PN-900", "quantity": 5, "price": 189.00, "taxRate": 0.09975, "taxLabel": "QST", "total": 945.00 }
+    ],
+    "subtotal": 1980.00, "gst": 0, "qst": 197.51, "total": 2177.51,
+    "status": "shipped", "notes": "Shipped via FedEx, tracking #FX-8291-472",
+    "createdAt": "2026-06-06T09:00:00Z"
+  },
+  {
+    "id": "so_003", "number": "SO-2026-0003",
+    "customerId": "cus_005", "customerName": "Precision Parts Ltd", "customerContact": "Mike Chen",
+    "billTo": "789 Manufacturing Pkwy, Detroit, MI 48201",
+    "shippingAddress": "789 Manufacturing Pkwy, Detroit, MI 48201",
+    "issueDate": "2026-06-11", "deliveryDate": "2026-06-25",
+    "lineItems": [
+      { "id": "li_105", "productId": "prd_002", "productName": "Bolt Grade 8 - M12x50", "sku": "BG-200", "quantity": 2000, "price": 0.89, "taxRate": 0.05, "taxLabel": "GST", "total": 1780.00 },
+      { "id": "li_106", "productId": "prd_006", "productName": "Ball Bearing 6205-2RS", "sku": "BR-600", "quantity": 500, "price": 6.45, "taxRate": 0.05, "taxLabel": "GST", "total": 3225.00 },
+      { "id": "li_107", "productId": "prd_013", "productName": "V-Belt A-52", "sku": "VL-1300", "quantity": 100, "price": 11.95, "taxRate": 0.05, "taxLabel": "GST", "total": 1195.00 }
+    ],
+    "subtotal": 6200.00, "gst": 310.00, "qst": 0, "total": 6510.00,
+    "status": "confirmed", "notes": "Production scheduled for next week",
+    "createdAt": "2026-06-11T14:00:00Z"
+  },
+  {
+    "id": "so_004", "number": "SO-2026-0004",
+    "customerId": "cus_015", "customerName": "Gulf Coast Supplies", "customerContact": "Ray Martinez",
+    "billTo": "900 Harbor Blvd, New Orleans, LA 70112",
+    "shippingAddress": "900 Harbor Blvd, New Orleans, LA 70112",
+    "issueDate": "2026-06-15", "deliveryDate": "2026-07-01",
+    "lineItems": [
+      { "id": "li_108", "productId": "prd_005", "productName": "Fuel Filter FF-5329", "sku": "FL-500", "quantity": 100, "price": 24.30, "taxRate": 0.05, "taxLabel": "GST", "total": 2430.00 },
+      { "id": "li_109", "productId": "prd_010", "productName": "Welding Cable 2/0 50ft", "sku": "WC-1000", "quantity": 20, "price": 156.00, "taxRate": 0.05, "taxLabel": "GST", "total": 3120.00 }
+    ],
+    "subtotal": 5550.00, "gst": 277.50, "qst": 0, "total": 5827.50,
+    "status": "pending", "notes": "Awaiting credit approval",
+    "createdAt": "2026-06-15T11:00:00Z"
+  },
+  {
+    "id": "so_005", "number": "SO-2026-0005",
+    "customerId": "cus_020", "customerName": "Summit Distribution", "customerContact": "Helen Park",
+    "billTo": "1500 Mountain Rd, Denver, CO 80201",
+    "shippingAddress": "1500 Mountain Rd, Denver, CO 80201",
+    "issueDate": "2026-06-12", "deliveryDate": "2026-06-26",
+    "lineItems": [
+      { "id": "li_110", "productId": "prd_003", "productName": "Hydraulic Tube 3/4\"", "sku": "HT-300", "quantity": 300, "price": 12.50, "taxRate": 0.05, "taxLabel": "GST", "total": 3750.00 }
+    ],
+    "subtotal": 3750.00, "gst": 187.50, "qst": 0, "total": 3937.50,
+    "status": "cancelled", "notes": "Cancelled by customer - ordered wrong spec",
+    "createdAt": "2026-06-12T08:00:00Z"
+  }
+]

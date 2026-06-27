@@ -21,6 +21,12 @@ import Payments from "./pages/Payments"
 import CreatePayment from "./pages/CreatePayment"
 import PaymentDetail from "./pages/PaymentDetail"
 import Reports from "./pages/Reports"
+import Quotations from "./pages/Quotations"
+import QuotationDetail from "./pages/QuotationDetail"
+import CreateQuotation from "./pages/CreateQuotation"
+import SalesOrders from "./pages/SalesOrders"
+import SalesOrderDetail from "./pages/SalesOrderDetail"
+import CreateSalesOrder from "./pages/CreateSalesOrder"
 import HrmsDashboard from "./modules/hrms/pages/HrmsDashboard"
 import Employees from "./modules/hrms/employees/pages/Employees"
 import EmployeeDetail from "./modules/hrms/employees/pages/EmployeeDetail"
@@ -70,6 +76,12 @@ function App() {
         <Route path="payments" element={<Payments />} />
         <Route path="payments/create" element={<CreatePayment />} />
         <Route path="payments/:id" element={<PaymentDetail />} />
+        <Route path="quotations" element={<Quotations />} />
+        <Route path="quotations/new" element={<CreateQuotation />} />
+        <Route path="quotations/:id" element={<QuotationDetail />} />
+        <Route path="sales-orders" element={<SalesOrders />} />
+        <Route path="sales-orders/new" element={<CreateSalesOrder />} />
+        <Route path="sales-orders/:id" element={<SalesOrderDetail />} />
         <Route path="reports" element={<Reports />} />
         <Route path="hrms" element={<HrmsDashboard />} />
         <Route path="hrms/employees" element={<Employees />} />

@@ -1,0 +1,66 @@
+[
+  {
+    "id": "qtn_001", "number": "QTN-2026-0001",
+    "customerId": "cus_001", "customerName": "Acme Corp", "customerContact": "John Smith",
+    "billTo": "123 Industrial Blvd, Suite 100, Springfield, IL 62701",
+    "issueDate": "2026-06-01", "validUntil": "2026-07-01",
+    "lineItems": [
+      { "id": "li_001", "productId": "prd_001", "productName": "Widget Pro", "sku": "WP-100", "quantity": 10, "price": 49.99, "taxRate": 0.05, "taxLabel": "GST", "total": 499.90 },
+      { "id": "li_002", "productId": "prd_004", "productName": "Silicone Sealant 300ml", "sku": "SE-400", "quantity": 24, "price": 8.75, "taxRate": 0.05, "taxLabel": "GST", "total": 210.00 }
+    ],
+    "subtotal": 709.90, "gst": 35.50, "qst": 0, "total": 745.40,
+    "status": "sent", "notes": "Competitive pricing for Q3 contract",
+    "createdAt": "2026-06-01T09:00:00Z"
+  },
+  {
+    "id": "qtn_002", "number": "QTN-2026-0002",
+    "customerId": "cus_003", "customerName": "BuildRight Construction", "customerContact": "Sarah Connor",
+    "billTo": "456 Contractor Way, Austin, TX 73301",
+    "issueDate": "2026-06-05", "validUntil": "2026-07-05",
+    "lineItems": [
+      { "id": "li_003", "productId": "prd_007", "productName": "Conveyor Belt 12\" x 20ft", "sku": "CB-700", "quantity": 3, "price": 345.00, "taxRate": 0.09975, "taxLabel": "QST", "total": 1035.00 },
+      { "id": "li_004", "productId": "prd_009", "productName": "Pneumatic Nailer P90", "sku": "PN-900", "quantity": 5, "price": 189.00, "taxRate": 0.09975, "taxLabel": "QST", "total": 945.00 }
+    ],
+    "subtotal": 1980.00, "gst": 0, "qst": 197.51, "total": 2177.51,
+    "status": "draft", "notes": "",
+    "createdAt": "2026-06-05T14:00:00Z"
+  },
+  {
+    "id": "qtn_003", "number": "QTN-2026-0003",
+    "customerId": "cus_005", "customerName": "Precision Parts Ltd", "customerContact": "Mike Chen",
+    "billTo": "789 Manufacturing Pkwy, Detroit, MI 48201",
+    "issueDate": "2026-06-10", "validUntil": "2026-06-30",
+    "lineItems": [
+      { "id": "li_005", "productId": "prd_002", "productName": "Bolt Grade 8 - M12x50", "sku": "BG-200", "quantity": 2000, "price": 0.89, "taxRate": 0.05, "taxLabel": "GST", "total": 1780.00 },
+      { "id": "li_006", "productId": "prd_006", "productName": "Ball Bearing 6205-2RS", "sku": "BR-600", "quantity": 500, "price": 6.45, "taxRate": 0.05, "taxLabel": "GST", "total": 3225.00 },
+      { "id": "li_007", "productId": "prd_013", "productName": "V-Belt A-52", "sku": "VL-1300", "quantity": 100, "price": 11.95, "taxRate": 0.05, "taxLabel": "GST", "total": 1195.00 }
+    ],
+    "subtotal": 6200.00, "gst": 310.00, "qst": 0, "total": 6510.00,
+    "status": "accepted", "notes": "Accepted - converting to sales order",
+    "createdAt": "2026-06-10T11:30:00Z"
+  },
+  {
+    "id": "qtn_004", "number": "QTN-2026-0004",
+    "customerId": "cus_008", "customerName": "SteelFab Industries", "customerContact": "Lisa Park",
+    "billTo": "321 Metalworks Ave, Pittsburgh, PA 15201",
+    "issueDate": "2026-05-15", "validUntil": "2026-06-15",
+    "lineItems": [
+      { "id": "li_008", "productId": "prd_012", "productName": "Stainless Steel Sheet 4x8 16ga", "sku": "SS-1200", "quantity": 15, "price": 215.00, "taxRate": 0.05, "taxLabel": "GST", "total": 3225.00 }
+    ],
+    "subtotal": 3225.00, "gst": 161.25, "qst": 0, "total": 3386.25,
+    "status": "expired", "notes": "Customer did not respond in time",
+    "createdAt": "2026-05-15T08:00:00Z"
+  },
+  {
+    "id": "qtn_005", "number": "QTN-2026-0005",
+    "customerId": "cus_012", "customerName": "Apex Logistics", "customerContact": "Tom Garcia",
+    "billTo": "555 Transport Dr, Memphis, TN 38101",
+    "issueDate": "2026-06-18", "validUntil": "2026-07-18",
+    "lineItems": [
+      { "id": "li_009", "productId": "prd_011", "productName": "Lubricant Pump 5L", "sku": "LP-1100", "quantity": 50, "price": 42.00, "taxRate": 0.09975, "taxLabel": "QST", "total": 2100.00 }
+    ],
+    "subtotal": 2100.00, "gst": 0, "qst": 209.48, "total": 2309.48,
+    "status": "rejected", "notes": "Customer chose a different supplier",
+    "createdAt": "2026-06-18T16:00:00Z"
+  }
+]

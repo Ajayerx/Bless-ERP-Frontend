@@ -3,23 +3,12 @@
 import { useEffect, useState, useCallback } from "react"
 import { useNavigate } from "react-router-dom"
 import { motion } from "framer-motion"
-import {
-  ArrowLeft,
-  Plus,
-  Trash2,
-  Save,
-  Search,
-  ChevronDown,
-} from "lucide-react"
+import { ArrowLeft, Plus, Trash2, Save, Search, ChevronDown } from "lucide-react"
 import Topbar from "@/components/layout/Topbar"
 import { Button, Card, CardContent, CardHeader, CardTitle } from "@/components/ui"
-import {
-  invoiceService,
-  customerService,
-  type Customer,
-} from "@/services"
+import { salesOrderService, customerService, type Customer } from "@/services"
 import type { Product } from "@/services/invoices.service"
-import { formatCurrency, cn } from "@/lib/utils"
+import { formatCurrency } from "@/lib/utils"
 
 interface LineItemForm {
   id: string
@@ -54,16 +43,19 @@ function createEmptyLine(): LineItemForm {
   }
 }
 
-export default function CreateInvoice() {
+export default function CreateSalesOrder() {
   const navigate = useNavigate()
 
   const [customerId, setCustomerId] = useState("")
   const [customerName, setCustomerName] = useState("")
+  const [customerContact, setCustomerContact] = useState("")
   const [billTo, setBillTo] = useState("")
+  const [shippingAddress, setShippingAddress] = useState("")
   const [issueDate, setIssueDate] = useState(new Date().toISOString().slice(0, 10))
-  const [dueDate, setDueDate] = useState(() => {
-    const d = new Date(); d.setDate(d.getDate() + 30); return d.toISOString().slice(0, 10)
+  const [deliveryDate, setDeliveryDate] = useState(() => {
+    const d = new Date(); d.setDate(d.getDate() + 14); return d.toISOString().slice(0, 10)
   })
+  const [notes, setNotes] = useState("")
   const [lineItems, setLineItems] = useState<LineItemForm[]>([createEmptyLine()])
   const [saving, setSaving] = useState(false)
   const [customers, setCustomers] = useState<Customer[]>([])
@@ -74,7 +66,7 @@ export default function CreateInvoice() {
 
   useEffect(() => {
     customerService.list({ pageSize: 100 }).then((res) => setCustomers(res.items))
-    invoiceService.getProducts().then(setProducts)
+    fetch("/api/products").then(r => r.json()).then((body) => setProducts(body.data))
   }, [])
 
   const filteredCustomers = customers.filter(
@@ -83,12 +75,12 @@ export default function CreateInvoice() {
   )
 
   const selectCustomer = (c: Customer) => {
-    setCustomerId(c.id); setCustomerName(c.name); setBillTo(c.billingAddress)
+    setCustomerId(c.id); setCustomerName(c.name); setCustomerContact(c.contactName)
+    setBillTo(c.billingAddress); setShippingAddress(c.shippingAddress)
     setCustomerSearch(c.name); setCustomerDropdownOpen(false)
   }
 
   const addLine = () => setLineItems((prev) => [...prev, createEmptyLine()])
-
   const removeLine = (id: string) =>
     setLineItems((prev) => (prev.length > 1 ? prev.filter((l) => l.id !== id) : prev))
 
@@ -123,12 +115,12 @@ export default function CreateInvoice() {
     if (!customerId) return
     setSaving(true)
     try {
-      await invoiceService.create({
-        customerId, customerName, billTo, issueDate, dueDate,
+      await salesOrderService.create({
+        customerId, customerName, customerContact, billTo, shippingAddress, issueDate, deliveryDate, notes,
         lineItems: lineItems.map(({ id: _id, ...rest }) => rest),
         subtotal, gst: gstAmount, qst: qstAmount, total: grandTotal,
       })
-      navigate("/invoices")
+      navigate("/sales-orders")
     } finally {
       setSaving(false)
     }
@@ -136,7 +128,6 @@ export default function CreateInvoice() {
 
   const inputClass =
     "w-full px-3 py-2.5 bg-white border border-border rounded-[12px] text-sm text-body placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 transition-all duration-200"
-
   const labelClass = "block text-xs font-semibold text-muted mb-1.5 uppercase tracking-wider"
 
   return (
@@ -148,28 +139,26 @@ export default function CreateInvoice() {
         animate={{ opacity: 1 }}
         transition={{ duration: 0.3 }}
       >
-        {/* Header */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <button onClick={() => navigate("/invoices")}
+            <button onClick={() => navigate("/sales-orders")}
               className="p-2 rounded-[10px] text-muted hover:text-body hover:bg-gray-100 transition-colors">
               <ArrowLeft size={20} />
             </button>
             <div>
-              <h1 className="text-2xl font-bold text-heading">New Invoice</h1>
-              <p className="text-sm text-muted mt-0.5">Create a new sales invoice.</p>
+              <h1 className="text-2xl font-bold text-heading">New Sales Order</h1>
+              <p className="text-sm text-muted mt-0.5">Create a new sales order for a customer.</p>
             </div>
           </div>
           <div className="flex items-center gap-3">
-            <Button variant="secondary" onClick={() => navigate("/invoices")}>Cancel</Button>
+            <Button variant="secondary" onClick={() => navigate("/sales-orders")}>Cancel</Button>
             <Button onClick={handleSave} disabled={saving || !customerId} loading={saving}>
               <Save size={16} />
-              {saving ? "Saving..." : "Save Invoice"}
+              {saving ? "Saving..." : "Save Sales Order"}
             </Button>
           </div>
         </div>
 
-        {/* Customer + Dates row */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
           <Card>
             <CardHeader>
@@ -177,8 +166,7 @@ export default function CreateInvoice() {
             </CardHeader>
             <CardContent className="space-y-3">
               <div className="relative">
-                <input
-                  type="text" value={customerSearch}
+                <input type="text" value={customerSearch}
                   onChange={(e) => { setCustomerSearch(e.target.value); setCustomerDropdownOpen(true) }}
                   onFocus={() => setCustomerDropdownOpen(true)}
                   placeholder="Search customer..."
@@ -193,9 +181,7 @@ export default function CreateInvoice() {
                     ) : (
                       filteredCustomers.map((c) => (
                         <button key={c.id} type="button" onClick={() => selectCustomer(c)}
-                          className={cn("w-full text-left px-4 py-2.5 text-sm transition-colors",
-                            c.id === customerId ? "bg-primary-50 text-primary-700 font-semibold" : "text-body hover:bg-gray-50"
-                          )}>
+                          className="w-full text-left px-4 py-2.5 text-sm transition-colors text-body hover:bg-gray-50">
                           <span className="font-medium">{c.name}</span>
                           <span className="text-xs text-muted ml-2">{c.contactName}</span>
                         </button>
@@ -205,10 +191,16 @@ export default function CreateInvoice() {
                 )}
               </div>
               {customerName && (
-                <div>
-                  <label className={labelClass}>Bill To</label>
-                  <textarea value={billTo} onChange={(e) => setBillTo(e.target.value)} rows={2} className={inputClass} />
-                </div>
+                <>
+                  <div>
+                    <label className={labelClass}>Bill To</label>
+                    <textarea value={billTo} onChange={(e) => setBillTo(e.target.value)} rows={2} className={inputClass} />
+                  </div>
+                  <div>
+                    <label className={labelClass}>Shipping Address</label>
+                    <textarea value={shippingAddress} onChange={(e) => setShippingAddress(e.target.value)} rows={2} className={inputClass} />
+                  </div>
+                </>
               )}
             </CardContent>
           </Card>
@@ -220,20 +212,22 @@ export default function CreateInvoice() {
             <CardContent className="space-y-3">
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className={labelClass}>Invoice Date</label>
+                  <label className={labelClass}>Order Date</label>
                   <input type="date" value={issueDate} onChange={(e) => setIssueDate(e.target.value)} className={inputClass} />
                 </div>
                 <div>
-                  <label className={labelClass}>Due Date</label>
-                  <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} className={inputClass} />
+                  <label className={labelClass}>Delivery Date</label>
+                  <input type="date" value={deliveryDate} onChange={(e) => setDeliveryDate(e.target.value)} className={inputClass} />
                 </div>
               </div>
-              <p className="text-xs text-muted">Terms: Net 30</p>
+              <div>
+                <label className={labelClass}>Notes</label>
+                <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} className={inputClass} placeholder="Optional notes..." />
+              </div>
             </CardContent>
           </Card>
         </div>
 
-        {/* Line Items */}
         <Card className="p-0 overflow-hidden">
           <CardHeader>
             <CardTitle>Line Items</CardTitle>
@@ -263,8 +257,7 @@ export default function CreateInvoice() {
                           }}
                           onFocus={() => setProductDropdowns(prev => ({ ...prev, [line.id]: { open: true, search: line.productName } }))}
                           placeholder="Search product..."
-                          className="w-full px-3 py-2 text-sm border border-border rounded-[10px] focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 transition-all"
-                        />
+                          className="w-full px-3 py-2 text-sm border border-border rounded-[10px] focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 transition-all" />
                         {productDropdowns[line.id]?.open && (
                           <div className="absolute z-10 mt-1 w-full bg-surface border border-border rounded-[12px] shadow-xl max-h-40 overflow-y-auto">
                             {filteredProducts(productDropdowns[line.id]?.search ?? "").map((p) => (
@@ -321,7 +314,6 @@ export default function CreateInvoice() {
           </div>
         </Card>
 
-        {/* Summary */}
         <div className="flex justify-end">
           <Card className="w-72">
             <CardContent className="space-y-2">
