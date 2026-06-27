@@ -8,6 +8,12 @@ import CustomerDetail from "./pages/CustomerDetail"
 import Products from "./pages/Products"
 import ProductDetail from "./pages/ProductDetail"
 import Inventory from "./pages/Inventory"
+import Warehouses from "./modules/inventory/pages/Warehouses"
+import WarehouseDetail from "./modules/inventory/pages/WarehouseDetail"
+import StockTransfers from "./modules/inventory/pages/StockTransfers"
+import StockTransferDetail from "./modules/inventory/pages/StockTransferDetail"
+import StockCounts from "./modules/inventory/pages/StockCounts"
+import StockCountDetail from "./modules/inventory/pages/StockCountDetail"
 import Invoices from "./pages/Invoices"
 import InvoiceDetail from "./pages/InvoiceDetail"
 import CreateInvoice from "./pages/CreateInvoice"
@@ -52,6 +58,12 @@ function App() {
         <Route path="products" element={<Products />} />
         <Route path="products/:id" element={<ProductDetail />} />
         <Route path="inventory" element={<Inventory />} />
+        <Route path="inventory/warehouses" element={<Warehouses />} />
+        <Route path="inventory/warehouses/:id" element={<WarehouseDetail />} />
+        <Route path="inventory/transfers" element={<StockTransfers />} />
+        <Route path="inventory/transfers/:id" element={<StockTransferDetail />} />
+        <Route path="inventory/counts" element={<StockCounts />} />
+        <Route path="inventory/counts/:id" element={<StockCountDetail />} />
         <Route path="invoices" element={<Invoices />} />
         <Route path="invoices/new" element={<CreateInvoice />} />
         <Route path="invoices/:id" element={<InvoiceDetail />} />

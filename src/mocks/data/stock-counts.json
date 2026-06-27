@@ -1,0 +1,48 @@
+[
+  {
+    "id": "sc_001",
+    "reference": "SC-2026-0001",
+    "warehouse": "Main Warehouse",
+    "warehouseId": "wh_001",
+    "items": [
+      { "productId": "prd_001", "productName": "Widget Pro", "sku": "WP-100", "expectedQuantity": 3, "actualQuantity": 3, "difference": 0, "unit": "ea" },
+      { "productId": "prd_002", "productName": "Bolt Grade 8 - M12x50", "sku": "BG-200", "expectedQuantity": 4500, "actualQuantity": 4485, "difference": -15, "unit": "ea" },
+      { "productId": "prd_004", "productName": "Silicone Sealant 300ml", "sku": "SE-400", "expectedQuantity": 150, "actualQuantity": 148, "difference": -2, "unit": "ea" }
+    ],
+    "status": "completed",
+    "notes": "Monthly cycle count",
+    "createdAt": "2026-06-01T08:00:00Z",
+    "completedAt": "2026-06-01T12:00:00Z"
+  },
+  {
+    "id": "sc_002",
+    "reference": "SC-2026-0002",
+    "warehouse": "East Storage",
+    "warehouseId": "wh_002",
+    "items": [
+      { "productId": "prd_003", "productName": "Hydraulic Tube 3/4\"", "sku": "HT-300", "expectedQuantity": 280, "actualQuantity": 278, "difference": -2, "unit": "ft" },
+      { "productId": "prd_005", "productName": "Fuel Filter FF-5329", "sku": "FL-500", "expectedQuantity": 62, "actualQuantity": 62, "difference": 0, "unit": "ea" },
+      { "productId": "prd_010", "productName": "Welding Cable 2/0 50ft", "sku": "WC-1000", "expectedQuantity": 8, "actualQuantity": 8, "difference": 0, "unit": "ea" },
+      { "productId": "prd_015", "productName": "Hydraulic Fluid 20L", "sku": "HD-1500", "expectedQuantity": 55, "actualQuantity": 52, "difference": -3, "unit": "ea" }
+    ],
+    "status": "completed",
+    "notes": "Quarterly audit",
+    "createdAt": "2026-06-15T09:00:00Z",
+    "completedAt": "2026-06-15T15:00:00Z"
+  },
+  {
+    "id": "sc_003",
+    "reference": "SC-2026-0003",
+    "warehouse": "West Storage",
+    "warehouseId": "wh_003",
+    "items": [
+      { "productId": "prd_007", "productName": "Conveyor Belt 12\" x 20ft", "sku": "CB-700", "expectedQuantity": 15, "actualQuantity": 0, "difference": 0, "unit": "ea" },
+      { "productId": "prd_009", "productName": "Pneumatic Nailer P90", "sku": "PN-900", "expectedQuantity": 22, "actualQuantity": 0, "difference": 0, "unit": "ea" },
+      { "productId": "prd_012", "productName": "Stainless Steel Sheet 4x8 16ga", "sku": "SS-1200", "expectedQuantity": 25, "actualQuantity": 0, "difference": 0, "unit": "ea" }
+    ],
+    "status": "in_progress",
+    "notes": "Annual physical inventory",
+    "createdAt": "2026-06-22T08:00:00Z",
+    "completedAt": null
+  }
+]

@@ -1,0 +1,64 @@
+[
+  {
+    "id": "st_001",
+    "reference": "ST-2026-0001",
+    "fromWarehouse": "Main Warehouse",
+    "fromWarehouseId": "wh_001",
+    "toWarehouse": "East Storage",
+    "toWarehouseId": "wh_002",
+    "items": [
+      { "productId": "prd_002", "productName": "Bolt Grade 8 - M12x50", "sku": "BG-200", "quantity": 500, "unit": "ea" },
+      { "productId": "prd_006", "productName": "Ball Bearing 6205-2RS", "sku": "BR-600", "quantity": 200, "unit": "ea" }
+    ],
+    "status": "completed",
+    "notes": "Routine restock of East Storage",
+    "createdAt": "2026-05-10T09:00:00Z",
+    "completedAt": "2026-05-10T14:30:00Z"
+  },
+  {
+    "id": "st_002",
+    "reference": "ST-2026-0002",
+    "fromWarehouse": "Main Warehouse",
+    "fromWarehouseId": "wh_001",
+    "toWarehouse": "West Storage",
+    "toWarehouseId": "wh_003",
+    "items": [
+      { "productId": "prd_007", "productName": "Conveyor Belt 12\" x 20ft", "sku": "CB-700", "quantity": 5, "unit": "ea" },
+      { "productId": "prd_012", "productName": "Stainless Steel Sheet 4x8 16ga", "sku": "SS-1200", "quantity": 10, "unit": "ea" }
+    ],
+    "status": "in_transit",
+    "notes": "Transfer to support West Storage project",
+    "createdAt": "2026-06-15T10:00:00Z",
+    "completedAt": null
+  },
+  {
+    "id": "st_003",
+    "reference": "ST-2026-0003",
+    "fromWarehouse": "East Storage",
+    "fromWarehouseId": "wh_002",
+    "toWarehouse": "Cold Storage",
+    "toWarehouseId": "wh_005",
+    "items": [
+      { "productId": "prd_015", "productName": "Hydraulic Fluid 20L", "sku": "HD-1500", "quantity": 20, "unit": "ea" }
+    ],
+    "status": "draft",
+    "notes": "Move temperature-sensitive fluids",
+    "createdAt": "2026-06-20T08:00:00Z",
+    "completedAt": null
+  },
+  {
+    "id": "st_004",
+    "reference": "ST-2026-0004",
+    "fromWarehouse": "West Storage",
+    "fromWarehouseId": "wh_003",
+    "toWarehouse": "Main Warehouse",
+    "toWarehouseId": "wh_001",
+    "items": [
+      { "productId": "prd_009", "productName": "Pneumatic Nailer P90", "sku": "PN-900", "quantity": 5, "unit": "ea" }
+    ],
+    "status": "cancelled",
+    "notes": "Cancelled - inventory sufficient at Main",
+    "createdAt": "2026-06-18T11:00:00Z",
+    "completedAt": null
+  }
+]

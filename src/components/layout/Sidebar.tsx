@@ -71,9 +71,9 @@ const navSections: NavSection[] = [
     items: [
       { label: "Overview", to: "/inventory", icon: LayoutDashboard },
       { label: "Products", to: "/products", icon: Package },
-      { label: "Warehouses", icon: Warehouse },
-      { label: "Stock Transfer", icon: ArrowLeftRight },
-      { label: "Stock Count", icon: ClipboardCheck },
+      { label: "Warehouses", to: "/inventory/warehouses", icon: Warehouse },
+      { label: "Stock Transfer", to: "/inventory/transfers", icon: ArrowLeftRight },
+      { label: "Stock Count", to: "/inventory/counts", icon: ClipboardCheck },
     ],
   },
   {
