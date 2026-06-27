@@ -1,0 +1,84 @@
+[
+  {
+    "id": "po_001", "number": "PO-2026-0001",
+    "vendorId": "ven_001", "vendorName": "Global Supplies Inc", "vendorContact": "Alice Wang",
+    "billTo": "123 Industrial Blvd, Suite 100, Springfield, IL 62701",
+    "shippingAddress": "123 Industrial Blvd, Receiving Dock A, Springfield, IL 62701",
+    "issueDate": "2026-06-01", "deliveryDate": "2026-06-15",
+    "lineItems": [
+      { "id": "pli_101", "productId": "prd_001", "productName": "Widget Pro", "sku": "WP-100", "quantity": 50, "price": 24.50, "taxRate": 0.05, "taxLabel": "GST", "total": 1225.00 },
+      { "id": "pli_102", "productId": "prd_004", "productName": "Silicone Sealant 300ml", "sku": "SE-400", "quantity": 100, "price": 4.20, "taxRate": 0.05, "taxLabel": "GST", "total": 420.00 }
+    ],
+    "subtotal": 1645.00, "gst": 82.25, "qst": 0, "total": 1727.25,
+    "status": "received", "notes": "All items received in good condition",
+    "createdAt": "2026-06-01T10:00:00Z"
+  },
+  {
+    "id": "po_002", "number": "PO-2026-0002",
+    "vendorId": "ven_002", "vendorName": "Midwest Hardware Co", "vendorContact": "Bob Miller",
+    "billTo": "456 Contractor Way, Austin, TX 73301",
+    "shippingAddress": "456 Contractor Way, Austin, TX 73301",
+    "issueDate": "2026-06-05", "deliveryDate": "2026-06-19",
+    "lineItems": [
+      { "id": "pli_103", "productId": "prd_002", "productName": "Bolt Grade 8 - M12x50", "sku": "BG-200", "quantity": 5000, "price": 0.42, "taxRate": 0.05, "taxLabel": "GST", "total": 2100.00 },
+      { "id": "pli_104", "productId": "prd_006", "productName": "Ball Bearing 6205-2RS", "sku": "BR-600", "quantity": 1000, "price": 3.10, "taxRate": 0.09975, "taxLabel": "QST", "total": 3100.00 }
+    ],
+    "subtotal": 5200.00, "gst": 105.00, "qst": 309.23, "total": 5614.23,
+    "status": "partially_received", "notes": "Bolts received, bearings backordered",
+    "createdAt": "2026-06-05T09:00:00Z"
+  },
+  {
+    "id": "po_003", "number": "PO-2026-0003",
+    "vendorId": "ven_003", "vendorName": "Precision Parts Ltd", "vendorContact": "Mike Chen",
+    "billTo": "789 Manufacturing Pkwy, Detroit, MI 48201",
+    "shippingAddress": "789 Manufacturing Pkwy, Detroit, MI 48201",
+    "issueDate": "2026-06-10", "deliveryDate": "2026-06-24",
+    "lineItems": [
+      { "id": "pli_105", "productId": "prd_007", "productName": "Conveyor Belt 12\" x 20ft", "sku": "CB-700", "quantity": 2, "price": 180.00, "taxRate": 0.05, "taxLabel": "GST", "total": 360.00 }
+    ],
+    "subtotal": 360.00, "gst": 18.00, "qst": 0, "total": 378.00,
+    "status": "ordered", "notes": "Awaiting shipment confirmation",
+    "createdAt": "2026-06-10T14:00:00Z"
+  },
+  {
+    "id": "po_004", "number": "PO-2026-0004",
+    "vendorId": "ven_004", "vendorName": "Coastal Industrial Supply", "vendorContact": "Diana Ross",
+    "billTo": "900 Harbor Blvd, New Orleans, LA 70112",
+    "shippingAddress": "900 Harbor Blvd, New Orleans, LA 70112",
+    "issueDate": "2026-06-12", "deliveryDate": "2026-06-26",
+    "lineItems": [
+      { "id": "pli_106", "productId": "prd_005", "productName": "Fuel Filter FF-5329", "sku": "FL-500", "quantity": 200, "price": 12.15, "taxRate": 0.05, "taxLabel": "GST", "total": 2430.00 },
+      { "id": "pli_107", "productId": "prd_010", "productName": "Welding Cable 2/0 50ft", "sku": "WC-1000", "quantity": 30, "price": 78.00, "taxRate": 0.05, "taxLabel": "GST", "total": 2340.00 }
+    ],
+    "subtotal": 4770.00, "gst": 238.50, "qst": 0, "total": 5008.50,
+    "status": "approved", "notes": "Purchase approved by management",
+    "createdAt": "2026-06-12T11:00:00Z"
+  },
+  {
+    "id": "po_005", "number": "PO-2026-0005",
+    "vendorId": "ven_005", "vendorName": "Pacific Trade Group", "vendorContact": "Ethan Park",
+    "billTo": "1500 Mountain Rd, Denver, CO 80201",
+    "shippingAddress": "1500 Mountain Rd, Denver, CO 80201",
+    "issueDate": "2026-06-14", "deliveryDate": "2026-07-05",
+    "lineItems": [
+      { "id": "pli_108", "productId": "prd_003", "productName": "Hydraulic Tube 3/4\"", "sku": "HT-300", "quantity": 500, "price": 6.25, "taxRate": 0.05, "taxLabel": "GST", "total": 3125.00 },
+      { "id": "pli_109", "productId": "prd_009", "productName": "Pneumatic Nailer P90", "sku": "PN-900", "quantity": 10, "price": 94.50, "taxRate": 0.05, "taxLabel": "GST", "total": 945.00 }
+    ],
+    "subtotal": 4070.00, "gst": 203.50, "qst": 0, "total": 4273.50,
+    "status": "draft", "notes": "Need supervisor approval before ordering",
+    "createdAt": "2026-06-14T08:00:00Z"
+  },
+  {
+    "id": "po_006", "number": "PO-2026-0006",
+    "vendorId": "ven_001", "vendorName": "Global Supplies Inc", "vendorContact": "Alice Wang",
+    "billTo": "123 Industrial Blvd, Suite 100, Springfield, IL 62701",
+    "shippingAddress": "123 Industrial Blvd, Receiving Dock A, Springfield, IL 62701",
+    "issueDate": "2026-06-16", "deliveryDate": "2026-06-30",
+    "lineItems": [
+      { "id": "pli_110", "productId": "prd_013", "productName": "V-Belt A-52", "sku": "VL-1300", "quantity": 200, "price": 5.75, "taxRate": 0.05, "taxLabel": "GST", "total": 1150.00 }
+    ],
+    "subtotal": 1150.00, "gst": 57.50, "qst": 0, "total": 1207.50,
+    "status": "cancelled", "notes": "Cancelled - found better pricing elsewhere",
+    "createdAt": "2026-06-16T10:00:00Z"
+  }
+]

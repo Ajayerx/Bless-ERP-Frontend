@@ -34,6 +34,9 @@ import LeadDetail from "./modules/crm/pages/LeadDetail"
 import Opportunities from "./modules/crm/pages/Opportunities"
 import OpportunityDetail from "./modules/crm/pages/OpportunityDetail"
 import FollowUps from "./modules/crm/pages/FollowUps"
+import PurchaseOrders from "./modules/purchases/pages/PurchaseOrders"
+import PurchaseOrderDetail from "./modules/purchases/pages/PurchaseOrderDetail"
+import CreatePurchaseOrder from "./modules/purchases/pages/CreatePurchaseOrder"
 import HrmsDashboard from "./modules/hrms/pages/HrmsDashboard"
 import Employees from "./modules/hrms/employees/pages/Employees"
 import EmployeeDetail from "./modules/hrms/employees/pages/EmployeeDetail"
@@ -96,6 +99,9 @@ function App() {
         <Route path="crm/opportunities" element={<Opportunities />} />
         <Route path="crm/opportunities/:id" element={<OpportunityDetail />} />
         <Route path="crm/follow-ups" element={<FollowUps />} />
+        <Route path="purchases/orders" element={<PurchaseOrders />} />
+        <Route path="purchases/orders/new" element={<CreatePurchaseOrder />} />
+        <Route path="purchases/orders/:id" element={<PurchaseOrderDetail />} />
         <Route path="reports" element={<Reports />} />
         <Route path="hrms" element={<HrmsDashboard />} />
         <Route path="hrms/employees" element={<Employees />} />

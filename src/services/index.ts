@@ -52,4 +52,10 @@ export type {
   FollowUp,
   FollowUpListResponse,
 } from "@/modules/crm/types"
+export { purchaseOrderService } from "@/modules/purchases/services"
+export type {
+  PurchaseOrder,
+  PurchaseOrderListResponse,
+  PurchaseOrderFormData,
+} from "@/modules/purchases/types"
 export { apiClient, ApiError } from "./api-client"
