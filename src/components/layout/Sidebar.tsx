@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import { NavLink, useLocation } from "react-router-dom"
-import { motion, AnimatePresence } from "framer-motion"
+import { motion } from "framer-motion"
 import {
   LayoutDashboard,
   Users,
@@ -31,7 +31,6 @@ import {
   BarChart3,
   Settings,
   LogOut,
-  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Sparkles,
@@ -122,26 +121,10 @@ const navSections: NavSection[] = [
   },
 ]
 
-const sectionAnim = {
-  hidden: { height: 0, opacity: 0 },
-  visible: { height: "auto", opacity: 1 },
-}
-
 export default function Sidebar() {
   const { logout } = useAuth()
   const location = useLocation()
   const [collapsed, setCollapsed] = useState(false)
-  const [expandedSections, setExpandedSections] = useState<string[]>(
-    navSections.map((s) => s.label)
-  )
-
-  const toggleSection = (label: string) => {
-    setExpandedSections((prev) =>
-      prev.includes(label)
-        ? prev.filter((l) => l !== label)
-        : [...prev, label]
-    )
-  }
 
   const isActive = (to?: string) => {
     if (!to) return false
@@ -157,14 +140,14 @@ export default function Sidebar() {
       )}
     >
       {/* Logo */}
-      <div className="h-16 flex items-center px-4 border-b border-border shrink-0 bg-gradient-to-r from-primary-600/5 to-transparent">
+      <div className="h-16 flex items-center px-4 border-b border-border shrink-0">
         {collapsed ? (
-          <div className="w-9 h-9 rounded-[10px] bg-gradient-to-br from-primary-500 to-primary-700 flex items-center justify-center text-white font-bold text-sm mx-auto shadow-sm">
+          <div className="w-9 h-9 rounded-[10px] bg-primary-600 flex items-center justify-center text-white font-bold text-sm mx-auto shadow-sm">
             B
           </div>
         ) : (
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-[10px] bg-gradient-to-br from-primary-500 to-primary-700 flex items-center justify-center text-white font-bold text-sm shadow-sm">
+            <div className="w-9 h-9 rounded-[10px] bg-primary-600 flex items-center justify-center text-white font-bold text-sm shadow-sm">
               B
             </div>
             <div className="flex items-center gap-2">
@@ -178,128 +161,69 @@ export default function Sidebar() {
       </div>
 
       {/* Navigation */}
-      <div className="flex-1 overflow-y-auto overflow-x-hidden px-3 py-3 space-y-0.5 [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-gray-200 [&::-webkit-scrollbar-track]:transparent">
-        {navSections.map((section) => {
-          const isExpanded = expandedSections.includes(section.label)
-          const hasActiveChild = section.items.some((item) => isActive(item.to))
+      <div className="flex-1 overflow-y-auto overflow-x-hidden px-3 py-4 space-y-4 [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-gray-200 [&::-webkit-scrollbar-track]:transparent">
+        {navSections.map((section, sectionIdx) => (
+          <motion.div
+            key={section.label}
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: sectionIdx * 0.03, duration: 0.25 }}
+          >
+            {!collapsed && (
+              <div className="px-2 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted">
+                {section.label}
+              </div>
+            )}
+            <div className="space-y-0.5">
+              {section.items.map((item) => {
+                const active = isActive(item.to)
+                const content = (
+                  <>
+                    <item.icon
+                      size={18}
+                      className={cn(
+                        "shrink-0 transition-colors",
+                        active ? "text-primary-600" : "text-muted"
+                      )}
+                    />
+                    {!collapsed && (
+                      <span className="transition-colors">{item.label}</span>
+                    )}
+                  </>
+                )
 
-          return (
-            <div key={section.label}>
-              {!collapsed && (
-                <button
-                  onClick={() => toggleSection(section.label)}
-                  className={cn(
-                    "flex items-center justify-between w-full px-2 py-1.5 text-xs font-semibold uppercase tracking-wider transition-colors rounded-lg group",
-                    hasActiveChild
-                      ? "text-primary-600"
-                      : "text-muted hover:text-body"
-                  )}
-                >
-                  <span className="flex items-center gap-2">
-                    <span className={cn(
-                      "w-1 h-3 rounded-full transition-colors",
-                      hasActiveChild ? "bg-primary-500" : "bg-transparent group-hover:bg-gray-300"
-                    )} />
-                    {section.label}
-                  </span>
-                  <motion.div
-                    animate={{ rotate: isExpanded ? 180 : 0 }}
-                    transition={{ duration: 0.25, ease: "easeInOut" }}
-                  >
-                    <ChevronDown size={12} className={cn(
-                      "transition-colors",
-                      hasActiveChild ? "text-primary-400" : "text-muted"
-                    )} />
-                  </motion.div>
-                </button>
-              )}
+                if (item.to) {
+                  return (
+                    <NavLink
+                      key={item.label}
+                      to={item.to}
+                      className={cn(
+                        "flex items-center gap-3 px-3 py-2 rounded-[8px] text-sm font-medium transition-all duration-150 relative",
+                        active
+                          ? "text-primary-600 bg-primary-50"
+                          : "text-muted hover:bg-gray-100 hover:text-body"
+                      )}
+                    >
+                      {active && (
+                        <span className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-4 bg-primary-600 rounded-r-full" />
+                      )}
+                      <span className="flex items-center gap-3">{content}</span>
+                    </NavLink>
+                  )
+                }
 
-              <AnimatePresence initial={false}>
-                {isExpanded && (
-                  <motion.div
-                    key={`${section.label}-${collapsed}`}
-                    variants={!collapsed ? sectionAnim : undefined}
-                    initial={!collapsed ? "hidden" : undefined}
-                    animate={!collapsed ? "visible" : undefined}
-                    exit={!collapsed ? "hidden" : undefined}
-                    transition={{ duration: 0.2, ease: "easeInOut" }}
-                    className="overflow-hidden"
+                return (
+                  <div
+                    key={item.label}
+                    className="flex items-center gap-3 px-3 py-2 rounded-[8px] text-sm font-medium text-muted"
                   >
-                    <div className="space-y-0.5 pb-1">
-                      {section.items.map((item) => {
-                        const active = isActive(item.to)
-                        return (
-                          <div key={item.label}>
-                            {item.to ? (
-                              <NavLink
-                                to={item.to}
-                                className={cn(
-                                  "flex items-center gap-3 px-3 py-2 rounded-[10px] text-sm font-medium transition-all duration-200 group relative",
-                                  active
-                                    ? "bg-primary-50 text-primary-600"
-                                    : "text-muted hover:bg-gray-100 hover:text-body"
-                                )}
-                              >
-                                {active && !collapsed && (
-                                  <motion.div
-                                    layoutId="sidebar-active-bg"
-                                    className="absolute inset-0 rounded-[10px] bg-primary-50"
-                                    transition={{ type: "spring", stiffness: 400, damping: 35 }}
-                                  />
-                                )}
-                                <span className="relative z-10 flex items-center gap-3 w-full">
-                                  <item.icon
-                                    size={18}
-                                    className={cn(
-                                      "shrink-0 transition-colors",
-                                      active && "text-primary-600"
-                                    )}
-                                  />
-                                  {!collapsed && (
-                                    <>
-                                      <span>{item.label}</span>
-                                      {item.badge && (
-                                        <span className="ml-auto bg-primary-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">
-                                          {item.badge}
-                                        </span>
-                                      )}
-                                    </>
-                                  )}
-                                </span>
-                              </NavLink>
-                            ) : (
-                              <div className="group relative">
-                                <div
-                                  className={cn(
-                                    "flex items-center gap-3 px-3 py-2 rounded-[10px] text-sm font-medium transition-colors cursor-not-allowed",
-                                    "text-muted/40"
-                                  )}
-                                >
-                                  <item.icon size={18} className="shrink-0" />
-                                  {!collapsed && (
-                                    <span className="flex items-center justify-between w-full">
-                                      {item.label}
-                                      <span className="text-[9px] font-semibold text-muted/30 uppercase tracking-wider border border-border/50 rounded-full px-1.5 py-0.5">
-                                        Soon
-                                      </span>
-                                    </span>
-                                  )}
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        )
-                      })}
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
+                    {content}
+                  </div>
+                )
+              })}
             </div>
-          )
-        })}
-
-        {/* Scroll fade hint */}
-        <div className="sticky bottom-0 h-6 bg-gradient-to-t from-sidebar to-transparent pointer-events-none -mx-3" />
+          </motion.div>
+        ))}
       </div>
 
       {/* Bottom section */}
@@ -307,19 +231,22 @@ export default function Sidebar() {
         <NavLink
           to="/settings"
           className={cn(
-            "flex items-center gap-3 px-3 py-2 rounded-[10px] text-sm font-medium transition-colors",
+            "flex items-center gap-3 px-3 py-2 rounded-[8px] text-sm font-medium transition-colors relative",
             isActive("/settings")
-              ? "bg-primary-50 text-primary-600"
+              ? "text-primary-600 bg-primary-50"
               : "text-muted hover:bg-gray-100 hover:text-body"
           )}
         >
+          {isActive("/settings") && (
+            <span className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-4 bg-primary-600 rounded-r-full" />
+          )}
           <Settings size={18} />
           {!collapsed && <span>Settings</span>}
         </NavLink>
 
         <button
           onClick={logout}
-          className="flex items-center gap-3 px-3 py-2 rounded-[10px] text-sm font-medium text-muted hover:bg-danger-50 hover:text-danger-600 w-full transition-colors"
+          className="flex items-center gap-3 px-3 py-2 rounded-[8px] text-sm font-medium text-muted hover:bg-danger-50 hover:text-danger-600 w-full transition-colors"
         >
           <LogOut size={18} />
           {!collapsed && <span>Logout</span>}

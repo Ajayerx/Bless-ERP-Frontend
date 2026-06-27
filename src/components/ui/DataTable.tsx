@@ -1,5 +1,4 @@
 import { useState, useMemo } from "react"
-import { motion } from "framer-motion"
 import { Search, ChevronLeft, ChevronRight, ChevronDown } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -68,16 +67,26 @@ export default function DataTable<T>({
     else setInternalPage(p)
   }
 
+  const getPageNumbers = () => {
+    const pages: number[] = []
+    const maxVisible = 5
+    const half = Math.floor(maxVisible / 2)
+    let start = Math.max(1, currentPage - half)
+    let end = Math.min(totalPages, start + maxVisible - 1)
+    if (end - start + 1 < maxVisible) start = Math.max(1, end - maxVisible + 1)
+    for (let i = start; i <= end; i++) pages.push(i)
+    return pages
+  }
+
   return (
-    <div className="bg-surface rounded-[16px] border border-border shadow-card overflow-hidden">
-      {/* Toolbar */}
+    <div className="bg-surface rounded-xl border border-border overflow-hidden">
       {(searchable || toolbarActions) && (
-        <div className="flex items-center justify-between gap-4 px-6 py-4 border-b border-border">
+        <div className="flex items-center justify-between gap-4 px-5 py-3 border-b border-border">
           {searchable && (
             <div className="relative max-w-xs w-full">
               <Search
-                size={15}
-                className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted"
+                size={14}
+                className="absolute left-3 top-1/2 -translate-y-1/2 text-muted"
               />
               <input
                 type="text"
@@ -92,7 +101,7 @@ export default function DataTable<T>({
                   }
                 }}
                 placeholder={searchPlaceholder}
-                className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-transparent rounded-[12px] text-sm text-body placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 focus:bg-white transition-all duration-200"
+                className="w-full pl-9 pr-3.5 py-1.5 bg-gray-50 border border-border rounded-lg text-sm text-body placeholder:text-muted/60 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 focus:bg-white transition-all duration-200"
               />
             </div>
           )}
@@ -100,35 +109,39 @@ export default function DataTable<T>({
         </div>
       )}
 
-      {/* Table */}
       <div className="overflow-x-auto">
-        <table className="min-w-full divide-y divide-border">
+        <table className="min-w-full">
           <thead>
-            <tr className="bg-gray-50/50">
+            <tr className="bg-gray-50/80">
               {columns.map((col) => (
                 <th
                   key={col.key}
                   className={cn(
-                    "px-6 py-3.5 text-left text-xs font-semibold text-muted uppercase tracking-wider",
+                    "px-5 py-3 text-left text-xs font-medium text-muted/80",
                     col.hideOnMobile && "hidden lg:table-cell",
                     col.className
                   )}
                 >
-                  <div className="flex items-center gap-1.5">
+                  <div className="flex items-center gap-1">
                     {col.header}
-                    {col.sortable && <ChevronDown size={12} className="text-muted/50" />}
+                    {col.sortable && <ChevronDown size={11} className="text-muted/40" />}
                   </div>
                 </th>
               ))}
             </tr>
           </thead>
-          <tbody className="divide-y divide-border/50">
+          <tbody className="divide-y divide-border/40">
             {loading ? (
               [...Array(5)].map((_, i) => (
                 <tr key={i}>
                   {columns.map((col) => (
-                    <td key={col.key} className="px-6 py-4">
-                      <div className="h-5 bg-gray-100 rounded-[8px] w-3/4 animate-pulse" />
+                    <td key={col.key} className="px-5 py-3">
+                      <div
+                        className={cn(
+                          "h-4 bg-gray-100 rounded-md animate-pulse",
+                          i % 3 === 0 ? "w-3/4" : i % 3 === 1 ? "w-1/2" : "w-2/3"
+                        )}
+                      />
                     </td>
                   ))}
                 </tr>
@@ -137,34 +150,31 @@ export default function DataTable<T>({
               <tr>
                 <td
                   colSpan={columns.length}
-                  className="px-6 py-16 text-center text-sm text-muted"
+                  className="px-5 py-16 text-center text-sm text-muted"
                 >
                   {emptyState ?? (
-                    <div className="flex flex-col items-center gap-2">
-                      <p className="font-semibold text-body">No results found</p>
-                      <p className="text-xs">Try adjusting your search or filters.</p>
+                    <div className="flex flex-col items-center gap-1.5">
+                      <p className="font-medium text-body">No results found</p>
+                      <p className="text-xs text-muted">Try adjusting your search or filters.</p>
                     </div>
                   )}
                 </td>
               </tr>
             ) : (
-              displayedData.map((item, idx) => (
-                <motion.tr
+              displayedData.map((item) => (
+                <tr
                   key={keyExtractor(item)}
-                  initial={{ opacity: 0, y: 4 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: idx * 0.03, duration: 0.2 }}
                   onClick={() => onRowClick?.(item)}
                   className={cn(
-                    "transition-colors",
-                    onRowClick ? "cursor-pointer hover:bg-gray-50/80" : ""
+                    "transition-colors duration-150",
+                    onRowClick ? "cursor-pointer hover:bg-gray-50/60" : ""
                   )}
                 >
                   {columns.map((col) => (
                     <td
                       key={col.key}
                       className={cn(
-                        "px-6 py-4 text-sm text-body whitespace-nowrap",
+                        "px-5 py-3 text-sm text-body whitespace-nowrap",
                         col.hideOnMobile && "hidden lg:table-cell",
                         col.className
                       )}
@@ -174,60 +184,52 @@ export default function DataTable<T>({
                         : String((item as any)[col.key] ?? "")}
                     </td>
                   ))}
-                </motion.tr>
+                </tr>
               ))
             )}
           </tbody>
         </table>
       </div>
 
-      {/* Pagination */}
       {totalPages > 1 && (
-        <div className="flex items-center justify-between px-6 py-3.5 border-t border-border bg-gray-50/30">
+        <div className="flex items-center justify-between px-5 py-3 border-t border-border bg-gray-50/30">
           <p className="text-xs text-muted">
-            Showing{" "}
-            <span className="font-semibold text-body">
-              {(currentPage - 1) * pageSize + 1}
-            </span>{" "}
-            to{" "}
-            <span className="font-semibold text-body">
+            <span className="font-medium text-body">{(currentPage - 1) * pageSize + 1}</span>
+            {" — "}
+            <span className="font-medium text-body">
               {Math.min(currentPage * pageSize, totalItems)}
-            </span>{" "}
-            of <span className="font-semibold text-body">{totalItems}</span>
+            </span>
+            {" of "}
+            <span className="font-medium text-body">{totalItems}</span>
           </p>
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-0.5">
             <button
               onClick={() => goToPage(currentPage - 1)}
               disabled={currentPage <= 1}
-              className="p-2 rounded-[10px] text-muted hover:text-body hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-primary-500/30 transition-colors"
+              className="p-1.5 rounded-md text-muted hover:text-body hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
             >
-              <ChevronLeft size={16} />
+              <ChevronLeft size={15} />
             </button>
-            {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
-              const start = Math.max(1, currentPage - 2)
-              const p = start + i
-              if (p > totalPages) return null
-              return (
-                <button
-                  key={p}
-                  onClick={() => goToPage(p)}
-                  className={cn(
-                    "w-8 h-8 rounded-[10px] text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-primary-500/30",
-                    p === currentPage
-                      ? "bg-primary-600 text-white shadow-sm"
-                      : "text-muted hover:bg-gray-100"
-                  )}
-                >
-                  {p}
-                </button>
-              )
-            })}
+            {getPageNumbers().map((p) => (
+              <button
+                key={p}
+                onClick={() => goToPage(p)}
+                className={cn(
+                  "min-w-[28px] h-7 rounded-md text-xs font-medium transition-colors",
+                  p === currentPage
+                    ? "bg-primary-600 text-white"
+                    : "text-muted hover:text-body hover:bg-gray-100"
+                )}
+              >
+                {p}
+              </button>
+            ))}
             <button
               onClick={() => goToPage(currentPage + 1)}
               disabled={currentPage >= totalPages}
-              className="p-2 rounded-[10px] text-muted hover:text-body hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-primary-500/30 transition-colors"
+              className="p-1.5 rounded-md text-muted hover:text-body hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
             >
-              <ChevronRight size={16} />
+              <ChevronRight size={15} />
             </button>
           </div>
         </div>

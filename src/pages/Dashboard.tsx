@@ -27,8 +27,6 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
-  LineChart,
-  Line,
 } from "recharts"
 import Topbar from "@/components/layout/Topbar"
 import { Card, CardContent, CardHeader, CardTitle, Badge } from "@/components/ui"
@@ -48,23 +46,6 @@ const containerVariants = {
 const itemVariants = {
   hidden: { opacity: 0, y: 12 },
   show: { opacity: 1, y: 0, transition: { type: "spring" as const, stiffness: 300, damping: 30 } },
-}
-
-function MiniSparkline({ data, color }: { data: { value: number }[]; color: string }) {
-  return (
-    <ResponsiveContainer width={80} height={40}>
-      <LineChart data={data}>
-        <Line
-          type="monotone"
-          dataKey="value"
-          stroke={color}
-          strokeWidth={2}
-          dot={false}
-          activeDot={false}
-        />
-      </LineChart>
-    </ResponsiveContainer>
-  )
 }
 
 const statusConfig: Record<string, { variant: "success" | "warning" | "danger" | "info" | "default"; icon: React.ReactNode }> = {
@@ -112,73 +93,26 @@ export default function Dashboard() {
     return (
       <>
         <Topbar />
-        <div className="p-6 space-y-6">
-          <Skeleton className="h-8 w-64" />
-          <div className="grid grid-cols-4 gap-5">
+        <div className="p-8 space-y-8">
+          <Skeleton className="h-9 w-72" />
+          <div className="grid grid-cols-4 gap-6">
             {[...Array(4)].map((_, i) => (
-              <Skeleton key={i} className="h-32 rounded-[16px]" />
+              <Skeleton key={i} className="h-36 rounded-[16px]" />
             ))}
           </div>
-          <Skeleton className="h-80 rounded-[16px]" />
+          <Skeleton className="h-[360px] rounded-[16px]" />
         </div>
       </>
     )
   }
 
   const kpis = dashData?.kpis
-  const sparklineData = [
-    { value: 280 }, { value: 310 }, { value: 265 },
-    { value: 340 }, { value: 380 }, { value: 410 },
-  ]
-
-  const kpiCards = [
-    {
-      title: "Total Revenue",
-      value: kpis?.totalRevenue ? formatCurrency(kpis.totalRevenue.value) : "$0",
-      change: kpis?.totalRevenue.trend ?? 0,
-      up: (kpis?.totalRevenue.trendDirection ?? "up") === "up",
-      icon: DollarSign,
-      color: "text-primary-600",
-      bg: "bg-primary-50",
-      chartColor: "#2563eb",
-    },
-    {
-      title: "Receivables",
-      value: kpis?.outstandingInvoices ? formatCurrency(kpis.outstandingInvoices.value) : "$0",
-      change: Math.abs(kpis?.outstandingInvoices.trend ?? 0),
-      up: (kpis?.outstandingInvoices.trendDirection ?? "down") === "down",
-      icon: TrendingDown,
-      color: "text-warning-600",
-      bg: "bg-warning-50",
-      chartColor: "#f59e0b",
-    },
-    {
-      title: "Inventory Value",
-      value: kpis?.inventoryValue ? formatCurrency(kpis.inventoryValue.value) : "$0",
-      change: kpis?.inventoryValue?.trend ?? 0,
-      up: (kpis?.inventoryValue?.trendDirection ?? "up") === "up",
-      icon: Package,
-      color: "text-purple-600",
-      bg: "bg-purple-50",
-      chartColor: "#8b5cf6",
-    },
-    {
-      title: "Cash Flow",
-      value: kpis?.cashFlow ? formatCurrency(kpis.cashFlow.value) : "$0",
-      change: kpis?.cashFlow?.trend ?? 0,
-      up: (kpis?.cashFlow?.trendDirection ?? "up") === "up",
-      icon: TrendingUp,
-      color: "text-success-600",
-      bg: "bg-success-50",
-      chartColor: "#22c55e",
-    },
-  ]
 
   return (
     <>
       <Topbar />
       <motion.div
-        className="p-6 space-y-6"
+        className="p-8 space-y-8"
         variants={containerVariants}
         initial="hidden"
         animate="show"
@@ -189,10 +123,13 @@ export default function Dashboard() {
           className="flex items-center justify-between"
         >
           <div>
-            <h1 className="text-2xl font-bold text-heading">Welcome back</h1>
-            <p className="text-sm text-muted mt-1">{today}</p>
+            <h1 className="text-3xl font-bold text-heading">Welcome back</h1>
+            <p className="text-sm text-muted mt-1.5">{today}</p>
           </div>
-          <button onClick={() => navigate("/invoices/new")} className="inline-flex items-center gap-2 px-5 py-2.5 bg-primary-600 text-white font-semibold rounded-[12px] hover:bg-primary-700 transition-all duration-200 shadow-sm hover:shadow-md active:scale-[0.98]">
+          <button
+            onClick={() => navigate("/invoices/new")}
+            className="inline-flex items-center gap-2 px-6 py-3 bg-primary-600 text-white font-semibold rounded-[12px] hover:bg-primary-700 transition-all duration-200 shadow-sm hover:shadow-md active:scale-[0.98]"
+          >
             <Plus size={18} />
             New Invoice
           </button>
@@ -201,45 +138,109 @@ export default function Dashboard() {
         {/* KPI Cards */}
         <motion.div
           variants={itemVariants}
-          className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5"
+          className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6"
         >
-          {kpiCards.map((kpi) => (
-            <motion.div
-              key={kpi.title}
-              whileHover={{ y: -4, boxShadow: "0px 8px 25px rgba(0,0,0,0.08)" }}
-              className="bg-surface rounded-[16px] border border-border shadow-card p-5 transition-all duration-200"
-            >
-              <div className="flex items-start justify-between mb-3">
-                <div className={cn("p-2.5 rounded-[10px]", kpi.bg, kpi.color)}>
-                  <kpi.icon size={20} />
-                </div>
-                <MiniSparkline data={sparklineData} color={kpi.chartColor} />
+          {/* Total Revenue */}
+          <div className="bg-surface rounded-[16px] border border-border shadow-card p-6 hover:-translate-y-0.5 hover:shadow-lg transition-all duration-200">
+            <div className="flex items-center justify-between mb-5">
+              <div className="p-3 rounded-[12px] bg-primary-50 text-primary-600">
+                <DollarSign size={20} />
               </div>
-              <p className="text-2xl font-bold text-heading tracking-tight">
-                {kpi.value}
-              </p>
-              <div className="flex items-center gap-1.5 mt-1.5">
-                <span
-                  className={cn(
-                    "inline-flex items-center gap-0.5 text-xs font-semibold px-1.5 py-0.5 rounded-full",
-                    kpi.up
-                      ? "text-success-600 bg-success-50"
-                      : "text-danger-600 bg-danger-50"
-                  )}
-                >
-                  {kpi.up ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
-                  {kpi.change}%
-                </span>
-                <span className="text-xs text-muted">vs last month</span>
+            </div>
+            <p className="text-3xl font-bold text-heading tracking-tight">
+              {kpis?.totalRevenue ? formatCurrency(kpis.totalRevenue.value) : "$0"}
+            </p>
+            <div className="flex items-center gap-2 mt-3">
+              <span className={cn(
+                "inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full",
+                (kpis?.totalRevenue.trendDirection ?? "up") === "up"
+                  ? "text-success-600 bg-success-50"
+                  : "text-danger-600 bg-danger-50"
+              )}>
+                {(kpis?.totalRevenue.trendDirection ?? "up") === "up" ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
+                {kpis?.totalRevenue.trend ?? 0}%
+              </span>
+              <span className="text-xs text-muted">vs last month</span>
+            </div>
+          </div>
+
+          {/* Receivables */}
+          <div className="bg-surface rounded-[16px] border border-border shadow-card p-6 hover:-translate-y-0.5 hover:shadow-lg transition-all duration-200">
+            <div className="flex items-center justify-between mb-5">
+              <div className="p-3 rounded-[12px] bg-warning-50 text-warning-600">
+                <TrendingDown size={20} />
               </div>
-            </motion.div>
-          ))}
+            </div>
+            <p className="text-3xl font-bold text-heading tracking-tight">
+              {kpis?.outstandingInvoices ? formatCurrency(kpis.outstandingInvoices.value) : "$0"}
+            </p>
+            <div className="flex items-center gap-2 mt-3">
+              <span className={cn(
+                "inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full",
+                (kpis?.outstandingInvoices.trendDirection ?? "down") === "down"
+                  ? "text-success-600 bg-success-50"
+                  : "text-danger-600 bg-danger-50"
+              )}>
+                {(kpis?.outstandingInvoices.trendDirection ?? "down") === "down" ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
+                {Math.abs(kpis?.outstandingInvoices.trend ?? 0)}%
+              </span>
+              <span className="text-xs text-muted">vs last month</span>
+            </div>
+          </div>
+
+          {/* Inventory Value */}
+          <div className="bg-surface rounded-[16px] border border-border shadow-card p-6 hover:-translate-y-0.5 hover:shadow-lg transition-all duration-200">
+            <div className="flex items-center justify-between mb-5">
+              <div className="p-3 rounded-[12px] bg-purple-50 text-purple-600">
+                <Package size={20} />
+              </div>
+            </div>
+            <p className="text-3xl font-bold text-heading tracking-tight">
+              {kpis?.inventoryValue ? formatCurrency(kpis.inventoryValue.value) : "$0"}
+            </p>
+            <div className="flex items-center gap-2 mt-3">
+              <span className={cn(
+                "inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full",
+                (kpis?.inventoryValue?.trendDirection ?? "up") === "up"
+                  ? "text-success-600 bg-success-50"
+                  : "text-danger-600 bg-danger-50"
+              )}>
+                {(kpis?.inventoryValue?.trendDirection ?? "up") === "up" ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
+                {kpis?.inventoryValue?.trend ?? 0}%
+              </span>
+              <span className="text-xs text-muted">vs last month</span>
+            </div>
+          </div>
+
+          {/* Cash Flow */}
+          <div className="bg-surface rounded-[16px] border border-border shadow-card p-6 hover:-translate-y-0.5 hover:shadow-lg transition-all duration-200">
+            <div className="flex items-center justify-between mb-5">
+              <div className="p-3 rounded-[12px] bg-success-50 text-success-600">
+                <TrendingUp size={20} />
+              </div>
+            </div>
+            <p className="text-3xl font-bold text-heading tracking-tight">
+              {kpis?.cashFlow ? formatCurrency(kpis.cashFlow.value) : "$0"}
+            </p>
+            <div className="flex items-center gap-2 mt-3">
+              <span className={cn(
+                "inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full",
+                (kpis?.cashFlow?.trendDirection ?? "up") === "up"
+                  ? "text-success-600 bg-success-50"
+                  : "text-danger-600 bg-danger-50"
+              )}>
+                {(kpis?.cashFlow?.trendDirection ?? "up") === "up" ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
+                {kpis?.cashFlow?.trend ?? 0}%
+              </span>
+              <span className="text-xs text-muted">vs last month</span>
+            </div>
+          </div>
         </motion.div>
 
         {/* Charts Row */}
         <motion.div
           variants={itemVariants}
-          className="grid grid-cols-1 lg:grid-cols-3 gap-5"
+          className="grid grid-cols-1 lg:grid-cols-3 gap-6"
         >
           {/* Sales Chart */}
           <Card className="lg:col-span-2">
@@ -313,7 +314,10 @@ export default function Dashboard() {
           <Card>
             <CardHeader>
               <CardTitle>Recent Invoices</CardTitle>
-              <button onClick={() => navigate("/invoices")} className="text-xs font-semibold text-primary-600 hover:text-primary-700 flex items-center gap-1">
+              <button
+                onClick={() => navigate("/invoices")}
+                className="text-xs font-semibold text-primary-600 hover:text-primary-700 flex items-center gap-1"
+              >
                 View All <ArrowRight size={12} />
               </button>
             </CardHeader>
@@ -347,7 +351,7 @@ export default function Dashboard() {
         {/* Bottom Row */}
         <motion.div
           variants={itemVariants}
-          className="grid grid-cols-1 lg:grid-cols-3 gap-5"
+          className="grid grid-cols-1 lg:grid-cols-3 gap-6"
         >
           {/* Top Customers */}
           <Card>
@@ -421,17 +425,17 @@ export default function Dashboard() {
               <CardTitle>Quick Actions</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 gap-4">
                 {quickActions.map((action) => (
                   <button
                     key={action.label}
                     onClick={() => navigate(action.to)}
-                    className="flex flex-col items-center gap-2 p-4 rounded-[14px] border border-border hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 bg-surface"
+                    className="flex flex-col items-center gap-3 p-5 rounded-[14px] border border-border hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200 bg-surface"
                   >
-                    <div className={cn("p-3 rounded-[10px]", action.color)}>
-                      <action.icon size={20} />
+                    <div className={cn("p-3.5 rounded-[12px]", action.color)}>
+                      <action.icon size={22} />
                     </div>
-                    <span className="text-xs font-semibold text-body text-center leading-tight">
+                    <span className="text-xs font-semibold text-body text-center leading-snug">
                       {action.label}
                     </span>
                   </button>
