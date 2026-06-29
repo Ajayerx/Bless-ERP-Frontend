@@ -1,23 +1,30 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 @keyframes fade-in {
   from { opacity: 0; }
   to { opacity: 1; }
 }
-
 @keyframes fade-out {
   from { opacity: 1; }
   to { opacity: 0; }
 }
-
 @keyframes zoom-in-95 {
   from { opacity: 0; transform: scale(0.95); }
   to { opacity: 1; transform: scale(1); }
 }
-
 @keyframes zoom-out-95 {
   from { opacity: 1; transform: scale(1); }
   to { opacity: 0; transform: scale(0.95); }
+}
+@keyframes slide-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes pulse-soft {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
 }
 
 @theme {
@@ -73,18 +80,108 @@
   --color-purple-500: #8b5cf6;
   --color-purple-600: #7c3aed;
 
+  --color-gray-50: #f9fafb;
+  --color-gray-100: #f3f4f6;
+  --color-gray-200: #e5e7eb;
+  --color-gray-300: #d1d5db;
+  --color-gray-400: #9ca3af;
+  --color-gray-500: #6b7280;
+  --color-gray-600: #4b5563;
+  --color-gray-700: #374151;
+  --color-gray-800: #1f2937;
+  --color-gray-900: #111827;
+
   --color-app-bg: #f8fafc;
   --color-surface: #ffffff;
   --color-sidebar: #ffffff;
   --color-border: #e5e7eb;
+  --color-border-light: #f3f4f6;
   --color-heading: #111827;
   --color-body: #374151;
   --color-muted: #6b7280;
+  --color-muted-lighter: #9ca3af;
 
-  --radius-card: 16px;
-  --radius-input: 12px;
-  --radius-button: 12px;
-  --radius-lg: 14px;
+  --radius-card: 14px;
+  --radius-input: 10px;
+  --radius-button: 10px;
+  --radius-lg: 12px;
+  --radius-sm: 8px;
+  --radius-xs: 6px;
+}
+
+.dark {
+  --color-primary-50: #1e3a5f;
+  --color-primary-100: #1e40af;
+  --color-primary-200: #1d4ed8;
+  --color-primary-300: #2563eb;
+  --color-primary-400: #3b82f6;
+  --color-primary-500: #60a5fa;
+  --color-primary-600: #93c5fd;
+  --color-primary-700: #bfdbfe;
+  --color-primary-800: #dbeafe;
+  --color-primary-900: #eff6ff;
+
+  --color-success-50: #052e16;
+  --color-success-100: #14532d;
+  --color-success-200: #166534;
+  --color-success-300: #15803d;
+  --color-success-400: #16a34a;
+  --color-success-500: #22c55e;
+  --color-success-600: #4ade80;
+  --color-success-700: #86efac;
+
+  --color-warning-50: #451a03;
+  --color-warning-100: #78350f;
+  --color-warning-200: #92400e;
+  --color-warning-300: #b45309;
+  --color-warning-400: #d97706;
+  --color-warning-500: #f59e0b;
+  --color-warning-600: #fbbf24;
+
+  --color-danger-50: #450a0a;
+  --color-danger-100: #7f1d1d;
+  --color-danger-200: #991b1b;
+  --color-danger-300: #b91c1c;
+  --color-danger-400: #dc2626;
+  --color-danger-500: #ef4444;
+  --color-danger-600: #f87171;
+
+  --color-info-50: #164e63;
+  --color-info-100: #155e75;
+  --color-info-200: #0e7490;
+  --color-info-300: #0891b2;
+  --color-info-400: #06b6d4;
+  --color-info-500: #22d3ee;
+  --color-info-600: #67e8f9;
+
+  --color-purple-50: #3b0764;
+  --color-purple-100: #581c87;
+  --color-purple-200: #6b21a8;
+  --color-purple-300: #7c3aed;
+  --color-purple-400: #8b5cf6;
+  --color-purple-500: #a78bfa;
+  --color-purple-600: #c4b5fd;
+
+  --color-gray-50: #1f2937;
+  --color-gray-100: #374151;
+  --color-gray-200: #4b5563;
+  --color-gray-300: #6b7280;
+  --color-gray-400: #9ca3af;
+  --color-gray-500: #d1d5db;
+  --color-gray-600: #e5e7eb;
+  --color-gray-700: #f3f4f6;
+  --color-gray-800: #f9fafb;
+  --color-gray-900: #ffffff;
+
+  --color-app-bg: #0f172a;
+  --color-surface: #1e293b;
+  --color-sidebar: #1e293b;
+  --color-border: #334155;
+  --color-border-light: #1e293b;
+  --color-heading: #f1f5f9;
+  --color-body: #cbd5e1;
+  --color-muted: #94a3b8;
+  --color-muted-lighter: #64748b;
 }
 
 * {
@@ -98,21 +195,46 @@ body {
   margin: 0;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  font-size: 14px;
+  line-height: 1.5;
 }
 
 @layer base {
   h1, h2, h3, h4, h5, h6 {
     color: var(--color-heading);
-    font-weight: 700;
+    font-weight: 600;
     letter-spacing: -0.025em;
   }
+  h1 { font-size: 1.5rem; line-height: 1.3; }
+  h2 { font-size: 1.25rem; line-height: 1.35; }
+  h3 { font-size: 1.125rem; line-height: 1.4; }
+  h4 { font-size: 1rem; line-height: 1.4; }
 }
 
 @layer utilities {
   .shadow-card {
-    box-shadow: 0px 2px 10px rgba(0, 0, 0, 0.05);
+    box-shadow: 0px 1px 3px rgba(0, 0, 0, 0.04), 0px 1px 2px rgba(0, 0, 0, 0.02);
   }
   .shadow-card-hover {
-    box-shadow: 0px 8px 25px rgba(0, 0, 0, 0.08);
+    box-shadow: 0px 4px 12px rgba(0, 0, 0, 0.06), 0px 2px 4px rgba(0, 0, 0, 0.04);
   }
+  .shadow-dropdown {
+    box-shadow: 0px 8px 24px rgba(0, 0, 0, 0.08), 0px 2px 4px rgba(0, 0, 0, 0.04);
+  }
+  .shadow-modal {
+    box-shadow: 0px 16px 48px rgba(0, 0, 0, 0.12), 0px 4px 8px rgba(0, 0, 0, 0.06);
+  }
+}
+
+.dark .shadow-card {
+  box-shadow: 0px 1px 3px rgba(0, 0, 0, 0.2), 0px 1px 2px rgba(0, 0, 0, 0.1);
+}
+.dark .shadow-card-hover {
+  box-shadow: 0px 4px 12px rgba(0, 0, 0, 0.3), 0px 2px 4px rgba(0, 0, 0, 0.15);
+}
+.dark .shadow-dropdown {
+  box-shadow: 0px 8px 24px rgba(0, 0, 0, 0.4);
+}
+.dark .shadow-modal {
+  box-shadow: 0px 16px 48px rgba(0, 0, 0, 0.5);
 }

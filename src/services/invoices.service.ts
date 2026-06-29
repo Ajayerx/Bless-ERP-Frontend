@@ -62,11 +62,13 @@ export interface Product {
 export const invoiceService = {
   async list(params: {
     search?: string
+    customerId?: string
     page?: number
     pageSize?: number
   }): Promise<InvoiceListResponse> {
     const qs = new URLSearchParams()
     if (params.search) qs.set("search", params.search)
+    if (params.customerId) qs.set("customerId", params.customerId)
     if (params.page) qs.set("page", String(params.page))
     if (params.pageSize) qs.set("pageSize", String(params.pageSize))
     return apiClient<InvoiceListResponse>(`/invoices?${qs.toString()}`)

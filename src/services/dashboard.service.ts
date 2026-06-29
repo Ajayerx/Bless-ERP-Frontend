@@ -21,14 +21,30 @@ export interface ActivityItem {
   timestamp: string
 }
 
+export interface TopCustomer {
+  name: string
+  revenue: number
+}
+
+export interface InventoryAlert {
+  name: string
+  sku: string
+  stock: number
+  threshold: number
+}
+
 export interface DashboardData {
   kpis: {
     totalRevenue: KpiMetric
     outstandingInvoices: KpiMetric
     lowStockProducts: KpiMetric
     totalCustomers: KpiMetric
+    inventoryValue: KpiMetric
+    cashFlow: KpiMetric
   }
   salesOverTime: SalesMonth[]
+  topCustomers: TopCustomer[]
+  inventoryAlerts: InventoryAlert[]
   recentActivity: ActivityItem[]
 }
 

@@ -1,0 +1,61 @@
+[
+  {
+    "id": "je_001", "number": "JE-2026-0001",
+    "date": "2026-06-01", "description": "Monthly rent payment",
+    "reference": "EXP-2026-0005",
+    "lines": [
+      { "id": "jel_101", "accountName": "Rent Expense", "debit": 5500.00, "credit": 0 },
+      { "id": "jel_102", "accountName": "Business Checking", "debit": 0, "credit": 5500.00 }
+    ],
+    "totalDebit": 5500.00, "totalCredit": 5500.00,
+    "status": "posted", "createdAt": "2026-06-01T10:00:00Z"
+  },
+  {
+    "id": "je_002", "number": "JE-2026-0002",
+    "date": "2026-06-05", "description": "Office supplies purchase",
+    "reference": "EXP-2026-0001",
+    "lines": [
+      { "id": "jel_103", "accountName": "Office Supplies Expense", "debit": 450.00, "credit": 0 },
+      { "id": "jel_104", "accountName": "GST Input Credit", "debit": 22.50, "credit": 0 },
+      { "id": "jel_105", "accountName": "Corporate Credit Card", "debit": 0, "credit": 472.50 }
+    ],
+    "totalDebit": 472.50, "totalCredit": 472.50,
+    "status": "posted", "createdAt": "2026-06-05T10:00:00Z"
+  },
+  {
+    "id": "je_003", "number": "JE-2026-0003",
+    "date": "2026-06-10", "description": "Cloud hosting payment",
+    "reference": "EXP-2026-0002",
+    "lines": [
+      { "id": "jel_106", "accountName": "IT & Software Expense", "debit": 1200.00, "credit": 0 },
+      { "id": "jel_107", "accountName": "GST Input Credit", "debit": 60.00, "credit": 0 },
+      { "id": "jel_108", "accountName": "Business Checking", "debit": 0, "credit": 1260.00 }
+    ],
+    "totalDebit": 1260.00, "totalCredit": 1260.00,
+    "status": "posted", "createdAt": "2026-06-10T14:00:00Z"
+  },
+  {
+    "id": "je_004", "number": "JE-2026-0004",
+    "date": "2026-06-15", "description": "Depreciation - Equipment",
+    "reference": "ADJ-2026-001",
+    "lines": [
+      { "id": "jel_109", "accountName": "Depreciation Expense", "debit": 2500.00, "credit": 0 },
+      { "id": "jel_110", "accountName": "Accumulated Depreciation", "debit": 0, "credit": 2500.00 }
+    ],
+    "totalDebit": 2500.00, "totalCredit": 2500.00,
+    "status": "draft", "description": "Monthly depreciation adjustment",
+    "createdAt": "2026-06-15T09:00:00Z"
+  },
+  {
+    "id": "je_005", "number": "JE-2026-0005",
+    "date": "2026-06-18", "description": "Legal consultation accrual",
+    "reference": "EXP-2026-0004",
+    "lines": [
+      { "id": "jel_111", "accountName": "Professional Fees", "debit": 3000.00, "credit": 0 },
+      { "id": "jel_112", "accountName": "QST Input Credit", "debit": 299.25, "credit": 0 },
+      { "id": "jel_113", "accountName": "Accounts Payable", "debit": 0, "credit": 3299.25 }
+    ],
+    "totalDebit": 3299.25, "totalCredit": 3299.25,
+    "status": "draft", "createdAt": "2026-06-18T11:00:00Z"
+  }
+]

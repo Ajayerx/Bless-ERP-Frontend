@@ -6,6 +6,8 @@ export type {
   KpiMetric,
   SalesMonth,
   ActivityItem,
+  TopCustomer,
+  InventoryAlert,
 } from "./dashboard.service"
 export { customerService } from "./customers.service"
 export type {
@@ -19,7 +21,6 @@ export type {
   InvoiceFormData,
   InvoiceListResponse,
   LineItem,
-  Product,
 } from "./invoices.service"
 export { paymentService } from "./payments.service"
 export type {
@@ -28,5 +29,51 @@ export type {
   RecordPaymentData,
 } from "./payments.service"
 export { reportService } from "./reports.service"
-export type { TaxSummary, TaxBreakdownRow } from "./reports.service"
+export type { TaxSummary, TaxBreakdownRow, SalesSummary, StockReport, StockReportItem } from "./reports.service"
+export { productService } from "./products.service"
+export type { Product, ProductListResponse } from "./products.service"
+export { quotationService } from "./quotations.service"
+export type { Quotation, QuotationListResponse, QuotationFormData } from "./quotations.service"
+export { salesOrderService } from "./sales-orders.service"
+export type { SalesOrder, SalesOrderListResponse, SalesOrderFormData } from "./sales-orders.service"
+export {
+  contactService,
+  leadService,
+  opportunityService,
+  followUpService,
+} from "@/modules/crm/services"
+export type {
+  Contact,
+  ContactListResponse,
+  Lead,
+  LeadListResponse,
+  Opportunity,
+  OpportunityListResponse,
+  FollowUp,
+  FollowUpListResponse,
+} from "@/modules/crm/types"
+export { accountingService } from "@/modules/accounting/services"
+export type {
+  Expense, ExpenseListResponse, ExpenseFormData,
+  TaxSummaryData,
+  BankAccount, BankAccountListResponse, BankAccountFormData,
+  JournalEntry, JournalEntryListResponse, JournalEntryFormData,
+} from "@/modules/accounting/types"
+export {
+  purchaseOrderService,
+  vendorService,
+  billService,
+} from "@/modules/purchases/services"
+export type {
+  PurchaseOrder,
+  PurchaseOrderListResponse,
+  PurchaseOrderFormData,
+  Vendor,
+  VendorListResponse,
+  VendorFormData,
+  Bill,
+  BillListResponse,
+  BillFormData,
+  BillStatus,
+} from "@/modules/purchases/types"
 export { apiClient, ApiError } from "./api-client"

@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from "react"
 import { useNavigate } from "react-router-dom"
 import { motion } from "framer-motion"
-import { Plus, FileText, ArrowRight } from "lucide-react"
+import { Plus, FileText } from "lucide-react"
 import Topbar from "@/components/layout/Topbar"
 import DataTable, { type Column } from "@/components/ui/DataTable"
 import { Button, Badge } from "@/components/ui"
@@ -90,6 +90,8 @@ export default function Invoices() {
   const [search, setSearch] = useState("")
   const [page, setPage] = useState(1)
 
+  const handleRowClick = (inv: Invoice) => navigate(`/invoices/${inv.id}`)
+
   const fetchData = useCallback(async () => {
     setLoading(true)
     try {
@@ -142,6 +144,7 @@ export default function Invoices() {
           total={data?.total}
           pageSize={10}
           onPageChange={setPage}
+          onRowClick={handleRowClick}
         />
       </motion.div>
     </>

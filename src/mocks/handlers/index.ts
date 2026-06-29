@@ -4,6 +4,13 @@ import { customerHandlers } from "./customers"
 import { invoiceHandlers } from "./invoices"
 import { paymentHandlers } from "./payments"
 import { reportHandlers } from "./reports"
+import { hrmsHandlers } from "./hrms"
+import { inventoryHandlers } from "./inventory"
+import { quotationHandlers } from "./quotations"
+import { salesOrderHandlers } from "./sales-orders"
+import { crmHandlers } from "./crm"
+import { purchaseOrderHandlers } from "./purchases"
+import { accountingHandlers } from "./accounting"
 
 export const handlers = [
   ...authHandlers,
@@ -12,4 +19,11 @@ export const handlers = [
   ...invoiceHandlers,
   ...paymentHandlers,
   ...reportHandlers,
+  ...hrmsHandlers,
+  ...inventoryHandlers,
+  ...quotationHandlers,
+  ...salesOrderHandlers,
+  ...crmHandlers,
+  ...purchaseOrderHandlers,
+  ...accountingHandlers,
 ]

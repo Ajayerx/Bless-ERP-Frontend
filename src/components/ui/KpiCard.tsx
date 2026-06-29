@@ -1,73 +1,34 @@
 import { TrendingUp, TrendingDown, Minus } from "lucide-react"
+import { cn } from "@/lib/utils"
 
 interface KpiCardProps {
-  title: string
-  value: string
-  subtitle?: string
-  trend: number
-  trendDirection: "up" | "down" | "neutral"
-  icon: React.ReactNode
+  title: string; value: string; subtitle?: string; trend: number
+  trendDirection: "up" | "down" | "neutral"; icon: React.ReactNode
   variant?: "default" | "warning"
 }
 
-export default function KpiCard({
-  title,
-  value,
-  subtitle,
-  trend,
-  trendDirection,
-  icon,
-  variant = "default",
-}: KpiCardProps) {
-  const trendColor =
-    trendDirection === "up"
-      ? "text-success-600 bg-success-50"
-      : trendDirection === "down"
-        ? "text-red-600 bg-red-50"
-        : "text-gray-500 bg-gray-100"
-
-  const TrendIcon =
-    trendDirection === "up"
-      ? TrendingUp
-      : trendDirection === "down"
-        ? TrendingDown
-        : Minus
-
-  const borderColor =
-    variant === "warning" ? "border-l-warning-500" : "border-l-primary-500"
+export default function KpiCard({ title, value, subtitle, trend, trendDirection, icon, variant = "default" }: KpiCardProps) {
+  const accentBar = variant === "warning" ? "bg-warning-500" : "bg-primary-500"
+  const TrendIcon = trendDirection === "up" ? TrendingUp : trendDirection === "down" ? TrendingDown : Minus
 
   return (
-    <div
-      className={`bg-white rounded-xl border border-gray-200 border-l-4 ${borderColor} p-5 shadow-sm`}
-    >
+    <div className="relative bg-surface rounded-card border border-border p-5 shadow-card overflow-hidden">
+      <div className={cn("absolute top-0 left-0 right-0 h-1", accentBar)} />
       <div className="flex items-start justify-between">
         <div className="space-y-1">
-          <p className="text-sm font-medium text-gray-500">{title}</p>
-          <p className="text-2xl font-semibold text-gray-900 tracking-tight">
-            {value}
-          </p>
-          {subtitle && (
-            <p className="text-xs text-gray-400">{subtitle}</p>
-          )}
+          <p className="text-sm font-medium text-muted">{title}</p>
+          <p className="text-2xl font-semibold text-heading tracking-tight">{value}</p>
+          {subtitle && <p className="text-xs text-muted">{subtitle}</p>}
         </div>
-        <div className="p-2.5 rounded-lg bg-gray-50 text-gray-400">
-          {icon}
-        </div>
+        <div className="p-2.5 rounded-lg bg-muted/10 text-muted">{icon}</div>
       </div>
-
       <div className="flex items-center gap-1.5 mt-3">
-        <span
-          className={`inline-flex items-center gap-0.5 text-xs font-medium px-1.5 py-0.5 rounded-full ${trendColor}`}
-        >
-          <TrendIcon size={12} />
+        <span className="text-xs text-muted">
+          <TrendIcon size={12} className="inline mr-0.5" />
           {Math.abs(trend)}%
         </span>
-        <span className="text-xs text-gray-400">
-          {trendDirection === "up"
-            ? "vs last month"
-            : trendDirection === "down"
-              ? "vs last month"
-              : "needs attention"}
+        <span className="text-xs text-muted/60">
+          {trendDirection === "neutral" ? "needs attention" : "vs last month"}
         </span>
       </div>
     </div>

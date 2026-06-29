@@ -1,13 +1,15 @@
 "use client"
 
 import { useEffect, useState, useCallback } from "react"
+import { useNavigate } from "react-router-dom"
 import { motion } from "framer-motion"
-import { Plus, Edit3, Trash2, Mail, Phone, Users, Search } from "lucide-react"
+import { Plus, Mail, Phone, Users } from "lucide-react"
 import Topbar from "@/components/layout/Topbar"
 import DataTable, { type Column } from "@/components/ui/DataTable"
-import { Card, CardContent, Button, Badge, Avatar } from "@/components/ui"
+import { Button, Badge, Avatar } from "@/components/ui"
 import { customerService, type Customer, type CustomerListResponse } from "@/services"
 import { formatCurrency, cn } from "@/lib/utils"
+import CustomerForm from "@/modules/customers/CustomerForm"
 
 const columns: Column<Customer>[] = [
   {
@@ -76,10 +78,12 @@ const columns: Column<Customer>[] = [
 ]
 
 export default function Customers() {
+  const navigate = useNavigate()
   const [data, setData] = useState<CustomerListResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState("")
   const [page, setPage] = useState(1)
+  const [formOpen, setFormOpen] = useState(false)
 
   const fetchData = useCallback(async () => {
     setLoading(true)
@@ -94,13 +98,6 @@ export default function Customers() {
   useEffect(() => {
     fetchData()
   }, [fetchData])
-
-  const handleDelete = async (e: React.MouseEvent, customer: Customer) => {
-    e.stopPropagation()
-    if (!window.confirm(`Delete ${customer.name}?`)) return
-    await customerService.delete(customer.id)
-    fetchData()
-  }
 
   return (
     <>
@@ -117,7 +114,7 @@ export default function Customers() {
             <h1 className="text-2xl font-bold text-heading">Customers</h1>
             <p className="text-sm text-muted mt-1">Manage your customer directory.</p>
           </div>
-          <Button>
+          <Button onClick={() => setFormOpen(true)}>
             <Plus size={16} />
             Add Customer
           </Button>
@@ -147,6 +144,7 @@ export default function Customers() {
           total={data?.total}
           pageSize={10}
           onPageChange={setPage}
+          onRowClick={(c) => navigate(`/customers/${c.id}`)}
           toolbarActions={
             <div className="flex items-center gap-2">
               <Button variant="secondary" size="sm">
@@ -159,6 +157,12 @@ export default function Customers() {
           }
         />
       </motion.div>
+
+      <CustomerForm
+        open={formOpen}
+        onSaved={() => { setFormOpen(false); fetchData() }}
+        onCancel={() => setFormOpen(false)}
+      />
     </>
   )
 }

@@ -1,6 +1,5 @@
 import { http, HttpResponse, delay } from "msw"
 import invoicesData from "../data/invoices.json"
-import productsData from "../data/products.json"
 
 let invoices = [...invoicesData]
 
@@ -9,12 +8,16 @@ export const invoiceHandlers = [
     await delay(300)
     const url = new URL(request.url)
     const search = url.searchParams.get("search")?.toLowerCase() ?? ""
+    const customerId = url.searchParams.get("customerId") ?? ""
     const page = parseInt(url.searchParams.get("page") ?? "1", 10)
     const pageSize = parseInt(url.searchParams.get("pageSize") ?? "10", 10)
 
     let filtered = invoices
+    if (customerId) {
+      filtered = filtered.filter((inv) => inv.customerId === customerId)
+    }
     if (search) {
-      filtered = invoices.filter(
+      filtered = filtered.filter(
         (inv) =>
           inv.number.toLowerCase().includes(search) ||
           inv.customerName.toLowerCase().includes(search)
@@ -76,8 +79,4 @@ export const invoiceHandlers = [
     return HttpResponse.json({ data: invoices[idx], error: null })
   }),
 
-  http.get("/api/products", async () => {
-    await delay(200)
-    return HttpResponse.json({ data: productsData, error: null })
-  }),
 ]

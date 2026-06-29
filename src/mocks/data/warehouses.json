@@ -1,0 +1,7 @@
+[
+  { "id": "wh_001", "name": "Main Warehouse", "location": "Building A, Floor 1", "capacity": 10000, "usedCapacity": 7200, "status": "active", "createdAt": "2025-01-01T00:00:00Z" },
+  { "id": "wh_002", "name": "East Storage", "location": "Building B, Floor 2", "capacity": 5000, "usedCapacity": 3200, "status": "active", "createdAt": "2025-03-15T00:00:00Z" },
+  { "id": "wh_003", "name": "West Storage", "location": "Building C, Floor 1", "capacity": 3000, "usedCapacity": 1800, "status": "active", "createdAt": "2025-06-01T00:00:00Z" },
+  { "id": "wh_004", "name": "Overflow Warehouse", "location": "Off-site Storage Facility", "capacity": 8000, "usedCapacity": 500, "status": "inactive", "createdAt": "2025-09-01T00:00:00Z" },
+  { "id": "wh_005", "name": "Cold Storage", "location": "Building A, Basement", "capacity": 2000, "usedCapacity": 1500, "status": "active", "createdAt": "2025-02-10T00:00:00Z" }
+]

@@ -1,0 +1,32 @@
+[
+  {
+    "id": "ba_001", "accountName": "Business Checking", "accountNumber": "****4521",
+    "bankName": "Royal Bank of Canada", "branch": "Downtown Branch",
+    "type": "checking", "balance": 125430.75, "currency": "CAD", "status": "active",
+    "createdAt": "2025-01-15T10:00:00Z"
+  },
+  {
+    "id": "ba_002", "accountName": "Business Savings", "accountNumber": "****7893",
+    "bankName": "Royal Bank of Canada", "branch": "Downtown Branch",
+    "type": "savings", "balance": 350000.00, "currency": "CAD", "status": "active",
+    "createdAt": "2025-01-15T10:00:00Z"
+  },
+  {
+    "id": "ba_003", "accountName": "Corporate Credit Card", "accountNumber": "****3301",
+    "bankName": "American Express", "branch": "Head Office",
+    "type": "credit", "balance": -12450.30, "currency": "CAD", "status": "active",
+    "createdAt": "2025-03-01T09:00:00Z"
+  },
+  {
+    "id": "ba_004", "accountName": "USD Business Account", "accountNumber": "****6672",
+    "bankName": "Bank of America", "branch": "International Banking",
+    "type": "checking", "balance": 45200.00, "currency": "USD", "status": "active",
+    "createdAt": "2025-06-01T10:00:00Z"
+  },
+  {
+    "id": "ba_005", "accountName": "Old Operating Account", "accountNumber": "****1104",
+    "bankName": "TD Canada Trust", "branch": "Main Street",
+    "type": "checking", "balance": 0, "currency": "CAD", "status": "inactive",
+    "createdAt": "2024-01-10T10:00:00Z"
+  }
+]

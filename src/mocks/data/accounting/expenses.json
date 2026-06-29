@@ -1,0 +1,56 @@
+[
+  {
+    "id": "exp_001", "number": "EXP-2026-0001",
+    "vendorName": "Office Depot", "category": "Office Supplies",
+    "amount": 450.00, "taxAmount": 22.50, "total": 472.50,
+    "status": "paid", "description": "Printer toner and paper stock",
+    "date": "2026-06-02", "paymentMethod": "Credit Card",
+    "notes": "Monthly office supplies order",
+    "createdAt": "2026-06-02T10:00:00Z"
+  },
+  {
+    "id": "exp_002", "number": "EXP-2026-0002",
+    "vendorName": "Tech Solutions Inc", "category": "Software & IT",
+    "amount": 1200.00, "taxAmount": 60.00, "total": 1260.00,
+    "status": "paid", "description": "Cloud server hosting - June",
+    "date": "2026-06-05", "paymentMethod": "Bank Transfer",
+    "notes": "Monthly AWS hosting",
+    "createdAt": "2026-06-05T09:00:00Z"
+  },
+  {
+    "id": "exp_003", "number": "EXP-2026-0003",
+    "vendorName": "National Power Co", "category": "Utilities",
+    "amount": 890.00, "taxAmount": 44.50, "total": 934.50,
+    "status": "pending", "description": "Electricity bill - May",
+    "date": "2026-06-10", "paymentMethod": "Bank Transfer",
+    "notes": "Due by June 25",
+    "createdAt": "2026-06-10T14:00:00Z"
+  },
+  {
+    "id": "exp_004", "number": "EXP-2026-0004",
+    "vendorName": "Goodman & Associates", "category": "Professional Services",
+    "amount": 3000.00, "taxAmount": 299.25, "total": 3299.25,
+    "status": "draft", "description": "Legal consultation - contract review",
+    "date": "2026-06-15", "paymentMethod": "Cheque",
+    "notes": "Awaiting partner approval",
+    "createdAt": "2026-06-15T11:00:00Z"
+  },
+  {
+    "id": "exp_005", "number": "EXP-2026-0005",
+    "vendorName": "City Rentals Ltd", "category": "Rent",
+    "amount": 5500.00, "taxAmount": 0, "total": 5500.00,
+    "status": "paid", "description": "Office rent - June",
+    "date": "2026-06-01", "paymentMethod": "Bank Transfer",
+    "notes": "Monthly rent, Building B, 3rd floor",
+    "createdAt": "2026-06-01T08:00:00Z"
+  },
+  {
+    "id": "exp_006", "number": "EXP-2026-0006",
+    "vendorName": "Quick Couriers", "category": "Shipping & Delivery",
+    "amount": 175.00, "taxAmount": 8.75, "total": 183.75,
+    "status": "paid", "description": "Shipping charges - customer orders",
+    "date": "2026-06-18", "paymentMethod": "Credit Card",
+    "notes": "Various shipments",
+    "createdAt": "2026-06-18T16:00:00Z"
+  }
+]

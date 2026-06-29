@@ -1,13 +1,15 @@
 "use client"
 
 import { useEffect, useState, useCallback } from "react"
+import { useNavigate } from "react-router-dom"
 import { motion } from "framer-motion"
 import { DollarSign, FileText, CheckCircle2, Banknote, CreditCard } from "lucide-react"
 import Topbar from "@/components/layout/Topbar"
 import DataTable, { type Column } from "@/components/ui/DataTable"
-import { Button, Badge, Card, CardContent, CardHeader, CardTitle } from "@/components/ui"
+import { Button, Badge, Card, CardContent } from "@/components/ui"
 import { paymentService, type Invoice, type Payment, type PaymentListResponse } from "@/services"
 import { formatCurrency, formatDate, cn } from "@/lib/utils"
+import RecordPaymentModal from "@/modules/payments/RecordPaymentModal"
 
 const methodIcons: Record<string, React.ReactNode> = {
   bank_transfer: <Banknote size={14} />,
@@ -24,11 +26,14 @@ const methodLabels: Record<string, string> = {
 }
 
 export default function Payments() {
+  const navigate = useNavigate()
   const [unpaidInvoices, setUnpaidInvoices] = useState<Invoice[]>([])
   const [paymentsData, setPaymentsData] = useState<PaymentListResponse | null>(null)
   const [loadingUnpaid, setLoadingUnpaid] = useState(true)
   const [loadingPayments, setLoadingPayments] = useState(true)
   const [paymentPage, setPaymentPage] = useState(1)
+  const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null)
+  const [modalOpen, setModalOpen] = useState(false)
 
   const fetchData = useCallback(async () => {
     setLoadingUnpaid(true)
@@ -47,6 +52,17 @@ export default function Payments() {
   }, [paymentPage])
 
   useEffect(() => { fetchData() }, [fetchData])
+
+  const handleRecordPayment = (inv: Invoice) => {
+    setSelectedInvoice(inv)
+    setModalOpen(true)
+  }
+
+  const handlePaymentRecorded = () => {
+    setModalOpen(false)
+    setSelectedInvoice(null)
+    fetchData()
+  }
 
   const paymentColumns: Column<Payment>[] = [
     {
@@ -103,9 +119,15 @@ export default function Payments() {
         transition={{ duration: 0.3 }}
       >
         {/* Header */}
-        <div>
-          <h1 className="text-2xl font-bold text-heading">Payments</h1>
-          <p className="text-sm text-muted mt-1">Record payments against invoices and view payment history.</p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-heading">Payments</h1>
+            <p className="text-sm text-muted mt-1">Record payments against invoices and view payment history.</p>
+          </div>
+          <Button onClick={() => navigate("/payments/create")}>
+            <DollarSign size={16} />
+            Record Payment
+          </Button>
         </div>
 
         {/* Unpaid Invoices */}
@@ -178,7 +200,7 @@ export default function Payments() {
                           </Badge>
                         </td>
                         <td className="px-6 py-4 text-right">
-                          <Button variant="success" size="sm">
+                          <Button variant="success" size="sm" onClick={() => handleRecordPayment(inv)}>
                             <DollarSign size={14} />
                             Record Payment
                           </Button>
@@ -204,9 +226,19 @@ export default function Payments() {
             total={paymentsData?.total}
             pageSize={10}
             onPageChange={setPaymentPage}
+            onRowClick={(p) => navigate(`/payments/${p.id}`)}
           />
         </section>
       </motion.div>
+
+      {selectedInvoice && (
+        <RecordPaymentModal
+          open={modalOpen}
+          onClose={() => { setModalOpen(false); setSelectedInvoice(null) }}
+          invoice={selectedInvoice}
+          onRecorded={handlePaymentRecorded}
+        />
+      )}
     </>
   )
 }

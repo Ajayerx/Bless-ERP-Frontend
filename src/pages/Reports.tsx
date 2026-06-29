@@ -2,10 +2,10 @@
 
 import { useState, useEffect } from "react"
 import { motion } from "framer-motion"
-import { BarChart3, TrendingUp, Package, FileText, Receipt, Loader2 } from "lucide-react"
+import { BarChart3, Package, FileText, Loader2, TrendingUp, Receipt, AlertTriangle } from "lucide-react"
 import Topbar from "@/components/layout/Topbar"
 import { Card, CardContent, CardHeader, CardTitle, Badge } from "@/components/ui"
-import { reportService, type TaxSummary } from "@/services"
+import { reportService, type TaxSummary, type SalesSummary, type StockReport } from "@/services"
 import { formatCurrency, formatDate, cn } from "@/lib/utils"
 
 type ReportTab = "sales-summary" | "stock-report" | "tax-summary"
@@ -16,26 +16,256 @@ const sidebarItems: { id: ReportTab; label: string; icon: React.ReactNode; secti
   { id: "tax-summary", label: "GST/QST Summary", icon: <FileText size={15} />, section: "Tax" },
 ]
 
-function SalesSummaryPlaceholder() {
+const statusVariant: Record<string, "success" | "warning" | "danger" | "info"> = {
+  paid: "success", sent: "info", overdue: "danger", draft: "warning",
+}
+
+function SalesSummaryReport() {
+  const [data, setData] = useState<SalesSummary | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    reportService.getSalesSummary().then(setData).finally(() => setLoading(false))
+  }, [])
+
+  if (loading) return <div className="flex items-center justify-center py-24"><Loader2 size={28} className="animate-spin text-muted" /></div>
+  if (!data) return null
+
   return (
-    <div className="flex flex-col items-center justify-center py-24 text-center">
-      <div className="w-16 h-16 rounded-[16px] bg-gray-100 flex items-center justify-center mb-4">
-        <BarChart3 size={32} className="text-gray-300" />
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-lg font-bold text-heading">Sales Summary</h2>
+        <p className="text-sm text-muted mt-0.5">Period: {data.period}</p>
       </div>
-      <p className="text-base font-semibold text-heading">Sales Summary</p>
-      <p className="text-sm text-muted mt-1">Detailed sales reports coming soon.</p>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-3">
+              <div className="p-3 rounded-[10px] bg-primary-50 text-primary-600">
+                <TrendingUp size={20} />
+              </div>
+              <div>
+                <p className="text-xs font-semibold text-muted uppercase tracking-wider">Total Sales</p>
+                <p className="text-xl font-bold text-heading mt-0.5 tabular-nums">{formatCurrency(data.totalSales)}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-3">
+              <div className="p-3 rounded-[10px] bg-info-50 text-info-600">
+                <Receipt size={20} />
+              </div>
+              <div>
+                <p className="text-xs font-semibold text-muted uppercase tracking-wider">Total Invoices</p>
+                <p className="text-xl font-bold text-heading mt-0.5 tabular-nums">{data.totalInvoices}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-3">
+              <div className="p-3 rounded-[10px] bg-success-50 text-success-600">
+                <TrendingUp size={20} />
+              </div>
+              <div>
+                <p className="text-xs font-semibold text-muted uppercase tracking-wider">Avg. Invoice</p>
+                <p className="text-xl font-bold text-heading mt-0.5 tabular-nums">{formatCurrency(data.avgInvoiceValue)}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="bg-gradient-to-br from-success-50 to-surface border-success-100">
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-3">
+              <div className="p-3 rounded-[10px] bg-success-100 text-success-700">
+                <BarChart3 size={20} />
+              </div>
+              <div>
+                <p className="text-xs font-semibold text-muted uppercase tracking-wider">Collected</p>
+                <p className="text-xl font-bold text-heading mt-0.5 tabular-nums">{formatCurrency(data.paidTotal)}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="rounded-[16px] bg-success-50 border border-success-100 p-5">
+          <p className="text-xs font-semibold text-success-700 uppercase tracking-wider">Paid</p>
+          <p className="text-xl font-bold text-success-800 mt-1 tabular-nums">{formatCurrency(data.paidTotal)}</p>
+        </div>
+        <div className="rounded-[16px] bg-info-50 border border-info-100 p-5">
+          <p className="text-xs font-semibold text-info-700 uppercase tracking-wider">Sent (Pending)</p>
+          <p className="text-xl font-bold text-info-800 mt-1 tabular-nums">{formatCurrency(data.sentTotal)}</p>
+        </div>
+        <div className="rounded-[16px] bg-danger-50 border border-danger-100 p-5">
+          <p className="text-xs font-semibold text-danger-700 uppercase tracking-wider">Overdue</p>
+          <p className="text-xl font-bold text-danger-800 mt-1 tabular-nums">{formatCurrency(data.overdueTotal)}</p>
+        </div>
+      </div>
+
+      <Card className="p-0 overflow-hidden">
+        <CardHeader>
+          <CardTitle>Recent Invoices</CardTitle>
+        </CardHeader>
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-border">
+            <thead>
+              <tr className="bg-gray-50/50">
+                <th className="px-6 py-3.5 text-left text-xs font-semibold text-muted uppercase tracking-wider">Invoice</th>
+                <th className="px-6 py-3.5 text-left text-xs font-semibold text-muted uppercase tracking-wider">Customer</th>
+                <th className="px-6 py-3.5 text-left text-xs font-semibold text-muted uppercase tracking-wider">Date</th>
+                <th className="px-6 py-3.5 text-right text-xs font-semibold text-muted uppercase tracking-wider">Amount</th>
+                <th className="px-6 py-3.5 text-left text-xs font-semibold text-muted uppercase tracking-wider">Status</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border/50">
+              {data.recentInvoices.map((inv) => (
+                <tr key={inv.number} className="hover:bg-gray-50/50 transition-colors">
+                  <td className="px-6 py-4 text-sm font-semibold text-heading">{inv.number}</td>
+                  <td className="px-6 py-4 text-sm text-body">{inv.customerName}</td>
+                  <td className="px-6 py-4 text-xs text-muted">{formatDate(inv.issueDate)}</td>
+                  <td className="px-6 py-4 text-right text-sm font-semibold tabular-nums text-heading">{formatCurrency(inv.total)}</td>
+                  <td className="px-6 py-4">
+                    <Badge variant={statusVariant[inv.status] ?? "default"}>
+                      {inv.status.charAt(0).toUpperCase() + inv.status.slice(1)}
+                    </Badge>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Card>
     </div>
   )
 }
 
-function StockReportPlaceholder() {
+function StockReportView() {
+  const [data, setData] = useState<StockReport | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    reportService.getStockReport().then(setData).finally(() => setLoading(false))
+  }, [])
+
+  if (loading) return <div className="flex items-center justify-center py-24"><Loader2 size={28} className="animate-spin text-muted" /></div>
+  if (!data) return null
+
   return (
-    <div className="flex flex-col items-center justify-center py-24 text-center">
-      <div className="w-16 h-16 rounded-[16px] bg-gray-100 flex items-center justify-center mb-4">
-        <Package size={32} className="text-gray-300" />
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-lg font-bold text-heading">Stock Report</h2>
+        <p className="text-sm text-muted mt-0.5">Inventory valuation and stock level overview.</p>
       </div>
-      <p className="text-base font-semibold text-heading">Stock Report</p>
-      <p className="text-sm text-muted mt-1">Inventory valuation and movement reports coming soon.</p>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-3">
+              <div className="p-3 rounded-[10px] bg-primary-50 text-primary-600">
+                <Package size={20} />
+              </div>
+              <div>
+                <p className="text-xs font-semibold text-muted uppercase tracking-wider">Total Products</p>
+                <p className="text-xl font-bold text-heading mt-0.5 tabular-nums">{data.totalProducts}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-3">
+              <div className="p-3 rounded-[10px] bg-success-50 text-success-600">
+                <TrendingUp size={20} />
+              </div>
+              <div>
+                <p className="text-xs font-semibold text-muted uppercase tracking-wider">Inventory Value</p>
+                <p className="text-xl font-bold text-heading mt-0.5 tabular-nums">{formatCurrency(data.totalValue)}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-3">
+              <div className="p-3 rounded-[10px] bg-warning-50 text-warning-600">
+                <AlertTriangle size={20} />
+              </div>
+              <div>
+                <p className="text-xs font-semibold text-muted uppercase tracking-wider">Low Stock</p>
+                <p className="text-xl font-bold text-heading mt-0.5 tabular-nums">{data.lowStockCount}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="bg-gradient-to-br from-danger-50 to-surface border-danger-100">
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-3">
+              <div className="p-3 rounded-[10px] bg-danger-100 text-danger-700">
+                <AlertTriangle size={20} />
+              </div>
+              <div>
+                <p className="text-xs font-semibold text-muted uppercase tracking-wider">Out of Stock</p>
+                <p className="text-xl font-bold text-heading mt-0.5 tabular-nums">{data.outOfStockCount}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      <Card className="p-0 overflow-hidden">
+        <CardHeader>
+          <CardTitle>Stock Levels</CardTitle>
+        </CardHeader>
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-border">
+            <thead>
+              <tr className="bg-gray-50/50">
+                <th className="px-6 py-3.5 text-left text-xs font-semibold text-muted uppercase tracking-wider">Product</th>
+                <th className="px-6 py-3.5 text-left text-xs font-semibold text-muted uppercase tracking-wider">SKU</th>
+                <th className="px-6 py-3.5 text-left text-xs font-semibold text-muted uppercase tracking-wider">Warehouse</th>
+                <th className="px-6 py-3.5 text-right text-xs font-semibold text-muted uppercase tracking-wider">Stock</th>
+                <th className="px-6 py-3.5 text-right text-xs font-semibold text-muted uppercase tracking-wider">Value</th>
+                <th className="px-6 py-3.5 text-left text-xs font-semibold text-muted uppercase tracking-wider">Status</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border/50">
+              {data.items.map((item) => (
+                <tr key={item.sku} className="hover:bg-gray-50/50 transition-colors">
+                  <td className="px-6 py-4 text-sm font-semibold text-heading">{item.name}</td>
+                  <td className="px-6 py-4 text-sm text-muted">{item.sku}</td>
+                  <td className="px-6 py-4 text-sm text-body">{item.warehouse}</td>
+                  <td className={cn("px-6 py-4 text-right text-sm font-semibold tabular-nums",
+                    item.stock === 0 ? "text-danger-600" : item.stock < 10 ? "text-warning-600" : "text-heading"
+                  )}>
+                    {item.stock} {item.unit}
+                  </td>
+                  <td className="px-6 py-4 text-right text-sm font-semibold tabular-nums text-heading">
+                    {formatCurrency(item.value)}
+                  </td>
+                  <td className="px-6 py-4">
+                    <Badge variant={item.stock === 0 ? "danger" : item.stock < 10 ? "warning" : "success"}>
+                      {item.stock === 0 ? "Out" : item.stock < 10 ? "Low" : "In Stock"}
+                    </Badge>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot className="bg-gray-50/80">
+              <tr>
+                <td colSpan={4} className="px-6 py-4 text-sm font-bold text-heading">Total Inventory Value</td>
+                <td className="px-6 py-4 text-right text-sm font-bold tabular-nums text-heading">{formatCurrency(data.totalValue)}</td>
+                <td />
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </Card>
     </div>
   )
 }
@@ -48,14 +278,7 @@ function TaxSummaryReport() {
     reportService.getTaxSummary().then(setData).finally(() => setLoading(false))
   }, [])
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center py-24">
-        <Loader2 size={28} className="animate-spin text-muted" />
-      </div>
-    )
-  }
-
+  if (loading) return <div className="flex items-center justify-center py-24"><Loader2 size={28} className="animate-spin text-muted" /></div>
   if (!data) return null
 
   return (
@@ -67,28 +290,28 @@ function TaxSummaryReport() {
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <Card>
-          <CardContent>
+          <CardContent className="pt-6">
             <p className="text-xs font-semibold text-muted uppercase tracking-wider">Total Sales</p>
             <p className="text-2xl font-bold text-heading mt-1.5 tabular-nums">{formatCurrency(data.totalSales)}</p>
             <p className="text-xs text-muted mt-0.5">Before tax</p>
           </CardContent>
         </Card>
         <Card>
-          <CardContent>
+          <CardContent className="pt-6">
             <p className="text-xs font-semibold text-muted uppercase tracking-wider">GST Collected</p>
             <p className="text-2xl font-bold text-primary-600 mt-1.5 tabular-nums">{formatCurrency(data.totalGst)}</p>
             <p className="text-xs text-muted mt-0.5">5% rate</p>
           </CardContent>
         </Card>
         <Card>
-          <CardContent>
+          <CardContent className="pt-6">
             <p className="text-xs font-semibold text-muted uppercase tracking-wider">QST Collected</p>
             <p className="text-2xl font-bold text-purple-600 mt-1.5 tabular-nums">{formatCurrency(data.totalQst)}</p>
             <p className="text-xs text-muted mt-0.5">9.975% rate</p>
           </CardContent>
         </Card>
         <Card className="bg-gradient-to-br from-primary-50 to-surface border-primary-100">
-          <CardContent>
+          <CardContent className="pt-6">
             <p className="text-xs font-semibold text-muted uppercase tracking-wider">Total Tax Collected</p>
             <p className="text-2xl font-bold text-heading mt-1.5 tabular-nums">{formatCurrency(data.totalTax)}</p>
             <p className="text-xs text-muted mt-0.5">GST + QST</p>
@@ -153,7 +376,7 @@ function TaxSummaryReport() {
 }
 
 export default function Reports() {
-  const [activeTab, setActiveTab] = useState<ReportTab>("tax-summary")
+  const [activeTab, setActiveTab] = useState<ReportTab>("sales-summary")
 
   const sections = ["Sales", "Inventory", "Tax"]
 
@@ -168,9 +391,7 @@ export default function Reports() {
           <nav className="p-3 space-y-4">
             {sections.map((section) => (
               <div key={section}>
-                <p className="text-xs font-semibold text-muted uppercase tracking-wider px-2 mb-1">
-                  {section}
-                </p>
+                <p className="text-xs font-semibold text-muted uppercase tracking-wider px-2 mb-1">{section}</p>
                 <div className="space-y-0.5">
                   {sidebarItems
                     .filter((item) => item.section === section)
@@ -178,13 +399,11 @@ export default function Reports() {
                       <button
                         key={item.id}
                         onClick={() => setActiveTab(item.id)}
-                        disabled={item.id !== "tax-summary"}
                         className={cn(
                           "w-full flex items-center gap-2.5 px-3 py-2 rounded-[10px] text-sm text-left transition-colors",
                           activeTab === item.id
                             ? "bg-primary-50 text-primary-600 font-semibold"
-                            : "text-muted hover:bg-gray-100 hover:text-body",
-                          item.id !== "tax-summary" && "opacity-40 cursor-not-allowed"
+                            : "text-muted hover:bg-gray-100 hover:text-body"
                         )}
                       >
                         {item.icon}
@@ -204,8 +423,8 @@ export default function Reports() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.25 }}
           >
-            {activeTab === "sales-summary" && <SalesSummaryPlaceholder />}
-            {activeTab === "stock-report" && <StockReportPlaceholder />}
+            {activeTab === "sales-summary" && <SalesSummaryReport />}
+            {activeTab === "stock-report" && <StockReportView />}
             {activeTab === "tax-summary" && <TaxSummaryReport />}
           </motion.div>
         </main>

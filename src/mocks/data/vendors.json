@@ -1,0 +1,50 @@
+[
+  {
+    "id": "ven_001", "name": "Global Supplies Inc", "contactName": "Alice Wang",
+    "email": "alice@globalsupplies.com", "phone": "+1-555-0101",
+    "billingAddress": "100 Commerce Dr, Chicago, IL 60601",
+    "shippingAddress": "100 Commerce Dr, Dock 3, Chicago, IL 60601",
+    "taxId": "GST-987654", "status": "active",
+    "createdAt": "2025-01-15T10:00:00Z"
+  },
+  {
+    "id": "ven_002", "name": "Midwest Hardware Co", "contactName": "Bob Miller",
+    "email": "bob@midwesthardware.com", "phone": "+1-555-0102",
+    "billingAddress": "250 Industrial Pkwy, Detroit, MI 48201",
+    "shippingAddress": "250 Industrial Pkwy, Detroit, MI 48201",
+    "taxId": "GST-876543", "status": "active",
+    "createdAt": "2025-02-01T09:00:00Z"
+  },
+  {
+    "id": "ven_003", "name": "Precision Parts Ltd", "contactName": "Mike Chen",
+    "email": "mike@precisionparts.com", "phone": "+1-555-0103",
+    "billingAddress": "789 Manufacturing Pkwy, Detroit, MI 48201",
+    "shippingAddress": "789 Manufacturing Pkwy, Detroit, MI 48201",
+    "taxId": "GST-765432", "status": "active",
+    "createdAt": "2025-02-15T10:00:00Z"
+  },
+  {
+    "id": "ven_004", "name": "Coastal Industrial Supply", "contactName": "Diana Ross",
+    "email": "diana@coastalindustrial.com", "phone": "+1-555-0104",
+    "billingAddress": "900 Harbor Blvd, New Orleans, LA 70112",
+    "shippingAddress": "900 Harbor Blvd, New Orleans, LA 70112",
+    "taxId": "GST-654321", "status": "active",
+    "createdAt": "2025-03-01T11:00:00Z"
+  },
+  {
+    "id": "ven_005", "name": "Pacific Trade Group", "contactName": "Ethan Park",
+    "email": "ethan@pacifictrade.com", "phone": "+1-555-0105",
+    "billingAddress": "1500 Mountain Rd, Denver, CO 80201",
+    "shippingAddress": "1500 Mountain Rd, Denver, CO 80201",
+    "taxId": "GST-543210", "status": "inactive",
+    "createdAt": "2025-03-15T08:00:00Z"
+  },
+  {
+    "id": "ven_006", "name": "Northern Steel Corp", "contactName": "Fiona Grant",
+    "email": "fiona@northernsteel.com", "phone": "+1-555-0106",
+    "billingAddress": "50 Steelworks Ave, Hamilton, ON L8N 1A1",
+    "shippingAddress": "50 Steelworks Ave, Hamilton, ON L8N 1A1",
+    "taxId": "GST-432109", "status": "active",
+    "createdAt": "2025-04-01T10:00:00Z"
+  }
+]

@@ -35,13 +35,19 @@ export interface RecordPaymentData {
 
 export const paymentService = {
   async list(params: {
+    customerName?: string
     page?: number
     pageSize?: number
   }): Promise<PaymentListResponse> {
     const qs = new URLSearchParams()
+    if (params.customerName) qs.set("customerName", params.customerName)
     if (params.page) qs.set("page", String(params.page))
     if (params.pageSize) qs.set("pageSize", String(params.pageSize))
     return apiClient<PaymentListResponse>(`/payments?${qs.toString()}`)
+  },
+
+  async getById(id: string): Promise<Payment> {
+    return apiClient<Payment>(`/payments/${id}`)
   },
 
   async getUnpaidInvoices(): Promise<Invoice[]> {
