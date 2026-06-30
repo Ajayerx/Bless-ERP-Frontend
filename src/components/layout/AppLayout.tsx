@@ -1,30 +1,37 @@
-"use client"
+"use client";
 
-import { Outlet, useLocation } from "react-router-dom"
-import { motion, AnimatePresence } from "framer-motion"
-import Sidebar from "./Sidebar"
-import { cn } from "@/lib/utils"
+import { Outlet, useLocation } from "react-router-dom";
+import { motion, AnimatePresence } from "framer-motion";
+import Sidebar from "./Sidebar";
+import { SidebarProvider, useSidebar } from "@/context/SidebarContext";
+import { cn } from "@/lib/utils";
 
 const pageVariants = {
   initial: { opacity: 0, y: 8 },
   animate: { opacity: 1, y: 0 },
   exit: { opacity: 0, y: -8 },
-}
+};
 
 const pageTransition = {
   type: "spring" as const,
   stiffness: 300,
   damping: 30,
   duration: 0.25,
-}
+};
 
-export default function AppLayout() {
-  const location = useLocation()
+function AppShell() {
+  const location = useLocation();
+  const { collapsed } = useSidebar();
 
   return (
     <div className="min-h-screen bg-app-bg">
       <Sidebar />
-      <div className={cn("transition-all duration-300", "ml-[260px]")}>
+      <div
+        className={cn(
+          "transition-all duration-300",
+          collapsed ? "ml-[72px]" : "ml-[260px]",
+        )}
+      >
         <AnimatePresence mode="wait">
           <motion.main
             key={location.pathname}
@@ -39,5 +46,13 @@ export default function AppLayout() {
         </AnimatePresence>
       </div>
     </div>
-  )
+  );
+}
+
+export default function AppLayout() {
+  return (
+    <SidebarProvider>
+      <AppShell />
+    </SidebarProvider>
+  );
 }

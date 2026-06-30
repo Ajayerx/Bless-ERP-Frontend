@@ -54,23 +54,31 @@ export interface Product {
   id: string
   sku: string
   name: string
+  category?: string
   price: number
+  cost?: number
+  costPrice?: number
   stock: number
   unit: string
+  description?: string
+  warehouse?: string
+  taxable?: boolean
+  reorderLevel?: number
 }
 
 export const invoiceService = {
   async list(params: {
     search?: string
-    customerId?: string
     page?: number
     pageSize?: number
+    status?: string
+    customerId?: string
   }): Promise<InvoiceListResponse> {
     const qs = new URLSearchParams()
     if (params.search) qs.set("search", params.search)
-    if (params.customerId) qs.set("customerId", params.customerId)
     if (params.page) qs.set("page", String(params.page))
     if (params.pageSize) qs.set("pageSize", String(params.pageSize))
+    if (params.customerId) qs.set("customerId", params.customerId)
     return apiClient<InvoiceListResponse>(`/invoices?${qs.toString()}`)
   },
 
@@ -93,6 +101,7 @@ export const invoiceService = {
   },
 
   async getProducts(): Promise<Product[]> {
-    return apiClient<Product[]>("/products")
+    const result = await apiClient<{ items: Product[]; total: number }>("/products")
+    return result.items
   },
 }

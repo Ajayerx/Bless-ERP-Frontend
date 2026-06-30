@@ -1,0 +1,7 @@
+[
+  { "id": "je_001", "number": "JE-2026-0001", "date": "2026-06-01", "description": "Monthly rent payment", "debit": 5000, "credit": 5000, "account": "Rent Expense", "counterAccount": "Cash", "status": "posted", "createdAt": "2026-06-01T09:00:00Z" },
+  { "id": "je_002", "number": "JE-2026-0002", "date": "2026-06-05", "description": "Office supplies purchase", "debit": 850, "credit": 850, "account": "Office Supplies", "counterAccount": "Accounts Payable", "status": "posted", "createdAt": "2026-06-05T10:00:00Z" },
+  { "id": "je_003", "number": "JE-2026-0003", "date": "2026-06-10", "description": "Depreciation - Equipment", "debit": 3200, "credit": 3200, "account": "Depreciation Expense", "counterAccount": "Accumulated Depreciation", "status": "draft", "createdAt": "2026-06-10T14:00:00Z" },
+  { "id": "je_004", "number": "JE-2026-0004", "date": "2026-06-15", "description": "GST remittance", "debit": 12450, "credit": 12450, "account": "GST Payable", "counterAccount": "Cash", "status": "posted", "createdAt": "2026-06-15T08:00:00Z" },
+  { "id": "je_005", "number": "JE-2026-0005", "date": "2026-06-20", "description": "Payroll journal entry", "debit": 28500, "credit": 28500, "account": "Salary Expense", "counterAccount": "Payroll Payable", "status": "draft", "createdAt": "2026-06-20T16:00:00Z" }
+]

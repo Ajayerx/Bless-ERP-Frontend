@@ -1,66 +1,12 @@
 [
-  {
-    "id": "qtn_001", "number": "QTN-2026-0001",
-    "customerId": "cus_001", "customerName": "Acme Corp", "customerContact": "John Smith",
-    "billTo": "123 Industrial Blvd, Suite 100, Springfield, IL 62701",
-    "issueDate": "2026-06-01", "validUntil": "2026-07-01",
-    "lineItems": [
-      { "id": "li_001", "productId": "prd_001", "productName": "Widget Pro", "sku": "WP-100", "quantity": 10, "price": 49.99, "taxRate": 0.05, "taxLabel": "GST", "total": 499.90 },
-      { "id": "li_002", "productId": "prd_004", "productName": "Silicone Sealant 300ml", "sku": "SE-400", "quantity": 24, "price": 8.75, "taxRate": 0.05, "taxLabel": "GST", "total": 210.00 }
-    ],
-    "subtotal": 709.90, "gst": 35.50, "qst": 0, "total": 745.40,
-    "status": "sent", "notes": "Competitive pricing for Q3 contract",
-    "createdAt": "2026-06-01T09:00:00Z"
-  },
-  {
-    "id": "qtn_002", "number": "QTN-2026-0002",
-    "customerId": "cus_003", "customerName": "BuildRight Construction", "customerContact": "Sarah Connor",
-    "billTo": "456 Contractor Way, Austin, TX 73301",
-    "issueDate": "2026-06-05", "validUntil": "2026-07-05",
-    "lineItems": [
-      { "id": "li_003", "productId": "prd_007", "productName": "Conveyor Belt 12\" x 20ft", "sku": "CB-700", "quantity": 3, "price": 345.00, "taxRate": 0.09975, "taxLabel": "QST", "total": 1035.00 },
-      { "id": "li_004", "productId": "prd_009", "productName": "Pneumatic Nailer P90", "sku": "PN-900", "quantity": 5, "price": 189.00, "taxRate": 0.09975, "taxLabel": "QST", "total": 945.00 }
-    ],
-    "subtotal": 1980.00, "gst": 0, "qst": 197.51, "total": 2177.51,
-    "status": "draft", "notes": "",
-    "createdAt": "2026-06-05T14:00:00Z"
-  },
-  {
-    "id": "qtn_003", "number": "QTN-2026-0003",
-    "customerId": "cus_005", "customerName": "Precision Parts Ltd", "customerContact": "Mike Chen",
-    "billTo": "789 Manufacturing Pkwy, Detroit, MI 48201",
-    "issueDate": "2026-06-10", "validUntil": "2026-06-30",
-    "lineItems": [
-      { "id": "li_005", "productId": "prd_002", "productName": "Bolt Grade 8 - M12x50", "sku": "BG-200", "quantity": 2000, "price": 0.89, "taxRate": 0.05, "taxLabel": "GST", "total": 1780.00 },
-      { "id": "li_006", "productId": "prd_006", "productName": "Ball Bearing 6205-2RS", "sku": "BR-600", "quantity": 500, "price": 6.45, "taxRate": 0.05, "taxLabel": "GST", "total": 3225.00 },
-      { "id": "li_007", "productId": "prd_013", "productName": "V-Belt A-52", "sku": "VL-1300", "quantity": 100, "price": 11.95, "taxRate": 0.05, "taxLabel": "GST", "total": 1195.00 }
-    ],
-    "subtotal": 6200.00, "gst": 310.00, "qst": 0, "total": 6510.00,
-    "status": "accepted", "notes": "Accepted - converting to sales order",
-    "createdAt": "2026-06-10T11:30:00Z"
-  },
-  {
-    "id": "qtn_004", "number": "QTN-2026-0004",
-    "customerId": "cus_008", "customerName": "SteelFab Industries", "customerContact": "Lisa Park",
-    "billTo": "321 Metalworks Ave, Pittsburgh, PA 15201",
-    "issueDate": "2026-05-15", "validUntil": "2026-06-15",
-    "lineItems": [
-      { "id": "li_008", "productId": "prd_012", "productName": "Stainless Steel Sheet 4x8 16ga", "sku": "SS-1200", "quantity": 15, "price": 215.00, "taxRate": 0.05, "taxLabel": "GST", "total": 3225.00 }
-    ],
-    "subtotal": 3225.00, "gst": 161.25, "qst": 0, "total": 3386.25,
-    "status": "expired", "notes": "Customer did not respond in time",
-    "createdAt": "2026-05-15T08:00:00Z"
-  },
-  {
-    "id": "qtn_005", "number": "QTN-2026-0005",
-    "customerId": "cus_012", "customerName": "Apex Logistics", "customerContact": "Tom Garcia",
-    "billTo": "555 Transport Dr, Memphis, TN 38101",
-    "issueDate": "2026-06-18", "validUntil": "2026-07-18",
-    "lineItems": [
-      { "id": "li_009", "productId": "prd_011", "productName": "Lubricant Pump 5L", "sku": "LP-1100", "quantity": 50, "price": 42.00, "taxRate": 0.09975, "taxLabel": "QST", "total": 2100.00 }
-    ],
-    "subtotal": 2100.00, "gst": 0, "qst": 209.48, "total": 2309.48,
-    "status": "rejected", "notes": "Customer chose a different supplier",
-    "createdAt": "2026-06-18T16:00:00Z"
-  }
+  { "id": "qtn_001", "number": "QTN-2026-0025", "customerId": "cus_001", "customerName": "Acme Corp", "issueDate": "2026-06-25", "validUntil": "2026-07-25", "status": "sent", "items": [{ "productId": "prd_001", "productName": "Widget Pro", "qty": 200, "rate": 47.50, "amount": 9500.00 }], "subtotal": 9500.00, "gst": 475.00, "qst": 0, "total": 9975.00, "notes": "Volume discount applied", "createdAt": "2026-06-25T10:00:00Z" },
+  { "id": "qtn_002", "number": "QTN-2026-0024", "customerId": "cus_003", "customerName": "Maple Leaf Industries", "issueDate": "2026-06-22", "validUntil": "2026-07-22", "status": "accepted", "items": [{ "productId": "prd_010", "productName": "Welding Cable 2/0 50ft", "qty": 50, "rate": 150.00, "amount": 7500.00 }, { "productId": "prd_012", "productName": "Stainless Steel Sheet 4x8 16ga", "qty": 30, "rate": 210.00, "amount": 6300.00 }], "subtotal": 13800.00, "gst": 690.00, "qst": 0, "total": 14490.00, "notes": "", "createdAt": "2026-06-22T14:30:00Z" },
+  { "id": "qtn_003", "number": "QTN-2026-0023", "customerId": "cus_005", "customerName": "Pacific West Distributors", "issueDate": "2026-06-20", "validUntil": "2026-07-20", "status": "draft", "items": [{ "productId": "prd_013", "productName": "V-Belt A-52", "qty": 1000, "rate": 11.50, "amount": 11500.00 }, { "productId": "prd_006", "productName": "Ball Bearing 6205-2RS", "qty": 2000, "rate": 6.20, "amount": 12400.00 }], "subtotal": 23900.00, "gst": 1195.00, "qst": 0, "total": 25095.00, "notes": "Draft - pending approval", "createdAt": "2026-06-20T08:00:00Z" },
+  { "id": "qtn_004", "number": "QTN-2026-0022", "customerId": "cus_008", "customerName": "West Coast Auto Parts", "issueDate": "2026-06-18", "validUntil": "2026-07-18", "status": "declined", "items": [{ "productId": "prd_005", "productName": "Fuel Filter FF-5329", "qty": 500, "rate": 23.50, "amount": 11750.00 }], "subtotal": 11750.00, "gst": 587.50, "qst": 0, "total": 12337.50, "notes": "Customer chose competitor pricing", "createdAt": "2026-06-18T16:00:00Z" },
+  { "id": "qtn_005", "number": "QTN-2026-0021", "customerId": "cus_002", "customerName": "Quebec Retail Inc.", "issueDate": "2026-06-15", "validUntil": "2026-07-15", "status": "sent", "items": [{ "productId": "prd_007", "productName": "Conveyor Belt 12\" x 20ft", "qty": 10, "rate": 340.00, "amount": 3400.00 }, { "productId": "prd_015", "productName": "Hydraulic Fluid 20L", "qty": 40, "rate": 66.00, "amount": 2640.00 }], "subtotal": 6040.00, "gst": 302.00, "qst": 602.49, "total": 6944.49, "notes": "QST applies - Quebec customer", "createdAt": "2026-06-15T09:45:00Z" },
+  { "id": "qtn_006", "number": "QTN-2026-0020", "customerId": "cus_017", "customerName": "Highland Construction", "issueDate": "2026-06-12", "validUntil": "2026-07-12", "status": "accepted", "items": [{ "productId": "prd_009", "productName": "Pneumatic Nailer P90", "qty": 15, "rate": 185.00, "amount": 2775.00 }], "subtotal": 2775.00, "gst": 138.75, "qst": 0, "total": 2913.75, "notes": "Converted to invoice INV-2026-0035", "createdAt": "2026-06-12T11:15:00Z" },
+  { "id": "qtn_007", "number": "QTN-2026-0019", "customerId": "cus_012", "customerName": "Coastal Trading Post", "issueDate": "2026-06-10", "validUntil": "2026-07-10", "status": "converted", "items": [{ "productId": "prd_014", "productName": "Compression Spring 2\"x4\"", "qty": 800, "rate": 3.35, "amount": 2680.00 }], "subtotal": 2680.00, "gst": 134.00, "qst": 0, "total": 2814.00, "notes": "Converted to invoice", "createdAt": "2026-06-10T13:30:00Z" },
+  { "id": "qtn_008", "number": "QTN-2026-0018", "customerId": "cus_020", "customerName": "Crown Royal Packaging", "issueDate": "2026-06-08", "validUntil": "2026-07-08", "status": "draft", "items": [{ "productId": "prd_004", "productName": "Silicone Sealant 300ml", "qty": 1000, "rate": 8.50, "amount": 8500.00 }], "subtotal": 8500.00, "gst": 425.00, "qst": 0, "total": 8925.00, "notes": "", "createdAt": "2026-06-08T10:00:00Z" },
+  { "id": "qtn_009", "number": "QTN-2026-0017", "customerId": "cus_009", "customerName": "Eastern Pharma Solutions", "issueDate": "2026-06-05", "validUntil": "2026-07-05", "status": "sent", "items": [{ "productId": "prd_008", "productName": "Gasket Sheet 1/16\" x 36\"", "qty": 300, "rate": 17.50, "amount": 5250.00 }], "subtotal": 5250.00, "gst": 262.50, "qst": 0, "total": 5512.50, "notes": "Preferred pricing", "createdAt": "2026-06-05T15:00:00Z" },
+  { "id": "qtn_010", "number": "QTN-2026-0016", "customerId": "cus_025", "customerName": "Boreal Forest Products", "issueDate": "2026-06-01", "validUntil": "2026-07-01", "status": "declined", "items": [{ "productId": "prd_012", "productName": "Stainless Steel Sheet 4x8 16ga", "qty": 75, "rate": 212.00, "amount": 15900.00 }], "subtotal": 15900.00, "gst": 795.00, "qst": 0, "total": 16695.00, "notes": "Budget not approved", "createdAt": "2026-06-01T08:45:00Z" }
 ]

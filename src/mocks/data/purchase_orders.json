@@ -1,0 +1,12 @@
+[
+  { "id": "po_001", "number": "PO-2026-0025", "supplierId": "sup_001", "supplierName": "Industrial Supply Co.", "orderDate": "2026-06-25", "expectedDate": "2026-07-10", "total": 15800.00, "status": "sent", "createdAt": "2026-06-25T09:00:00Z" },
+  { "id": "po_002", "number": "PO-2026-0024", "supplierId": "sup_002", "supplierName": "Canada Metals Ltd.", "orderDate": "2026-06-22", "expectedDate": "2026-07-08", "total": 23450.00, "status": "sent", "createdAt": "2026-06-22T10:30:00Z" },
+  { "id": "po_003", "number": "PO-2026-0023", "supplierId": "sup_004", "supplierName": "Quebec Hydraulics", "orderDate": "2026-06-20", "expectedDate": "2026-07-05", "total": 9200.00, "status": "received", "createdAt": "2026-06-20T14:00:00Z" },
+  { "id": "po_004", "number": "PO-2026-0022", "supplierId": "sup_010", "supplierName": "Alberta Chemical Supply", "orderDate": "2026-06-18", "expectedDate": "2026-07-02", "total": 18500.00, "status": "received", "createdAt": "2026-06-18T08:15:00Z" },
+  { "id": "po_005", "number": "PO-2026-0021", "supplierId": "sup_003", "supplierName": "Pacific Fasteners Inc.", "orderDate": "2026-06-15", "expectedDate": "2026-06-30", "total": 6750.00, "status": "received", "createdAt": "2026-06-15T11:00:00Z" },
+  { "id": "po_006", "number": "PO-2026-0020", "supplierId": "sup_008", "supplierName": "Ontario Seal & Gasket", "orderDate": "2026-06-12", "expectedDate": "2026-06-28", "total": 11200.00, "status": "draft", "createdAt": "2026-06-12T09:45:00Z" },
+  { "id": "po_007", "number": "PO-2026-0019", "supplierId": "sup_005", "supplierName": "Prairie Steel Works", "orderDate": "2026-06-10", "expectedDate": "2026-06-25", "total": 32100.00, "status": "sent", "createdAt": "2026-06-10T13:30:00Z" },
+  { "id": "po_008", "number": "PO-2026-0018", "supplierId": "sup_007", "supplierName": "Northern Lubricants", "orderDate": "2026-06-08", "expectedDate": "2026-06-22", "total": 4850.00, "status": "cancelled", "createdAt": "2026-06-08T15:00:00Z" },
+  { "id": "po_009", "number": "PO-2026-0017", "supplierId": "sup_009", "supplierName": "BC Bearings & Drives", "orderDate": "2026-06-05", "expectedDate": "2026-06-20", "total": 7800.00, "status": "received", "createdAt": "2026-06-05T10:00:00Z" },
+  { "id": "po_010", "number": "PO-2026-0016", "supplierId": "sup_006", "supplierName": "Atlantic Tools & Equipment", "orderDate": "2026-06-01", "expectedDate": "2026-06-15", "total": 5600.00, "status": "draft", "createdAt": "2026-06-01T08:30:00Z" }
+]

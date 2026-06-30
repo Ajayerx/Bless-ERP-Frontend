@@ -2,95 +2,71 @@
   "kpis": {
     "totalRevenue": {
       "label": "Total Revenue",
-      "value": 284500,
-      "currency": "USD",
+      "value": 12350.00,
+      "currency": "CAD",
       "trend": 12.5,
-      "trendDirection": "up"
+      "trendDirection": "up",
+      "sparkline": [200, 2800, 4200, 3800, 5600, 7100, 4800]
     },
-    "outstandingInvoices": {
-      "label": "Outstanding Invoices",
-      "value": 48200,
-      "currency": "USD",
-      "trend": -3.2,
-      "trendDirection": "down"
-    },
-    "lowStockProducts": {
-      "label": "Low Stock Products",
-      "value": 12,
-      "trend": 0,
-      "trendDirection": "neutral"
-    },
-    "totalCustomers": {
-      "label": "Total Customers",
-      "value": 1248,
-      "trend": 8.1,
-      "trendDirection": "up"
+    "accountsReceivable": {
+      "label": "Accounts Receivable",
+      "value": 2180.00,
+      "currency": "CAD",
+      "trend": 8.3,
+      "trendDirection": "up",
+      "sparkline": [1500, 1800, 1600, 2100, 1900, 2200, 2180]
     },
     "inventoryValue": {
       "label": "Inventory Value",
-      "value": 178420,
-      "currency": "USD",
-      "trend": 3.2,
-      "trendDirection": "up"
+      "value": 8420.00,
+      "currency": "CAD",
+      "trend": 5.7,
+      "trendDirection": "up",
+      "sparkline": [7800, 7900, 8100, 8300, 8400, 8500, 8420]
     },
     "cashFlow": {
       "label": "Cash Flow",
-      "value": 42680,
-      "currency": "USD",
-      "trend": 8.7,
-      "trendDirection": "up"
+      "value": 9870.00,
+      "currency": "CAD",
+      "trend": 15.2,
+      "trendDirection": "up",
+      "sparkline": [6500, 7200, 8100, 8600, 9200, 9800, 9870]
     }
   },
-  "salesOverTime": [
-    { "month": "Jan", "revenue": 38500, "orders": 142 },
-    { "month": "Feb", "revenue": 41200, "orders": 158 },
-    { "month": "Mar", "revenue": 39800, "orders": 151 },
-    { "month": "Apr", "revenue": 45600, "orders": 173 },
-    { "month": "May", "revenue": 52300, "orders": 196 },
-    { "month": "Jun", "revenue": 67100, "orders": 234 }
+  "salesChart": [
+    { "date": "May 12", "value": 200 },
+    { "date": "May 13", "value": 2800 },
+    { "date": "May 14", "value": 2400 },
+    { "date": "May 15", "value": 4200 },
+    { "date": "May 16", "value": 4600 },
+    { "date": "May 17", "value": 7200 },
+    { "date": "May 18", "value": 5100 }
+  ],
+  "recentInvoices": [
+    { "id": "inv_001", "number": "INV-1003", "date": "May 18, 2024", "customerName": "Maple Store", "amount": 320.00, "status": "paid" },
+    { "id": "inv_002", "number": "INV-1002", "date": "May 17, 2024", "customerName": "Quick Mart", "amount": 180.00, "status": "partial" },
+    { "id": "inv_003", "number": "INV-1001", "date": "May 16, 2024", "customerName": "Fresh Choice", "amount": 245.00, "status": "unpaid" },
+    { "id": "inv_004", "number": "INV-1000", "date": "May 15, 2024", "customerName": "Corner Shop", "amount": 520.00, "status": "paid" },
+    { "id": "inv_005", "number": "INV-0999", "date": "May 14, 2024", "customerName": "Sunny Market", "amount": 150.00, "status": "paid" }
   ],
   "topCustomers": [
-    { "name": "Acme Corp", "revenue": 2879.63 },
-    { "name": "Delta Export Group", "revenue": 8778.00 },
-    { "name": "Maple Leaf Industries", "revenue": 7964.25 },
-    { "name": "Crown Royal Packaging", "revenue": 6886.95 },
-    { "name": "Prairie Grain Co.", "revenue": 6814.50 }
+    { "id": "c_001", "name": "Maple Store", "amount": 1250.00, "initial": "M", "color": "bg-purple-500" },
+    { "id": "c_002", "name": "Quick Mart", "amount": 980.00, "initial": "Q", "color": "bg-orange-500" },
+    { "id": "c_003", "name": "Fresh Choice", "amount": 875.00, "initial": "F", "color": "bg-green-500" },
+    { "id": "c_004", "name": "Corner Shop", "amount": 620.00, "initial": "C", "color": "bg-blue-500" },
+    { "id": "c_005", "name": "Sunny Market", "amount": 540.00, "initial": "S", "color": "bg-yellow-500" }
   ],
   "inventoryAlerts": [
-    { "name": "Widget Pro", "sku": "WP-100", "stock": 3, "threshold": 10 },
-    { "name": "Welding Cable 2/0 50ft", "sku": "WC-1000", "stock": 8, "threshold": 15 },
-    { "name": "Stainless Steel Sheet 4x8 16ga", "sku": "SS-1200", "stock": 25, "threshold": 30 }
+    { "id": "inv_al_001", "productName": "Peach Rings (500g)", "stock": 8, "reorderLevel": 20, "status": "low_stock", "color": "#fb7185" },
+    { "id": "inv_al_002", "productName": "Rainbow Candy (1kg)", "stock": 15, "reorderLevel": 30, "status": "low_stock", "color": "#c084fc" },
+    { "id": "inv_al_003", "productName": "Mango Candy (500g)", "stock": 12, "reorderLevel": 25, "status": "reorder_soon", "color": "#fbbf24" },
+    { "id": "inv_al_004", "productName": "Sour Belts (1kg)", "stock": 18, "reorderLevel": 30, "status": "low_stock", "color": "#a3e635" }
   ],
-  "recentActivity": [
-    {
-      "id": "act_001",
-      "type": "invoice",
-      "message": "Invoice #INV-2026-0042 was paid by Acme Corp",
-      "timestamp": "2026-06-25T14:32:00Z"
-    },
-    {
-      "id": "act_002",
-      "type": "customer",
-      "message": "New customer registered: Northern Manufacturing Ltd",
-      "timestamp": "2026-06-25T11:15:00Z"
-    },
-    {
-      "id": "act_003",
-      "type": "stock",
-      "message": "Stock alert: Widget Pro (SKU: WP-100) has only 3 units left",
-      "timestamp": "2026-06-25T09:45:00Z"
-    },
-    {
-      "id": "act_004",
-      "type": "invoice",
-      "message": "Invoice #INV-2026-0043 was created for Quebec Retail Inc.",
-      "timestamp": "2026-06-24T16:20:00Z"
-    },
-    {
-      "id": "act_005",
-      "type": "payment",
-      "message": "Payment of $12,400 received from Maple Leaf Industries",
-      "timestamp": "2026-06-24T10:05:00Z"
-    }
+  "recentPayments": [
+    { "id": "pay_001", "number": "PAY-1005", "date": "May 18, 2024", "customerName": "Maple Store", "amount": 320.00 },
+    { "id": "pay_002", "number": "PAY-1004", "date": "May 17, 2024", "customerName": "Quick Mart", "amount": 180.00 },
+    { "id": "pay_003", "number": "PAY-1003", "date": "May 16, 2024", "customerName": "Fresh Choice", "amount": 245.00 },
+    { "id": "pay_004", "number": "PAY-1002", "date": "May 15, 2024", "customerName": "Corner Shop", "amount": 200.00 },
+    { "id": "pay_005", "number": "PAY-1001", "date": "May 14, 2024", "customerName": "Sunny Market", "amount": 150.00 }
   ]
 }

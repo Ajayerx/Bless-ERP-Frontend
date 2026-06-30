@@ -1,0 +1,6 @@
+[
+  { "id": "ba_001", "name": "Main Operating Account", "accountNumber": "****-1234", "type": "chequing", "balance": 245000.50, "currency": "CAD", "institution": "Royal Bank of Canada", "isDefault": true, "createdAt": "2025-01-01T00:00:00Z" },
+  { "id": "ba_002", "name": "Business Savings", "accountNumber": "****-5678", "type": "savings", "balance": 500000.00, "currency": "CAD", "institution": "Royal Bank of Canada", "isDefault": false, "createdAt": "2025-01-01T00:00:00Z" },
+  { "id": "ba_003", "name": "USD Operations", "accountNumber": "****-9012", "type": "chequing", "balance": 35000.00, "currency": "USD", "institution": "Bank of Montreal", "isDefault": false, "createdAt": "2025-03-15T00:00:00Z" },
+  { "id": "ba_004", "name": "Corporate Credit Line", "accountNumber": "****-3456", "type": "credit", "balance": -50000.00, "currency": "CAD", "institution": "TD Canada Trust", "isDefault": false, "createdAt": "2025-06-01T00:00:00Z" }
+]

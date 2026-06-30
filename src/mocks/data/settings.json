@@ -1,0 +1,67 @@
+{
+  "company": {
+    "name": "BlessERP",
+    "legalName": "BlessERP Inc.",
+    "address": "120 King Street West, Suite 200, Toronto, ON M5X 1E5",
+    "phone": "+1 (416) 555-BLES",
+    "email": "hello@blesserp.com",
+    "website": "https://blesserp.com",
+    "businessNumber": "BN-89234 5678 RT",
+    "gstNumber": "GST-89234 5678 RT",
+    "qstNumber": "QST-1234567890",
+    "province": "ON"
+  },
+  "taxes": {
+    "gstRate": 0.05,
+    "qstRate": 0.09975,
+    "gstEnabled": true,
+    "qstEnabled": true,
+    "qstProvinces": ["QC"],
+    "defaultTaxLabel": "GST"
+  },
+  "defaults": {
+    "paymentTerms": "Net 30",
+    "invoicePrefix": "INV-",
+    "currency": "CAD",
+    "locale": "en-CA",
+    "fiscalYearStart": "2026-01-01",
+    "fiscalYearEnd": "2026-12-31"
+  },
+  "users": [
+    { "id": "usr_001", "name": "Alex Morgan", "email": "alex@blesserp.com", "role": "Administrator", "status": "active" },
+    { "id": "usr_002", "name": "Sarah Chen", "email": "sarah@blesserp.com", "role": "Manager", "status": "active" },
+    { "id": "usr_003", "name": "James Wilson", "email": "james@blesserp.com", "role": "Sales", "status": "active" },
+    { "id": "usr_004", "name": "Emily Davis", "email": "emily@blesserp.com", "role": "Inventory Clerk", "status": "inactive" },
+    { "id": "usr_005", "name": "Michael Brown", "email": "michael@blesserp.com", "role": "Viewer", "status": "active" }
+  ],
+  "profile": {
+    "displayName": "Alex Morgan",
+    "title": "System Administrator",
+    "department": "IT",
+    "avatar": null,
+    "signature": "Alex Morgan, BlessERP Inc.",
+    "phone": "+1 (416) 555-BLES"
+  },
+  "notifications": {
+    "invoiceCreated": true,
+    "paymentReceived": true,
+    "orderConfirmed": true,
+    "lowStock": true,
+    "weeklyReport": true,
+    "monthlyReport": false,
+    "marketingEmails": false
+  },
+  "security": {
+    "twoFactorEnabled": false,
+    "sessionTimeoutMinutes": 60,
+    "passwordMinLength": 8,
+    "requireSpecialChars": true,
+    "lastPasswordChange": "2026-05-15"
+  },
+  "appearance": {
+    "theme": "light",
+    "density": "comfortable",
+    "language": "en-CA",
+    "reducedMotion": false
+  }
+}

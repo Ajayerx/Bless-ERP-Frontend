@@ -1,0 +1,154 @@
+{
+  "salesReport": {
+    "period": "June 2026",
+    "totalSales": 67100.00,
+    "totalOrders": 234,
+    "averageOrderValue": 286.75,
+    "salesByCustomer": [
+      { "customerName": "Delta Export Group", "total": 8778.00, "orders": 3 },
+      { "customerName": "Maple Leaf Industries", "total": 7964.25, "orders": 2 },
+      { "customerName": "Crown Royal Packaging", "total": 6886.95, "orders": 2 },
+      { "customerName": "Prairie Grain Co.", "total": 6814.50, "orders": 2 },
+      { "customerName": "West Coast Auto Parts", "total": 5792.33, "orders": 2 },
+      { "customerName": "Quebec Retail Inc.", "total": 4846.20, "orders": 2 },
+      { "customerName": "Highland Construction", "total": 4350.15, "orders": 1 },
+      { "customerName": "Eastern Pharma Solutions", "total": 3711.75, "orders": 1 },
+      { "customerName": "Acme Corp", "total": 2879.63, "orders": 1 },
+      { "customerName": "Coastal Trading Post", "total": 2309.90, "orders": 1 }
+    ],
+    "salesByProduct": [
+      { "productName": "Stainless Steel Sheet 4x8 16ga", "total": 6450.00, "qty": 30 },
+      { "productName": "Welding Cable 2/0 50ft", "total": 6240.00, "qty": 40 },
+      { "productName": "Silicone Sealant 300ml", "total": 6125.00, "qty": 700 },
+      { "productName": "Conveyor Belt 12\" x 20ft", "total": 3795.00, "qty": 11 },
+      { "productName": "V-Belt A-52", "total": 3748.50, "qty": 230 }
+    ],
+    "monthlyTrend": [
+      { "month": "Jan", "sales": 38500, "target": 35000 },
+      { "month": "Feb", "sales": 41200, "target": 35000 },
+      { "month": "Mar", "sales": 39800, "target": 40000 },
+      { "month": "Apr", "sales": 45600, "target": 40000 },
+      { "month": "May", "sales": 52300, "target": 45000 },
+      { "month": "Jun", "sales": 67100, "target": 50000 }
+    ]
+  },
+  "arReport": {
+    "period": "June 2026",
+    "totalOutstanding": 48200.00,
+    "agingBuckets": {
+      "current": 18450.00,
+      "days1to30": 15200.00,
+      "days31to60": 8950.00,
+      "days61to90": 3800.00,
+      "days90plus": 1800.00
+    },
+    "customers": [
+      { "customerName": "Quebec Retail Inc.", "outstanding": 4846.20, "daysOverdue": 0, "status": "current" },
+      { "customerName": "Delta Export Group", "outstanding": 8778.00, "daysOverdue": 0, "status": "current" },
+      { "customerName": "Maple Leaf Industries", "outstanding": 7964.25, "daysOverdue": 19, "status": "overdue" },
+      { "customerName": "West Coast Auto Parts", "outstanding": 5792.33, "daysOverdue": 1, "status": "overdue" },
+      { "customerName": "Crown Royal Packaging", "outstanding": 6886.95, "daysOverdue": 38, "status": "overdue" },
+      { "customerName": "Boreal Forest Products", "outstanding": 4289.25, "daysOverdue": 0, "status": "draft" }
+    ]
+  },
+  "inventoryReport": {
+    "period": "Q2 2026",
+    "totalProducts": 15,
+    "totalValue": 21786.20,
+    "totalCost": 13146.80,
+    "lowStockCount": 3,
+    "outOfStockCount": 0,
+    "items": [
+      { "productName": "Widget Pro", "sku": "WP-100", "stock": 3, "reorderLevel": 10, "value": 149.97 },
+      { "productName": "Welding Cable 2/0 50ft", "sku": "WC-1000", "stock": 8, "reorderLevel": 15, "value": 1248.00 },
+      { "productName": "Conveyor Belt 12\" x 20ft", "sku": "CB-700", "stock": 15, "reorderLevel": 5, "value": 5175.00 },
+      { "productName": "Pneumatic Nailer P90", "sku": "PN-900", "stock": 22, "reorderLevel": 10, "value": 4158.00 },
+      { "productName": "Stainless Steel Sheet 4x8 16ga", "sku": "SS-1200", "stock": 25, "reorderLevel": 10, "value": 5375.00 }
+    ]
+  },
+  "profitLoss": {
+    "period": "June 2026",
+    "income": {
+      "totalRevenue": 67100.00,
+      "salesRevenue": 62800.00,
+      "otherIncome": 4300.00
+    },
+    "expenses": {
+      "totalExpenses": 45320.00,
+      "costOfGoodsSold": 29800.00,
+      "rent": 5500.00,
+      "salaries": 18500.00,
+      "utilities": 1850.00,
+      "insurance": 1200.00,
+      "professionalServices": 3300.00,
+      "shipping": 320.00,
+      "marketing": 1500.00,
+      "officeSupplies": 335.49,
+      "internet": 129.99,
+      "vehicle": 320.00,
+      "depreciation": 1200.00,
+      "other": 1200.00
+    },
+    "netProfit": 21780.00,
+    "netMargin": 32.5
+  },
+  "balanceSheet": {
+    "period": "June 2026",
+    "assets": {
+      "total": 685400.00,
+      "currentAssets": {
+        "cash": 84520.00,
+        "accountsReceivable": 48200.00,
+        "inventory": 21786.20,
+        "prepaidExpenses": 4800.00,
+        "total": 159306.20
+      },
+      "fixedAssets": {
+        "equipment": 385000.00,
+        "accumulatedDepreciation": -48000.00,
+        "building": 150000.00,
+        "vehicle": 28000.00,
+        "total": 515000.00
+      },
+      "otherAssets": {
+        "goodwill": 8000.00,
+        "securityDeposits": 3000.00,
+        "total": 11000.00
+      }
+    },
+    "liabilities": {
+      "total": 285200.00,
+      "currentLiabilities": {
+        "accountsPayable": 32450.00,
+        "gstPayable": 4250.00,
+        "qstPayable": 1890.00,
+        "accruedSalaries": 18500.00,
+        "total": 57090.00
+      },
+      "longTermLiabilities": {
+        "bankLoan": 180000.00,
+        "equipmentLoan": 48000.00,
+        "total": 228000.00
+      }
+    },
+    "equity": {
+      "total": 400200.00,
+      "retainedEarnings": 320000.00,
+      "currentEarnings": 80200.00
+    }
+  },
+  "taxSummary": {
+    "period": "June 2026",
+    "totalSales": 67100.00,
+    "totalGst": 3355.00,
+    "totalQst": 1478.50,
+    "totalTax": 4833.50,
+    "breakdown": [
+      { "invoiceNumber": "INV-2026-0042", "customerName": "Acme Corp", "issueDate": "2026-06-15", "subtotal": 2742.50, "gst": 137.13, "qst": 0, "total": 2879.63 },
+      { "invoiceNumber": "INV-2026-0043", "customerName": "Quebec Retail Inc.", "issueDate": "2026-06-18", "subtotal": 4215.00, "gst": 210.75, "qst": 420.45, "total": 4846.20 },
+      { "invoiceNumber": "INV-2026-0039", "customerName": "West Coast Auto Parts", "issueDate": "2026-05-28", "subtotal": 5516.50, "gst": 275.83, "qst": 0, "total": 5792.33 },
+      { "invoiceNumber": "INV-2026-0035", "customerName": "Highland Construction", "issueDate": "2026-05-01", "subtotal": 4143.00, "gst": 207.15, "qst": 0, "total": 4350.15 },
+      { "invoiceNumber": "INV-2026-0033", "customerName": "Quebec Retail Inc.", "issueDate": "2026-04-15", "subtotal": 1460.00, "gst": 73.00, "qst": 145.64, "total": 1678.64 }
+    ]
+  }
+}

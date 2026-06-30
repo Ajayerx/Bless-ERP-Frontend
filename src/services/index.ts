@@ -1,79 +1,38 @@
 export { authService } from "./auth.service"
 export type { AuthService, AuthResponse, LoginRequest, User } from "./auth.service"
 export { dashboardService } from "./dashboard.service"
-export type {
-  DashboardData,
-  KpiMetric,
-  SalesMonth,
-  ActivityItem,
-  TopCustomer,
-  InventoryAlert,
-} from "./dashboard.service"
+export type { DashboardData, KpiMetric, SalesDay, RecentInvoice, TopCustomer, InventoryAlert, RecentPayment } from "./dashboard.service"
 export { customerService } from "./customers.service"
-export type {
-  Customer,
-  CustomerFormData,
-  CustomerListResponse,
-} from "./customers.service"
+export type { Customer, CustomerFormData, CustomerListResponse } from "./customers.service"
 export { invoiceService } from "./invoices.service"
-export type {
-  Invoice,
-  InvoiceFormData,
-  InvoiceListResponse,
-  LineItem,
-} from "./invoices.service"
+export type { Invoice, InvoiceFormData, InvoiceListResponse, LineItem, Product } from "./invoices.service"
 export { paymentService } from "./payments.service"
-export type {
-  Payment,
-  PaymentListResponse,
-  RecordPaymentData,
-} from "./payments.service"
+export type { Payment, PaymentListResponse, RecordPaymentData } from "./payments.service"
 export { reportService } from "./reports.service"
-export type { TaxSummary, TaxBreakdownRow, SalesSummary, StockReport, StockReportItem } from "./reports.service"
+export type { TaxSummary, TaxBreakdownRow, SalesReport, ARReport, InventoryReport, ProfitLoss, BalanceSheet } from "./reports.service"
 export { productService } from "./products.service"
-export type { Product, ProductListResponse } from "./products.service"
+export type { Product as ProductItem, ProductListResponse } from "./products.service"
+export { supplierService } from "./suppliers.service"
+export type { Supplier, SupplierFormData, SupplierListResponse } from "./suppliers.service"
+export { expenseService } from "./expenses.service"
+export type { Expense, ExpenseFormData, ExpenseListResponse } from "./expenses.service"
+export { billService } from "./bills.service"
+export type { Bill, BillListResponse } from "./bills.service"
+export { bankAccountService } from "./bank_accounts.service"
+export type { BankAccount, BankAccountListResponse } from "./bank_accounts.service"
+export { journalEntryService } from "./journal_entries.service"
+export type { JournalEntry, JournalEntryListResponse } from "./journal_entries.service"
+export { salesOrderService } from "./sales_orders.service"
+export type { SalesOrder, SalesOrderItem, SalesOrderListResponse } from "./sales_orders.service"
 export { quotationService } from "./quotations.service"
-export type { Quotation, QuotationListResponse, QuotationFormData } from "./quotations.service"
-export { salesOrderService } from "./sales-orders.service"
-export type { SalesOrder, SalesOrderListResponse, SalesOrderFormData } from "./sales-orders.service"
-export {
-  contactService,
-  leadService,
-  opportunityService,
-  followUpService,
-} from "@/modules/crm/services"
-export type {
-  Contact,
-  ContactListResponse,
-  Lead,
-  LeadListResponse,
-  Opportunity,
-  OpportunityListResponse,
-  FollowUp,
-  FollowUpListResponse,
-} from "@/modules/crm/types"
-export { accountingService } from "@/modules/accounting/services"
-export type {
-  Expense, ExpenseListResponse, ExpenseFormData,
-  TaxSummaryData,
-  BankAccount, BankAccountListResponse, BankAccountFormData,
-  JournalEntry, JournalEntryListResponse, JournalEntryFormData,
-} from "@/modules/accounting/types"
-export {
-  purchaseOrderService,
-  vendorService,
-  billService,
-} from "@/modules/purchases/services"
-export type {
-  PurchaseOrder,
-  PurchaseOrderListResponse,
-  PurchaseOrderFormData,
-  Vendor,
-  VendorListResponse,
-  VendorFormData,
-  Bill,
-  BillListResponse,
-  BillFormData,
-  BillStatus,
-} from "@/modules/purchases/types"
+export type { Quotation, QuotationItem, QuotationFormData, QuotationListResponse } from "./quotations.service"
+export { contactService } from "./contacts.service"
+export type { Contact, ContactListResponse } from "./contacts.service"
+export { opportunityService } from "./opportunities.service"
+export type { Opportunity, OpportunityListResponse } from "./opportunities.service"
+export { settingsService } from "./settings.service"
+export type { Settings, CompanyInfo, TaxConfig, AppDefaults, AppUser, UserProfile, NotificationPreferences, SecuritySettings, AppearanceSettings } from "./settings.service"
+export { purchaseOrderService } from "./purchase_orders.service"
+export type { PurchaseOrder, PurchaseOrderListResponse } from "./purchase_orders.service"
+
 export { apiClient, ApiError } from "./api-client"

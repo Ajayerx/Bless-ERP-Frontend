@@ -11,9 +11,11 @@
     "moduleResolution": "bundler",
     "allowImportingTsExtensions": true,
     "verbatimModuleSyntax": true,
+    "ignoreDeprecations": "6.0",
     "moduleDetection": "force",
     "noEmit": true,
     "jsx": "react-jsx",
+    "baseUrl": ".",
     "paths": {
       "@/*": ["./src/*"]
     },

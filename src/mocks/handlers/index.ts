@@ -4,26 +4,36 @@ import { customerHandlers } from "./customers"
 import { invoiceHandlers } from "./invoices"
 import { paymentHandlers } from "./payments"
 import { reportHandlers } from "./reports"
-import { hrmsHandlers } from "./hrms"
-import { inventoryHandlers } from "./inventory"
+import { productsHandlers } from "./products"
+import { supplierHandlers } from "./suppliers"
+import { expenseHandlers } from "./expenses"
+import { billHandlers } from "./bills"
+import { bankAccountHandlers } from "./bank_accounts"
+import { journalEntryHandlers } from "./journal_entries"
+import { salesOrderHandlers } from "./sales_orders"
 import { quotationHandlers } from "./quotations"
-import { salesOrderHandlers } from "./sales-orders"
-import { crmHandlers } from "./crm"
-import { purchaseOrderHandlers } from "./purchases"
-import { accountingHandlers } from "./accounting"
+import { contactHandlers } from "./contacts"
+import { opportunityHandlers } from "./opportunities"
+import { settingsHandlers } from "./settings"
+import { purchaseOrderHandlers } from "./purchase_orders"
 
 export const handlers = [
   ...authHandlers,
   ...dashboardHandlers,
   ...customerHandlers,
-  ...invoiceHandlers,
+  ...productsHandlers,
   ...paymentHandlers,
+  ...invoiceHandlers,
   ...reportHandlers,
-  ...hrmsHandlers,
-  ...inventoryHandlers,
-  ...quotationHandlers,
+  ...supplierHandlers,
+  ...expenseHandlers,
+  ...billHandlers,
+  ...bankAccountHandlers,
+  ...journalEntryHandlers,
   ...salesOrderHandlers,
-  ...crmHandlers,
+  ...quotationHandlers,
+  ...contactHandlers,
+  ...opportunityHandlers,
+  ...settingsHandlers,
   ...purchaseOrderHandlers,
-  ...accountingHandlers,
 ]

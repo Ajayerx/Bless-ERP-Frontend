@@ -6,46 +6,60 @@ export interface KpiMetric {
   currency?: string
   trend: number
   trendDirection: "up" | "down" | "neutral"
+  sparkline: number[]
 }
 
-export interface SalesMonth {
-  month: string
-  revenue: number
-  orders: number
+export interface SalesDay {
+  date: string
+  value: number
 }
 
-export interface ActivityItem {
+export interface RecentInvoice {
   id: string
-  type: string
-  message: string
-  timestamp: string
+  number: string
+  date: string
+  customerName: string
+  amount: number
+  status: "paid" | "partial" | "unpaid"
 }
 
 export interface TopCustomer {
+  id: string
   name: string
-  revenue: number
+  amount: number
+  initial: string
+  color: string
 }
 
 export interface InventoryAlert {
-  name: string
-  sku: string
+  id: string
+  productName: string
   stock: number
-  threshold: number
+  reorderLevel: number
+  status: "low_stock" | "reorder_soon"
+  color: string
+}
+
+export interface RecentPayment {
+  id: string
+  number: string
+  date: string
+  customerName: string
+  amount: number
 }
 
 export interface DashboardData {
   kpis: {
     totalRevenue: KpiMetric
-    outstandingInvoices: KpiMetric
-    lowStockProducts: KpiMetric
-    totalCustomers: KpiMetric
+    accountsReceivable: KpiMetric
     inventoryValue: KpiMetric
     cashFlow: KpiMetric
   }
-  salesOverTime: SalesMonth[]
+  salesChart: SalesDay[]
+  recentInvoices: RecentInvoice[]
   topCustomers: TopCustomer[]
   inventoryAlerts: InventoryAlert[]
-  recentActivity: ActivityItem[]
+  recentPayments: RecentPayment[]
 }
 
 export const dashboardService = {

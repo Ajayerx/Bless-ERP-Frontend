@@ -8,16 +8,14 @@ export const invoiceHandlers = [
     await delay(300)
     const url = new URL(request.url)
     const search = url.searchParams.get("search")?.toLowerCase() ?? ""
-    const customerId = url.searchParams.get("customerId") ?? ""
     const page = parseInt(url.searchParams.get("page") ?? "1", 10)
     const pageSize = parseInt(url.searchParams.get("pageSize") ?? "10", 10)
 
     let filtered = invoices
-    if (customerId) {
-      filtered = filtered.filter((inv) => inv.customerId === customerId)
-    }
+    const customerId = url.searchParams.get("customerId")
+    if (customerId) filtered = filtered.filter((inv) => inv.customerId === customerId)
     if (search) {
-      filtered = filtered.filter(
+      filtered = invoices.filter(
         (inv) =>
           inv.number.toLowerCase().includes(search) ||
           inv.customerName.toLowerCase().includes(search)

@@ -1,17 +1,35 @@
 import { apiClient } from "./api-client"
-import type { LineItem } from "./invoices.service"
+
+export interface QuotationItem {
+  productId: string
+  productName: string
+  qty: number
+  rate: number
+  amount: number
+}
+
+export interface QuotationFormData {
+  customerId: string
+  customerName: string
+  issueDate: string
+  validUntil: string
+  items: Omit<QuotationItem, "id">[]
+  subtotal: number
+  gst: number
+  qst: number
+  total: number
+  notes: string
+}
 
 export interface Quotation {
   id: string
   number: string
   customerId: string
   customerName: string
-  customerContact: string
-  billTo: string
   issueDate: string
   validUntil: string
-  status: "draft" | "sent" | "accepted" | "rejected" | "expired"
-  lineItems: LineItem[]
+  status: "draft" | "sent" | "accepted" | "declined" | "converted"
+  items: QuotationItem[]
   subtotal: number
   gst: number
   qst: number
@@ -25,52 +43,22 @@ export interface QuotationListResponse {
   total: number
   page: number
   pageSize: number
-  totalPages: number
-}
-
-export interface QuotationFormData {
-  customerId: string
-  customerName: string
-  customerContact: string
-  billTo: string
-  issueDate: string
-  validUntil: string
-  lineItems: Omit<LineItem, "id">[]
-  subtotal: number
-  gst: number
-  qst: number
-  total: number
-  notes: string
 }
 
 export const quotationService = {
-  async list(params: {
-    search?: string
-    page?: number
-    pageSize?: number
-  }): Promise<QuotationListResponse> {
+  list: (params: { search?: string; page?: number; pageSize?: number; status?: string } = {}): Promise<QuotationListResponse> => {
     const qs = new URLSearchParams()
     if (params.search) qs.set("search", params.search)
     if (params.page) qs.set("page", String(params.page))
     if (params.pageSize) qs.set("pageSize", String(params.pageSize))
-    return apiClient<QuotationListResponse>(`/quotations?${qs.toString()}`)
+    if (params.status) qs.set("status", params.status)
+    return apiClient(`/quotations?${qs}`)
   },
-
-  async getById(id: string): Promise<Quotation> {
-    return apiClient<Quotation>(`/quotations/${id}`)
-  },
-
-  async create(data: QuotationFormData): Promise<Quotation> {
-    return apiClient<Quotation>("/quotations", {
-      method: "POST",
-      body: JSON.stringify(data),
-    })
-  },
-
-  async update(id: string, data: Partial<QuotationFormData>): Promise<Quotation> {
-    return apiClient<Quotation>(`/quotations/${id}`, {
-      method: "PUT",
-      body: JSON.stringify(data),
-    })
-  },
+  getById: (id: string): Promise<Quotation> => apiClient(`/quotations/${id}`),
+  create: (data: QuotationFormData): Promise<Quotation> =>
+    apiClient("/quotations", { method: "POST", body: JSON.stringify(data) }),
+  update: (id: string, data: Partial<QuotationFormData>): Promise<Quotation> =>
+    apiClient(`/quotations/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+  delete: (id: string): Promise<void> =>
+    apiClient(`/quotations/${id}`, { method: "DELETE" }),
 }

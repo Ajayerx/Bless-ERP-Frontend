@@ -9,25 +9,17 @@ export const paymentHandlers = [
   http.get("/api/payments", async ({ request }) => {
     await delay(300)
     const url = new URL(request.url)
-    const customerName = url.searchParams.get("customerName") ?? ""
     const page = parseInt(url.searchParams.get("page") ?? "1", 10)
     const pageSize = parseInt(url.searchParams.get("pageSize") ?? "10", 10)
 
-    let filtered = payments
-    if (customerName) {
-      filtered = filtered.filter((p) =>
-        p.customerName.toLowerCase().includes(customerName.toLowerCase())
-      )
-    }
-
-    filtered.sort(
+    payments.sort(
       (a, b) =>
         new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
     )
 
-    const total = filtered.length
+    const total = payments.length
     const start = (page - 1) * pageSize
-    const paged = filtered.slice(start, start + pageSize)
+    const paged = payments.slice(start, start + pageSize)
 
     return HttpResponse.json({
       data: {
@@ -41,24 +33,19 @@ export const paymentHandlers = [
     })
   }),
 
+  http.get("*/payments/:id", async ({ params }) => {
+    await delay(200)
+    const payment = payments.find((p) => p.id === params.id)
+    if (!payment) return HttpResponse.json({ data: null, error: { message: "Payment not found" } }, { status: 404 })
+    return HttpResponse.json({ data: payment, error: null })
+  }),
+
   http.get("/api/invoices/unpaid", async () => {
     await delay(300)
     const unpaid = invoices.filter(
       (inv) => inv.status === "sent" || inv.status === "overdue"
     )
     return HttpResponse.json({ data: unpaid, error: null })
-  }),
-
-  http.get("/api/payments/:id", async ({ params }) => {
-    await delay(200)
-    const payment = payments.find((p) => p.id === params.id)
-    if (!payment) {
-      return HttpResponse.json(
-        { data: null, error: { message: "Payment not found." } },
-        { status: 404 }
-      )
-    }
-    return HttpResponse.json({ data: payment, error: null })
   }),
 
   http.post("/api/payments", async ({ request }) => {

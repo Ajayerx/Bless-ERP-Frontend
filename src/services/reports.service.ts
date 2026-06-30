@@ -19,46 +19,65 @@ export interface TaxSummary {
   breakdown: TaxBreakdownRow[]
 }
 
-export interface SalesSummary {
-  totalSales: number
-  totalInvoices: number
-  avgInvoiceValue: number
-  paidTotal: number
-  sentTotal: number
-  overdueTotal: number
+export interface SalesReport {
   period: string
-  recentInvoices: { number: string; customerName: string; total: number; status: string; issueDate: string }[]
+  totalSales: number
+  totalOrders: number
+  averageOrderValue: number
+  salesByCustomer: { customerName: string; total: number; orders: number }[]
+  salesByProduct: { productName: string; total: number; qty: number }[]
+  monthlyTrend: { month: string; sales: number; target: number }[]
 }
 
-export interface StockReportItem {
-  name: string
-  sku: string
-  stock: number
-  unit: string
-  price: number
-  value: number
-  warehouse: string
-  status: string
+export interface ARReport {
+  period: string
+  totalOutstanding: number
+  agingBuckets: Record<string, number>
+  customers: { customerName: string; outstanding: number; daysOverdue: number; status: string }[]
 }
 
-export interface StockReport {
+export interface InventoryReport {
+  period: string
   totalProducts: number
   totalValue: number
+  totalCost: number
   lowStockCount: number
   outOfStockCount: number
-  items: StockReportItem[]
+  items: { productName: string; sku: string; stock: number; reorderLevel: number; value: number }[]
+}
+
+export interface ProfitLoss {
+  period: string
+  income: { totalRevenue: number; salesRevenue: number; otherIncome: number }
+  expenses: { totalExpenses: number } & Record<string, number>
+  netProfit: number
+  netMargin: number
+}
+
+export interface BalanceSheet {
+  period: string
+  assets: { total: number; currentAssets: Record<string, number>; fixedAssets: Record<string, number>; otherAssets: Record<string, number> }
+  liabilities: { total: number; currentLiabilities: Record<string, number>; longTermLiabilities: Record<string, number> }
+  equity: { total: number; retainedEarnings: number; currentEarnings: number }
 }
 
 export const reportService = {
   async getTaxSummary(): Promise<TaxSummary> {
     return apiClient<TaxSummary>("/reports/tax-summary")
   },
-
-  async getSalesSummary(): Promise<SalesSummary> {
-    return apiClient<SalesSummary>("/reports/sales-summary")
+  async getSalesReport(): Promise<SalesReport> {
+    return apiClient<SalesReport>("/reports/sales")
   },
-
-  async getStockReport(): Promise<StockReport> {
-    return apiClient<StockReport>("/reports/stock-report")
+  async getArReport(): Promise<ARReport> {
+    return apiClient<ARReport>("/reports/ar")
+  },
+  async getInventoryReport(): Promise<InventoryReport> {
+    return apiClient<InventoryReport>("/reports/inventory")
+  },
+  async getProfitLoss(): Promise<ProfitLoss> {
+    return apiClient<ProfitLoss>("/reports/profit-loss")
+  },
+  async getBalanceSheet(): Promise<BalanceSheet> {
+    return apiClient<BalanceSheet>("/reports/balance-sheet")
   },
 }

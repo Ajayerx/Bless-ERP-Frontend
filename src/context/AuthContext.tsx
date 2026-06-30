@@ -1,9 +1,6 @@
 import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from "react"
 import { authService, type User } from "../services"
 
-const TOKEN_KEY = "blesserp_token"
-const USER_KEY = "blesserp_user"
-
 interface AuthContextType {
   user: User | null
   isAuthenticated: boolean
@@ -15,41 +12,32 @@ const AuthContext = createContext<AuthContextType | null>(null)
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(() => {
-    const stored = localStorage.getItem(USER_KEY)
+    const stored = localStorage.getItem("auth_user")
     return stored ? JSON.parse(stored) : null
   })
 
-  const [initialized, setInitialized] = useState(false)
-
   useEffect(() => {
-    const token = localStorage.getItem(TOKEN_KEY)
-    if (!token) {
-      setUser(null)
-      localStorage.removeItem(USER_KEY)
-    }
-    setInitialized(true)
+    const token = localStorage.getItem("auth_token")
+    if (!token) setUser(null)
   }, [])
 
   const login = useCallback(async (email: string, password: string) => {
     const { user: loggedInUser, token } = await authService.login({ email, password })
-    localStorage.setItem(TOKEN_KEY, token)
-    localStorage.setItem(USER_KEY, JSON.stringify(loggedInUser))
+    localStorage.setItem("auth_token", token)
+    localStorage.setItem("auth_user", JSON.stringify(loggedInUser))
     setUser(loggedInUser)
   }, [])
 
   const logout = useCallback(async () => {
-    try {
-      await authService.logout()
-    } finally {
-      localStorage.removeItem(TOKEN_KEY)
-      localStorage.removeItem(USER_KEY)
-      setUser(null)
-    }
+    await authService.logout()
+    localStorage.removeItem("auth_token")
+    localStorage.removeItem("auth_user")
+    setUser(null)
   }, [])
 
   return (
     <AuthContext.Provider value={{ user, isAuthenticated: !!user, login, logout }}>
-      {initialized ? children : null}
+      {children}
     </AuthContext.Provider>
   )
 }
