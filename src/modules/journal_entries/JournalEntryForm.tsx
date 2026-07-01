@@ -1,19 +1,27 @@
 "use client"
+import { forwardRef, useImperativeHandle } from "react"
 import { useForm } from "react-hook-form"
-import { Button, Input, Select, Textarea } from "@/components/ui"
+import { Input, Select, Textarea } from "@/components/ui"
 import type { JournalEntryFormData } from "@/services/journal_entries.service"
 
 interface Props {
   defaultValues?: Partial<JournalEntryFormData>
   onSubmit: (data: JournalEntryFormData) => Promise<void>
-  loading?: boolean
 }
 
-export default function JournalEntryForm({ defaultValues, onSubmit, loading }: Props) {
+export interface JournalEntryFormRef {
+  submit: () => void
+}
+
+export default forwardRef<JournalEntryFormRef, Props>(function JournalEntryForm({ defaultValues, onSubmit }, ref) {
   const { register, handleSubmit, formState: { errors } } = useForm<JournalEntryFormData>({ defaultValues })
 
+  useImperativeHandle(ref, () => ({
+    submit: handleSubmit(onSubmit),
+  }))
+
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+    <form className="space-y-6">
       <div className="grid grid-cols-2 gap-4">
         <Input label="Date" type="date" {...register("date", { required: "Required" })} error={errors.date?.message} />
         <Select label="Status" {...register("status")}>
@@ -26,9 +34,6 @@ export default function JournalEntryForm({ defaultValues, onSubmit, loading }: P
         <Input label="Credit ($)" type="number" {...register("credit", { valueAsNumber: true, min: 0 })} />
       </div>
       <Textarea label="Description" {...register("description", { required: "Required" })} error={errors.description?.message} />
-      <div className="flex justify-end gap-3 pt-4 border-t border-border">
-        <Button type="submit" loading={loading}>Save Entry</Button>
-      </div>
     </form>
   )
-}
+})

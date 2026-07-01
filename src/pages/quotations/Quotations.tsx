@@ -48,6 +48,7 @@ export default function Quotations() {
           onSearch={(q) => { setSearch(q); setPage(1) }}
           page={page} onPageChange={setPage}
           activeFilter={activeFilter} onFilterChange={(f) => { setActiveFilter(f); setPage(1) }}
+          onRowClick={(quotation) => navigate(`/quotations/${quotation.id}`)}
         />
       </motion.div>
     </>

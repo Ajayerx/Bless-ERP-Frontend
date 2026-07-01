@@ -34,6 +34,7 @@ interface ExpenseService {
   list(params: { search?: string; page?: number; pageSize?: number; category?: string }): Promise<ExpenseListResponse>
   getById(id: string): Promise<Expense>
   create(data: ExpenseFormData): Promise<Expense>
+  update(id: string, data: Partial<ExpenseFormData>): Promise<Expense>
 }
 
 export const expenseService: ExpenseService = {
@@ -48,4 +49,6 @@ export const expenseService: ExpenseService = {
   getById: (id) => apiClient(`/expenses/${id}`),
   create: (data) =>
     apiClient("/expenses", { method: "POST", body: JSON.stringify(data) }),
+  update: (id, data) =>
+    apiClient(`/expenses/${id}`, { method: "PUT", body: JSON.stringify(data) }),
 }

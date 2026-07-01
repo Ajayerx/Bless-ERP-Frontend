@@ -1,16 +1,17 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { useParams, Link } from "react-router-dom"
-import { ArrowLeft } from "lucide-react"
+import { useParams, Link, useNavigate } from "react-router-dom"
+import { ArrowLeft, Pencil } from "lucide-react"
 import { motion } from "framer-motion"
 import Topbar from "@/components/layout/Topbar"
-import { Skeleton } from "@/components/ui"
+import { Skeleton, Button } from "@/components/ui"
 import { expenseService, type Expense } from "@/services"
 import ExpenseDetailCard from "@/modules/expenses/ExpenseDetailCard"
 
 export default function ExpenseDetail() {
   const { id } = useParams<{ id: string }>()
+  const navigate = useNavigate()
   const [expense, setExpense] = useState<Expense | null>(null)
   const [loading, setLoading] = useState(true)
 
@@ -33,9 +34,14 @@ export default function ExpenseDetail() {
           <p className="text-muted">Expense not found.</p>
         ) : (
           <div className="space-y-4">
-            <Link to="/expenses" className="inline-flex items-center gap-1.5 text-sm text-muted hover:text-body transition-colors">
-              <ArrowLeft size={16} /> Back to Expenses
-            </Link>
+            <div className="flex items-center justify-between">
+              <Link to="/expenses" className="inline-flex items-center gap-1.5 text-sm text-muted hover:text-body transition-colors">
+                <ArrowLeft size={16} /> Back to Expenses
+              </Link>
+              <Button variant="outline" size="sm" onClick={() => navigate(`/expenses/${id}/edit`)}>
+                <Pencil size={14} /> Edit
+              </Button>
+            </div>
             <ExpenseDetailCard expense={expense} />
           </div>
         )}

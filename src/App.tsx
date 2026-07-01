@@ -9,8 +9,8 @@ import { Products, NewProduct, ProductDetail, EditProduct } from "./pages/produc
 import { Invoices, InvoiceDetail, CreateInvoice, EditInvoice } from "./pages/invoices";
 import { Payments, PaymentDetail } from "./pages/payments";
 import { SalesReportPage, ARReportPage, InventoryReportPage, ProfitLossPage, BalanceSheetPage, GSTSummaryPage } from "./pages/reports";
-import { Expenses, NewExpense, ExpenseDetail } from "./pages/expenses";
-import { Suppliers, NewSupplier, SupplierDetail } from "./pages/suppliers";
+import { Expenses, NewExpense, ExpenseDetail, EditExpense } from "./pages/expenses";
+import { Suppliers, NewSupplier, SupplierDetail, EditSupplier } from "./pages/suppliers";
 import { Bills, BillDetail, CreateBill, EditBill } from "./pages/bills";
 import { Purchases, PurchaseDetail, CreatePurchaseOrder, EditPurchaseOrder } from "./pages/purchases";
 import { Quotations, NewQuotation, QuotationDetail, EditQuotation } from "./pages/quotations";
@@ -91,6 +91,7 @@ function App() {
         <Route path="suppliers" element={<Suppliers />} />
         <Route path="suppliers/new" element={<NewSupplier />} />
         <Route path="suppliers/:id" element={<SupplierDetail />} />
+        <Route path="suppliers/:id/edit" element={<EditSupplier />} />
         <Route path="bills" element={<Bills />} />
         <Route path="bills/new" element={<CreateBill />} />
         <Route path="bills/:id" element={<BillDetail />} />
@@ -102,6 +103,7 @@ function App() {
         <Route path="expenses" element={<Expenses />} />
         <Route path="expenses/new" element={<NewExpense />} />
         <Route path="expenses/:id" element={<ExpenseDetail />} />
+        <Route path="expenses/:id/edit" element={<EditExpense />} />
         <Route path="taxes" element={<Taxes />} />
         <Route path="contacts" element={<Contacts />} />
         <Route path="contacts/new" element={<NewContact />} />

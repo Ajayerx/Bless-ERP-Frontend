@@ -100,9 +100,10 @@ interface PaymentTableProps {
   loading: boolean
   page: number
   onPageChange: (page: number) => void
+  onRowClick?: (payment: Payment) => void
 }
 
-export default function PaymentTable({ paymentsData, loading, page, onPageChange }: PaymentTableProps) {
+export default function PaymentTable({ paymentsData, loading, page, onPageChange, onRowClick }: PaymentTableProps) {
   const totalCollected = paymentsData?.items?.reduce((s, p) => s + p.amount, 0) ?? 0
 
   return (
@@ -145,6 +146,7 @@ export default function PaymentTable({ paymentsData, loading, page, onPageChange
           total={paymentsData?.total}
           pageSize={10}
           onPageChange={onPageChange}
+          onRowClick={onRowClick}
           emptyState={
             <div className="flex flex-col items-center gap-2 py-4">
               <DollarSign size={32} className="text-muted opacity-40" />

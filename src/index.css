@@ -211,6 +211,25 @@ body {
   background-color: #475569;
 }
 
+.dark .text-gray-700 { color: var(--color-body); }
+.dark .text-gray-600 { color: var(--color-muted); }
+.dark .text-gray-500 { color: #64748b; }
+.dark .text-gray-400 { color: #64748b; }
+
+.dark .bg-gray-200 { background-color: #334155; }
+.dark .bg-white { background-color: var(--color-surface); }
+
+.dark .border-gray-50,
+.dark .border-gray-100,
+.dark .border-gray-200,
+.dark .border-gray-300 { border-color: var(--color-border); }
+
+.dark .bg-gray-50\/50,
+.dark .bg-gray-50\/80,
+.dark .bg-gray-50\/30 {
+  background-color: rgba(30, 41, 59, 0.5);
+}
+
 @layer utilities {
   .shadow-card {
     box-shadow: 0px 2px 10px rgba(0, 0, 0, 0.05);

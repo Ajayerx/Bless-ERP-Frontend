@@ -52,7 +52,7 @@ export default function Topbar() {
             "w-full pl-10 pr-4 py-2.5 bg-gray-50 border rounded-[12px] text-sm text-body placeholder:text-muted transition-all duration-200",
             "focus:outline-none focus:ring-2 focus:ring-primary-500/20",
             searchFocused
-              ? "border-primary-500 bg-white shadow-sm"
+              ? "border-primary-500 bg-surface shadow-sm"
               : "border-transparent hover:bg-gray-100"
           )}
         />

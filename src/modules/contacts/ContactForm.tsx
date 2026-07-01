@@ -1,19 +1,27 @@
 "use client"
+import { forwardRef, useImperativeHandle } from "react"
 import { useForm } from "react-hook-form"
-import { Button, Input, Select, Textarea } from "@/components/ui"
+import { Input, Select, Textarea } from "@/components/ui"
 import type { ContactFormData } from "@/services/contacts.service"
 
 interface Props {
   defaultValues?: Partial<ContactFormData>
   onSubmit: (data: ContactFormData) => Promise<void>
-  loading?: boolean
 }
 
-export default function ContactForm({ defaultValues, onSubmit, loading }: Props) {
+export interface ContactFormRef {
+  submit: () => void
+}
+
+export default forwardRef<ContactFormRef, Props>(function ContactForm({ defaultValues, onSubmit }, ref) {
   const { register, handleSubmit, formState: { errors } } = useForm<ContactFormData>({ defaultValues })
 
+  useImperativeHandle(ref, () => ({
+    submit: handleSubmit(onSubmit),
+  }))
+
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+    <form className="space-y-6">
       <div className="grid grid-cols-2 gap-4">
         <Input label="Full Name" {...register("name", { required: "Required" })} error={errors.name?.message} />
         <Input label="Email" type="email" {...register("email", { required: "Required" })} error={errors.email?.message} />
@@ -25,9 +33,6 @@ export default function ContactForm({ defaultValues, onSubmit, loading }: Props)
         </Select>
       </div>
       <Textarea label="Notes" {...register("notes")} />
-      <div className="flex justify-end gap-3 pt-4 border-t border-border">
-        <Button type="submit" loading={loading}>Save Contact</Button>
-      </div>
     </form>
   )
-}
+})

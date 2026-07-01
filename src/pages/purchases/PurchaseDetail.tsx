@@ -1,16 +1,17 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { useParams, Link } from "react-router-dom"
-import { ArrowLeft } from "lucide-react"
+import { useParams, Link, useNavigate } from "react-router-dom"
+import { ArrowLeft, Pencil } from "lucide-react"
 import { motion } from "framer-motion"
 import Topbar from "@/components/layout/Topbar"
-import { Skeleton } from "@/components/ui"
+import { Skeleton, Button } from "@/components/ui"
 import { purchaseOrderService, type PurchaseOrder } from "@/services"
 import PurchaseDetailCard from "@/modules/invoices/PurchaseDetailCard"
 
 export default function PurchaseDetail() {
   const { id } = useParams<{ id: string }>()
+  const navigate = useNavigate()
   const [purchaseOrder, setPurchaseOrder] = useState<PurchaseOrder | null>(null)
   const [loading, setLoading] = useState(true)
 
@@ -33,9 +34,14 @@ export default function PurchaseDetail() {
           <p className="text-muted">Purchase order not found.</p>
         ) : (
           <div className="space-y-4">
-            <Link to="/purchases" className="inline-flex items-center gap-1.5 text-sm text-muted hover:text-body transition-colors">
-              <ArrowLeft size={16} /> Back to Purchases
-            </Link>
+            <div className="flex items-center justify-between">
+              <Link to="/purchases" className="inline-flex items-center gap-1.5 text-sm text-muted hover:text-body transition-colors">
+                <ArrowLeft size={16} /> Back to Purchases
+              </Link>
+              <Button variant="outline" size="sm" onClick={() => navigate(`/purchases/${id}/edit`)}>
+                <Pencil size={14} /> Edit
+              </Button>
+            </div>
             <PurchaseDetailCard purchaseOrder={purchaseOrder} />
           </div>
         )}

@@ -40,4 +40,13 @@ export const expenseHandlers = [
     expenses = [newExpense, ...expenses] as any
     return HttpResponse.json({ data: newExpense, error: null }, { status: 201 })
   }),
+
+  http.put("/api/expenses/:id", async ({ params, request }) => {
+    await delay(300)
+    const body = (await request.json()) as Record<string, unknown>
+    const idx = expenses.findIndex((e) => e.id === params.id)
+    if (idx === -1) return HttpResponse.json({ data: null, error: { message: "Expense not found." } }, { status: 404 })
+    expenses[idx] = { ...expenses[idx], ...(body as any) }
+    return HttpResponse.json({ data: expenses[idx], error: null })
+  }),
 ]

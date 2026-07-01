@@ -1,16 +1,17 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { useParams, Link } from "react-router-dom"
-import { ArrowLeft } from "lucide-react"
+import { useParams, Link, useNavigate } from "react-router-dom"
+import { ArrowLeft, Pencil } from "lucide-react"
 import { motion } from "framer-motion"
 import Topbar from "@/components/layout/Topbar"
-import { Skeleton } from "@/components/ui"
+import { Skeleton, Button } from "@/components/ui"
 import { supplierService, type Supplier } from "@/services"
 import SupplierDetailCard from "@/modules/suppliers/SupplierDetailCard"
 
 export default function SupplierDetail() {
   const { id } = useParams<{ id: string }>()
+  const navigate = useNavigate()
   const [supplier, setSupplier] = useState<Supplier | null>(null)
   const [loading, setLoading] = useState(true)
 
@@ -33,9 +34,14 @@ export default function SupplierDetail() {
           <p className="text-muted">Supplier not found.</p>
         ) : (
           <div className="space-y-4">
-            <Link to="/suppliers" className="inline-flex items-center gap-1.5 text-sm text-muted hover:text-body transition-colors">
-              <ArrowLeft size={16} /> Back to Suppliers
-            </Link>
+            <div className="flex items-center justify-between">
+              <Link to="/suppliers" className="inline-flex items-center gap-1.5 text-sm text-muted hover:text-body transition-colors">
+                <ArrowLeft size={16} /> Back to Suppliers
+              </Link>
+              <Button variant="outline" size="sm" onClick={() => navigate(`/suppliers/${id}/edit`)}>
+                <Pencil size={14} /> Edit
+              </Button>
+            </div>
             <SupplierDetailCard supplier={supplier} />
           </div>
         )}

@@ -70,10 +70,11 @@ interface QuotationTableProps {
   onPageChange: (page: number) => void
   activeFilter: Filter
   onFilterChange: (filter: Filter) => void
+  onRowClick?: (quotation: Quotation) => void
 }
 
 export default function QuotationTable({
-  data, loading, search, onSearch, page, onPageChange, activeFilter, onFilterChange,
+  data, loading, search, onSearch, page, onPageChange, activeFilter, onFilterChange, onRowClick,
 }: QuotationTableProps) {
   return (
     <div className="space-y-6">
@@ -123,6 +124,7 @@ export default function QuotationTable({
         searchable searchPlaceholder="Search quotations..." searchQuery={search}
         onSearch={(q) => { onSearch(q); onPageChange(1) }}
         loading={loading} page={page} total={data?.total} pageSize={10} onPageChange={onPageChange}
+        onRowClick={onRowClick}
       />
     </div>
   )

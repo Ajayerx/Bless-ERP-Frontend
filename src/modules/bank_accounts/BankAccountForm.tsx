@@ -1,19 +1,27 @@
 "use client"
+import { forwardRef, useImperativeHandle } from "react"
 import { useForm } from "react-hook-form"
-import { Button, Input, Select } from "@/components/ui"
+import { Input, Select } from "@/components/ui"
 import type { BankAccountFormData } from "@/services/bank_accounts.service"
 
 interface Props {
   defaultValues?: Partial<BankAccountFormData>
   onSubmit: (data: BankAccountFormData) => Promise<void>
-  loading?: boolean
 }
 
-export default function BankAccountForm({ defaultValues, onSubmit, loading }: Props) {
+export interface BankAccountFormRef {
+  submit: () => void
+}
+
+export default forwardRef<BankAccountFormRef, Props>(function BankAccountForm({ defaultValues, onSubmit }, ref) {
   const { register, handleSubmit, formState: { errors } } = useForm<BankAccountFormData>({ defaultValues })
 
+  useImperativeHandle(ref, () => ({
+    submit: handleSubmit(onSubmit),
+  }))
+
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+    <form className="space-y-6">
       <div className="grid grid-cols-2 gap-4">
         <Input label="Account Name" {...register("name", { required: "Required" })} error={errors.name?.message} />
         <Input label="Account Number" {...register("accountNumber", { required: "Required" })} error={errors.accountNumber?.message} />
@@ -30,9 +38,6 @@ export default function BankAccountForm({ defaultValues, onSubmit, loading }: Pr
           <option value="true">Yes</option>
         </Select>
       </div>
-      <div className="flex justify-end gap-3 pt-4 border-t border-border">
-        <Button type="submit" loading={loading}>Save Account</Button>
-      </div>
     </form>
   )
-}
+})

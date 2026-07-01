@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { motion } from "framer-motion";
 import {
   DollarSign,
@@ -21,6 +21,7 @@ import {
 import { formatCurrency, formatDate, cn } from "@/lib/utils";
 
 export default function Payments() {
+  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const preselectedInvoiceId = searchParams.get("invoice");
 
@@ -105,6 +106,7 @@ export default function Payments() {
           loading={loadingPayments}
           page={paymentPage}
           onPageChange={setPaymentPage}
+          onRowClick={(payment) => navigate(`/payments/${payment.id}`)}
         />
 
         <section className="space-y-4">

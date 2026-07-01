@@ -1,19 +1,27 @@
 "use client"
+import { forwardRef, useImperativeHandle } from "react"
 import { useForm } from "react-hook-form"
-import { Button, Input, Select, Textarea } from "@/components/ui"
+import { Input, Select, Textarea } from "@/components/ui"
 import type { OpportunityFormData } from "@/services/opportunities.service"
 
 interface Props {
   defaultValues?: Partial<OpportunityFormData>
   onSubmit: (data: OpportunityFormData) => Promise<void>
-  loading?: boolean
 }
 
-export default function OpportunityForm({ defaultValues, onSubmit, loading }: Props) {
+export interface OpportunityFormRef {
+  submit: () => void
+}
+
+export default forwardRef<OpportunityFormRef, Props>(function OpportunityForm({ defaultValues, onSubmit }, ref) {
   const { register, handleSubmit, formState: { errors } } = useForm<OpportunityFormData>({ defaultValues })
 
+  useImperativeHandle(ref, () => ({
+    submit: handleSubmit(onSubmit),
+  }))
+
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+    <form className="space-y-6">
       <div className="grid grid-cols-2 gap-4">
         <Input label="Title" {...register("title", { required: "Required" })} error={errors.title?.message} />
         <Input label="Customer Name" {...register("customerName", { required: "Required" })} error={errors.customerName?.message} />
@@ -30,9 +38,6 @@ export default function OpportunityForm({ defaultValues, onSubmit, loading }: Pr
         <Input label="Assigned To" {...register("assignedTo", { required: "Required" })} error={errors.assignedTo?.message} />
       </div>
       <Textarea label="Notes" {...register("notes")} />
-      <div className="flex justify-end gap-3 pt-4 border-t border-border">
-        <Button type="submit" loading={loading}>Save Opportunity</Button>
-      </div>
     </form>
   )
-}
+})
