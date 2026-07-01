@@ -3,74 +3,62 @@
 import { useEffect, useState, useCallback } from "react"
 import { useNavigate } from "react-router-dom"
 import { motion } from "framer-motion"
-import { ClipboardCheck, Plus } from "lucide-react"
+import { ArrowLeftRight, Plus } from "lucide-react"
 import Topbar from "@/components/layout/Topbar"
 import DataTable, { type Column } from "@/components/ui/DataTable"
 import { Button, Badge } from "@/components/ui"
 import { inventoryService } from "@/modules/inventory/services"
-import type { StockCount } from "@/modules/inventory/types"
-import { formatDate, cn } from "@/lib/utils"
+import type { StockTransfer } from "@/modules/inventory/types"
 
 const statusConfig: Record<string, { label: string; variant: "success" | "warning" | "default" | "danger" | "info" }> = {
   draft: { label: "Draft", variant: "default" },
-  in_progress: { label: "In Progress", variant: "warning" },
+  in_transit: { label: "In Transit", variant: "warning" },
   completed: { label: "Completed", variant: "success" },
   cancelled: { label: "Cancelled", variant: "danger" },
 }
 
-const columns: Column<StockCount>[] = [
+const columns: Column<StockTransfer>[] = [
   {
     key: "reference",
     header: "Reference",
-    render: (c) => (
+    render: (t) => (
       <div>
-        <p className="font-semibold text-heading">{c.reference}</p>
-        <p className="text-xs text-muted">{formatDate(c.createdAt)}</p>
+        <p className="font-semibold text-heading">{t.reference}</p>
+        <p className="text-xs text-muted">{new Date(t.createdAt).toLocaleDateString()}</p>
       </div>
     ),
   },
   {
-    key: "warehouse",
-    header: "Warehouse",
-    render: (c) => <span className="text-sm text-body">{c.warehouse}</span>,
+    key: "fromWarehouse",
+    header: "From",
+    render: (t) => <span className="text-sm text-body">{t.fromWarehouse}</span>,
+  },
+  {
+    key: "toWarehouse",
+    header: "To",
+    render: (t) => <span className="text-sm text-body">{t.toWarehouse}</span>,
   },
   {
     key: "items",
-    header: "Items Counted",
+    header: "Items",
     className: "text-right",
-    render: (c) => (
-      <span className="text-sm font-semibold tabular-nums text-heading">{c.items.length}</span>
+    render: (t) => (
+      <span className="text-sm font-semibold tabular-nums text-heading">{t.items.length}</span>
     ),
-  },
-  {
-    key: "discrepancies",
-    header: "Discrepancies",
-    className: "text-right",
-    render: (c) => {
-      const diffs = c.items.filter((i) => i.difference !== 0).length
-      return (
-        <span className={cn(
-          "text-sm font-semibold tabular-nums",
-          diffs > 0 ? "text-danger-600" : "text-success-600"
-        )}>
-          {diffs}
-        </span>
-      )
-    },
   },
   {
     key: "status",
     header: "Status",
-    render: (c) => {
-      const cfg = statusConfig[c.status] ?? { label: c.status, variant: "default" as const }
+    render: (t) => {
+      const cfg = statusConfig[t.status] ?? { label: t.status, variant: "default" as const }
       return <Badge variant={cfg.variant}>{cfg.label}</Badge>
     },
   },
 ]
 
-export default function StockCounts() {
+export default function StockTransfers() {
   const navigate = useNavigate()
-  const [data, setData] = useState<{ items: StockCount[]; total: number } | null>(null)
+  const [data, setData] = useState<{ items: StockTransfer[]; total: number } | null>(null)
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState("")
   const [page, setPage] = useState(1)
@@ -78,7 +66,7 @@ export default function StockCounts() {
   const fetchData = useCallback(async () => {
     setLoading(true)
     try {
-      const result = await inventoryService.listCounts({ search, page, pageSize: 10 })
+      const result = await inventoryService.listTransfers({ search, page, pageSize: 10 })
       setData(result)
     } finally {
       setLoading(false)
@@ -99,31 +87,31 @@ export default function StockCounts() {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="p-2 rounded-[10px] bg-primary-50 text-primary-600">
-              <ClipboardCheck size={20} />
+              <ArrowLeftRight size={20} />
             </div>
             <div>
-              <h1 className="text-2xl font-bold text-heading">Stock Counts</h1>
-              <p className="text-sm text-muted mt-1">Track physical inventory counts and discrepancies.</p>
+              <h1 className="text-2xl font-bold text-heading">Stock Transfers</h1>
+              <p className="text-sm text-muted mt-1">Move inventory between warehouses.</p>
             </div>
           </div>
-          <Button>
+          <Button onClick={() => navigate("/inventory/transfers/new")}>
             <Plus size={16} />
-            New Stock Count
+            New Transfer
           </Button>
         </div>
 
         {data && (
           <p className="text-sm text-muted">
-            <strong className="text-heading">{data.total}</strong> stock counts
+            <strong className="text-heading">{data.total}</strong> transfers
           </p>
         )}
 
         <DataTable
           columns={columns}
           data={data?.items ?? []}
-          keyExtractor={(c) => c.id}
+          keyExtractor={(t) => t.id}
           searchable
-          searchPlaceholder="Search stock counts..."
+          searchPlaceholder="Search transfers..."
           searchQuery={search}
           onSearch={(q) => { setSearch(q); setPage(1) }}
           loading={loading}
@@ -131,11 +119,9 @@ export default function StockCounts() {
           total={data?.total}
           pageSize={10}
           onPageChange={setPage}
-          onRowClick={(c) => navigate(`/inventory/counts/${c.id}`)}
+          onRowClick={(t) => navigate(`/inventory/transfers/${t.id}`)}
         />
       </motion.div>
     </>
   )
 }
-
-

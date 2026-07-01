@@ -40,7 +40,7 @@ export default function BankAccounts() {
           data={data} loading={loading} search={search}
           onSearch={(q) => { setSearch(q); setPage(1) }}
           page={page} onPageChange={setPage}
-          onRowClick={(id) => navigate(`/bank-accounts/${id}`)}
+          onRowClick={(a) => navigate(`/bank-accounts/${a.id}`)}
         />
       </motion.div>
     </>

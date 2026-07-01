@@ -90,7 +90,7 @@ export default function WarehouseDetail() {
               </p>
             </div>
           </div>
-          <Button variant="secondary">Edit Warehouse</Button>
+          <Button variant="secondary" onClick={() => navigate(`/inventory/warehouses/${warehouse.id}/edit`)}>Edit Warehouse</Button>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">

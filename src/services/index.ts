@@ -35,4 +35,5 @@ export type { Settings, CompanyInfo, TaxConfig, AppDefaults, AppUser, UserProfil
 export { purchaseOrderService } from "./purchase_orders.service"
 export type { PurchaseOrder, PurchaseOrderListResponse } from "./purchase_orders.service"
 
+export { accountingService } from "@/modules/accounting/services"
 export { apiClient, ApiError } from "./api-client"

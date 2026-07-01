@@ -12,8 +12,12 @@ const ThemeContext = createContext<ThemeContextType | null>(null)
 
 function getInitialTheme(): Theme {
   if (typeof window === "undefined") return "light"
-  const stored = localStorage.getItem("blesserp_theme") as Theme | null
-  if (stored === "light" || stored === "dark") return stored
+  try {
+    const stored = localStorage.getItem("blesserp_theme") as Theme | null
+    if (stored === "light" || stored === "dark") return stored
+  } catch {
+    // localStorage unavailable (private browsing, permission denied)
+  }
   return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"
 }
 

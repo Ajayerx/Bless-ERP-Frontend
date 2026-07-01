@@ -1,7 +1,7 @@
 import { NavLink, useLocation } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { useState, useRef, useEffect } from "react";
-import ReactDOM from "react-dom";
+import { createPortal } from "react-dom";
 import {
   LayoutDashboard,
   Users,
@@ -61,10 +61,10 @@ const navSections: NavSection[] = [
     label: "INVENTORY",
     items: [
       { label: "Products", to: "/products", icon: Package },
-      { label: "Stock Levels", icon: Warehouse },
-      { label: "Warehouses", icon: Building2 },
-      { label: "Stock Transfer", icon: ArrowLeftRight },
-      { label: "Stock Count", icon: ClipboardCheck },
+      { label: "Stock Levels", to: "/inventory", icon: Warehouse },
+      { label: "Warehouses", to: "/inventory/warehouses", icon: Building2 },
+      { label: "Stock Transfer", to: "/inventory/transfers", icon: ArrowLeftRight },
+      { label: "Stock Count", to: "/inventory/counts", icon: ClipboardCheck },
     ],
   },
   {
@@ -124,7 +124,7 @@ function PortalTooltip({
     });
   }, [anchorEl]);
 
-  return ReactDOM.createPortal(
+  return createPortal(
     <div
       className="fixed z-[9999] pointer-events-none"
       style={{ top: pos.top, left: pos.left, transform: "translateY(-50%)" }}
@@ -274,9 +274,14 @@ export default function Sidebar() {
         {/* Sectioned nav items */}
         {navSections.map((section) => {
           const isExpanded = expandedSections.includes(section.label);
-          const hasActiveChild = section.items.some((item) =>
-            isActive(item.to),
-          );
+
+          // Find the best-matching route to avoid double-highlighting
+          // (e.g., /inventory should not highlight when /inventory/warehouses is active)
+          const matchingItems = section.items
+            .filter((item) => item.to && (location.pathname === item.to || location.pathname.startsWith(item.to + "/")))
+            .sort((a, b) => (b.to?.length ?? 0) - (a.to?.length ?? 0));
+          const activeItemTo = matchingItems[0]?.to;
+          const hasActiveChild = activeItemTo !== undefined;
 
           return (
             <div key={section.label}>
@@ -309,7 +314,7 @@ export default function Sidebar() {
                   >
                     <div className="space-y-0.5 pb-1">
                       {section.items.map((item) => {
-                        const active = isActive(item.to);
+                        const active = item.to === activeItemTo;
 
                         const baseClass = cn(
                           "flex items-center gap-3 px-3 py-2 rounded-[10px] text-sm font-medium transition-all duration-200 relative",

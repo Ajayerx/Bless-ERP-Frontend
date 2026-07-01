@@ -21,6 +21,19 @@ import { Contacts, NewContact, ContactDetail, EditContact } from "./pages/contac
 import { Opportunities, NewOpportunity, OpportunityDetail, EditOpportunity } from "./pages/opportunities";
 import { BankAccounts, NewBankAccount, BankAccountDetail, EditBankAccount } from "./pages/bank-accounts";
 import { JournalEntries, NewJournalEntry, JournalEntryDetail, EditJournalEntry } from "./pages/journal-entries";
+import {
+  StockLevels,
+  Warehouses,
+  WarehouseDetail,
+  NewWarehouse,
+  EditWarehouse,
+  StockTransfers,
+  StockTransferDetail,
+  NewStockTransfer,
+  StockCounts,
+  StockCountDetail,
+  NewStockCount,
+} from "./pages/inventory";
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAuth();
@@ -99,6 +112,17 @@ function App() {
         <Route path="journal-entries/new" element={<NewJournalEntry />} />
         <Route path="journal-entries/:id" element={<JournalEntryDetail />} />
         <Route path="journal-entries/:id/edit" element={<EditJournalEntry />} />
+        <Route path="inventory" element={<StockLevels />} />
+        <Route path="inventory/warehouses" element={<Warehouses />} />
+        <Route path="inventory/warehouses/new" element={<NewWarehouse />} />
+        <Route path="inventory/warehouses/:id" element={<WarehouseDetail />} />
+        <Route path="inventory/warehouses/:id/edit" element={<EditWarehouse />} />
+        <Route path="inventory/transfers" element={<StockTransfers />} />
+        <Route path="inventory/transfers/new" element={<NewStockTransfer />} />
+        <Route path="inventory/transfers/:id" element={<StockTransferDetail />} />
+        <Route path="inventory/counts" element={<StockCounts />} />
+        <Route path="inventory/counts/new" element={<NewStockCount />} />
+        <Route path="inventory/counts/:id" element={<StockCountDetail />} />
         <Route path="settings" element={<Settings />} />
         <Route path="reports/sales" element={<SalesReportPage />} />
         <Route path="reports/ar" element={<ARReportPage />} />

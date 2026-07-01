@@ -4,44 +4,48 @@ import { BrowserRouter } from "react-router-dom"
 import { AuthProvider } from "./context/AuthContext"
 import { ThemeProvider } from "./context/ThemeContext"
 import { ToastProvider } from "./components/ui/toast"
+import ErrorBoundary from "./components/ErrorBoundary"
 import App from "./App"
 import "./index.css"
 
 async function startMsw() {
-  const { worker } = await import("./mocks/browser")
-  await worker.start({ onUnhandledRequest: "bypass" })
+  try {
+    const { worker } = await import("./mocks/browser")
+    await worker.start({ onUnhandledRequest: "bypass" })
 
-  document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible") {
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") {
+        worker.start({ onUnhandledRequest: "bypass" }).catch(() => {})
+      }
+    })
+
+    window.addEventListener("online", () => {
       worker.start({ onUnhandledRequest: "bypass" }).catch(() => {})
-    }
-  })
-
-  window.addEventListener("online", () => {
-    worker.start({ onUnhandledRequest: "bypass" }).catch(() => {})
-  })
+    })
+  } catch (err) {
+    console.error("[MSW] Failed to start mock service worker:", err)
+    setTimeout(startMsw, 1000)
+  }
 }
 
-async function bootstrap() {
+function bootstrap() {
   if (import.meta.env.DEV) {
-    try {
-      await startMsw()
-    } catch {
-      setTimeout(startMsw, 1000)
-    }
+    startMsw()
   }
 
   createRoot(document.getElementById("root")!).render(
     <StrictMode>
-      <BrowserRouter>
-        <ThemeProvider>
-          <ToastProvider>
-            <AuthProvider>
-              <App />
-            </AuthProvider>
-          </ToastProvider>
-        </ThemeProvider>
-      </BrowserRouter>
+      <ErrorBoundary>
+        <BrowserRouter>
+          <ThemeProvider>
+            <ToastProvider>
+              <AuthProvider>
+                <App />
+              </AuthProvider>
+            </ToastProvider>
+          </ThemeProvider>
+        </BrowserRouter>
+      </ErrorBoundary>
     </StrictMode>
   )
 }

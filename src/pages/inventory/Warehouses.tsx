@@ -103,7 +103,7 @@ export default function Warehouses() {
             <h1 className="text-2xl font-bold text-heading">Warehouses</h1>
             <p className="text-sm text-muted mt-1">Manage storage locations and capacity.</p>
           </div>
-          <Button>
+          <Button onClick={() => navigate("/inventory/warehouses/new")}>
             <Plus size={16} />
             Add Warehouse
           </Button>
