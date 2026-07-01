@@ -19,6 +19,7 @@ import InventoryAlertsCard from "@/modules/dashboard/InventoryAlertsCard"
 import RecentPaymentsCard from "@/modules/dashboard/RecentPaymentsCard"
 import QuickActionsBar from "@/modules/dashboard/QuickActionsBar"
 import { useDashboard } from "@/hooks/useDashboard"
+import { useAuth } from "@/context/AuthContext"
 import { formatCurrency } from "@/lib/utils"
 
 const containerVariants = {
@@ -75,6 +76,7 @@ const kpiConfig = [
 
 export default function Dashboard() {
   const { data, loading } = useDashboard()
+  const { user } = useAuth()
 
   if (loading) {
     return (
@@ -116,7 +118,7 @@ export default function Dashboard() {
         >
           <div>
             <h1 className="text-2xl font-bold text-heading">
-              Welcome back, Joseph 👋
+              Welcome back, {user?.name ?? "there"} 👋
             </h1>
             <p className="text-sm text-muted mt-1">
               Here&apos;s what&apos;s happening with your business today.
