@@ -6,10 +6,10 @@ interface KpiCardProps {
   value: string
   trend: number
   icon: React.ReactNode
-  iconBgColor: string
-  chartColor: string
-  trendColor: string
-  sparkline: number[]
+  iconBgColor?: string
+  chartColor?: string
+  trendColor?: string
+  sparkline?: number[]
 }
 
 export default function KpiCard({
@@ -17,12 +17,13 @@ export default function KpiCard({
   value,
   trend,
   icon,
-  iconBgColor,
-  chartColor,
-  trendColor,
+  iconBgColor = "#2563EB",
+  chartColor = "#2563EB",
+  trendColor = "#16A34A",
   sparkline,
 }: KpiCardProps) {
-  const sparkData = sparkline.map((v) => ({ v }))
+  const hasSparkline = sparkline && sparkline.length > 0
+  const sparkData = hasSparkline ? sparkline.map((v) => ({ v })) : []
 
   return (
     <div className="bg-surface rounded-[16px] border border-border shadow-card p-5 flex flex-col relative overflow-hidden">
@@ -52,31 +53,35 @@ export default function KpiCard({
         </button>
       </div>
 
-      <div className="flex items-center gap-1.5 mt-1">
-        <span
-          className="inline-flex items-center gap-0.5 text-xs font-semibold px-1.5 py-0.5 rounded-full"
-          style={{ color: trendColor, backgroundColor: `${trendColor}1A` }}
-        >
-          <TrendingUp size={12} />
-          {trend}%
-        </span>
-        <span className="text-xs text-muted">from last week</span>
-      </div>
+      {hasSparkline && (
+        <>
+          <div className="flex items-center gap-1.5 mt-1">
+            <span
+              className="inline-flex items-center gap-0.5 text-xs font-semibold px-1.5 py-0.5 rounded-full"
+              style={{ color: trendColor, backgroundColor: `${trendColor}1A` }}
+            >
+              <TrendingUp size={12} />
+              {trend}%
+            </span>
+            <span className="text-xs text-muted">from last week</span>
+          </div>
 
-      <div className="mt-auto -mx-5 -mb-5 h-[60px]">
-        <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={sparkData}>
-            <Line
-              type="monotone"
-              dataKey="v"
-              stroke={chartColor}
-              strokeWidth={2}
-              dot={false}
-              activeDot={false}
-            />
-          </LineChart>
-        </ResponsiveContainer>
-      </div>
+          <div className="mt-auto -mx-5 -mb-5 h-[60px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={sparkData}>
+                <Line
+                  type="monotone"
+                  dataKey="v"
+                  stroke={chartColor}
+                  strokeWidth={2}
+                  dot={false}
+                  activeDot={false}
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </>
+      )}
     </div>
   )
 }

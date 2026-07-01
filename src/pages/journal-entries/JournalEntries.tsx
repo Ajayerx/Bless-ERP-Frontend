@@ -18,7 +18,7 @@ export default function JournalEntries() {
   const fetchData = useCallback(async () => {
     setLoading(true)
     try {
-      const result = await journalEntryService.list({ page, pageSize: 10 })
+      const result = await journalEntryService.list({ search, page, pageSize: 10 })
       setData(result)
     } finally { setLoading(false) }
   }, [search, page])
@@ -40,7 +40,7 @@ export default function JournalEntries() {
           data={data} loading={loading} search={search}
           onSearch={(q) => { setSearch(q); setPage(1) }}
           page={page} onPageChange={setPage}
-          onRowClick={(id) => navigate(`/journal-entries/${id}`)}
+          onRowClick={(item) => navigate(`/journal-entries/${item.id}`)}
         />
       </motion.div>
     </>

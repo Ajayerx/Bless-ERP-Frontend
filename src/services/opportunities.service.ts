@@ -34,8 +34,11 @@ export interface OpportunityFormData {
 }
 
 export const opportunityService = {
-  list: (): Promise<OpportunityListResponse> => {
-    return apiClient("/opportunities")
+  list: (params: { search?: string; page?: number } = {}): Promise<OpportunityListResponse> => {
+    const qs = new URLSearchParams()
+    if (params.search) qs.set("search", params.search)
+    if (params.page) qs.set("page", String(params.page))
+    return apiClient(`/opportunities?${qs}`)
   },
 
   getById: (id: string): Promise<Opportunity> => {

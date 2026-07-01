@@ -18,7 +18,7 @@ export default function BankAccounts() {
   const fetchData = useCallback(async () => {
     setLoading(true)
     try {
-      const result = await bankAccountService.list()
+      const result = await bankAccountService.list({ search, page })
       setData(result)
     } finally { setLoading(false) }
   }, [search, page])

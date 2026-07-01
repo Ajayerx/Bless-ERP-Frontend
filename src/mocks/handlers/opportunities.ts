@@ -4,9 +4,17 @@ import opportunities from "../data/opportunities.json"
 let data = [...opportunities]
 
 export const opportunityHandlers = [
-  http.get("*/opportunities", async () => {
+  http.get("*/opportunities", async ({ request }) => {
     await delay()
-    return HttpResponse.json({ data: { items: data, total: data.length }, error: null })
+    const url = new URL(request.url)
+    const search = url.searchParams.get("search")?.toLowerCase()
+    const page = Number(url.searchParams.get("page")) || 1
+    const pageSize = 10
+    let items = data
+    if (search) items = items.filter((o) => o.title.toLowerCase().includes(search) || o.customerName.toLowerCase().includes(search))
+    const total = items.length
+    const paged = items.slice((page - 1) * pageSize, page * pageSize)
+    return HttpResponse.json({ data: { items: paged, total }, error: null })
   }),
 
   http.get("*/opportunities/:id", async ({ params }) => {

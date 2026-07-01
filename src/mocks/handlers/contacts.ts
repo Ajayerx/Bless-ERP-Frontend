@@ -7,10 +7,16 @@ export const contactHandlers = [
   http.get("*/contacts", async ({ request }) => {
     await delay()
     const url = new URL(request.url)
+    const search = url.searchParams.get("search")?.toLowerCase()
+    const page = Number(url.searchParams.get("page")) || 1
     const customerId = url.searchParams.get("customerId")
+    const pageSize = 10
     let items = data
     if (customerId) items = items.filter((c) => c.customerId === customerId)
-    return HttpResponse.json({ data: { items, total: items.length }, error: null })
+    if (search) items = items.filter((c) => c.name.toLowerCase().includes(search) || c.email.toLowerCase().includes(search))
+    const total = items.length
+    const paged = items.slice((page - 1) * pageSize, page * pageSize)
+    return HttpResponse.json({ data: { items: paged, total }, error: null })
   }),
 
   http.get("*/contacts/:id", async ({ params }) => {

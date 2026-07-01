@@ -18,7 +18,7 @@ export default function Opportunities() {
   const fetchData = useCallback(async () => {
     setLoading(true)
     try {
-      const result = await opportunityService.list()
+      const result = await opportunityService.list({ search, page })
       setData(result)
     } finally { setLoading(false) }
   }, [search, page])
@@ -40,7 +40,7 @@ export default function Opportunities() {
           data={data} loading={loading} search={search}
           onSearch={(q) => { setSearch(q); setPage(1) }}
           page={page} onPageChange={setPage}
-          onRowClick={(id) => navigate(`/opportunities/${id}`)}
+          onRowClick={(item) => navigate(`/opportunities/${item.id}`)}
         />
       </motion.div>
     </>

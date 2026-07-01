@@ -1,16 +1,16 @@
 "use client"
-import type { ContactListResponse } from "@/services/contacts.service"
-import DataTable from "@/components/ui/DataTable"
+import type { Contact } from "@/services/contacts.service"
+import DataTable, { type Column } from "@/components/ui/DataTable"
 import { Badge } from "@/components/ui"
 
 interface Props {
-  data: ContactListResponse | null
+  data: { items: Contact[]; total: number } | null
   loading: boolean
   search: string
   onSearch: (q: string) => void
   page: number
   onPageChange: (p: number) => void
-  onRowClick?: (id: string) => void
+  onRowClick?: (item: Contact) => void
 }
 
 const statusMap: Record<string, { label: string; variant: "success" | "info" | "muted" }> = {
@@ -18,16 +18,16 @@ const statusMap: Record<string, { label: string; variant: "success" | "info" | "
   false: { label: "Secondary", variant: "muted" },
 }
 
-const columns = [
-  { key: "name", label: "Name", sortable: true },
-  { key: "email", label: "Email", sortable: true },
-  { key: "phone", label: "Phone" },
-  { key: "role", label: "Role" },
+const columns: Column<Contact>[] = [
+  { key: "name", header: "Name", sortable: true },
+  { key: "email", header: "Email", sortable: true },
+  { key: "phone", header: "Phone" },
+  { key: "role", header: "Role" },
   {
     key: "isPrimary",
-    label: "Status",
-    render: (v: boolean) => {
-      const s = statusMap[String(v)]
+    header: "Status",
+    render: (c) => {
+      const s = statusMap[String(c.isPrimary)]
       return <Badge variant={s.variant}>{s.label}</Badge>
     },
   },
@@ -35,9 +35,10 @@ const columns = [
 
 export default function ContactTable({ data, loading, search, onSearch, page, onPageChange, onRowClick }: Props) {
   return (
-    <DataTable
+    <DataTable<Contact>
       columns={columns}
       data={data?.items ?? []}
+      keyExtractor={(c) => c.id}
       total={data?.total ?? 0}
       loading={loading}
       search={search}

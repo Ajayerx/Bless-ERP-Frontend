@@ -34,6 +34,13 @@ import {
   StockCountDetail,
   NewStockCount,
 } from "./pages/inventory";
+import HrmsDashboard from "./modules/hrms/pages/HrmsDashboard";
+import Employees from "./modules/hrms/employees/pages/Employees";
+import EmployeeDetail from "./modules/hrms/employees/pages/EmployeeDetail";
+import Attendance from "./modules/hrms/attendance/pages/Attendance";
+import Leave from "./modules/hrms/leave/pages/Leave";
+import Payroll from "./modules/hrms/payroll/pages/Payroll";
+import PayrollDetail from "./modules/hrms/payroll/pages/PayrollDetail";
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAuth();
@@ -123,6 +130,13 @@ function App() {
         <Route path="inventory/counts" element={<StockCounts />} />
         <Route path="inventory/counts/new" element={<NewStockCount />} />
         <Route path="inventory/counts/:id" element={<StockCountDetail />} />
+        <Route path="hrms" element={<HrmsDashboard />} />
+        <Route path="hrms/employees" element={<Employees />} />
+        <Route path="hrms/employees/:id" element={<EmployeeDetail />} />
+        <Route path="hrms/attendance" element={<Attendance />} />
+        <Route path="hrms/leave" element={<Leave />} />
+        <Route path="hrms/payroll" element={<Payroll />} />
+        <Route path="hrms/payroll/:id" element={<PayrollDetail />} />
         <Route path="settings" element={<Settings />} />
         <Route path="reports/sales" element={<SalesReportPage />} />
         <Route path="reports/ar" element={<ARReportPage />} />

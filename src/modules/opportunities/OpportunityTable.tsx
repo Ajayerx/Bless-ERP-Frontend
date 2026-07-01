@@ -1,16 +1,16 @@
 "use client"
 import { Badge } from "@/components/ui"
-import DataTable from "@/components/ui/DataTable"
-import type { OpportunityListResponse } from "@/services/opportunities.service"
+import DataTable, { type Column } from "@/components/ui/DataTable"
+import type { Opportunity } from "@/services/opportunities.service"
 
 interface Props {
-  data: OpportunityListResponse | null
+  data: { items: Opportunity[]; total: number } | null
   loading: boolean
   search: string
   onSearch: (q: string) => void
   page: number
   onPageChange: (p: number) => void
-  onRowClick?: (id: string) => void
+  onRowClick?: (item: Opportunity) => void
 }
 
 const stageMap: Record<string, { label: string; variant: "warning" | "info" | "danger" | "success" | "muted" }> = {
@@ -21,28 +21,29 @@ const stageMap: Record<string, { label: string; variant: "warning" | "info" | "d
   closed_lost: { label: "Closed Lost", variant: "muted" },
 }
 
-const columns = [
-  { key: "title", label: "Title", sortable: true },
-  { key: "customerName", label: "Customer", sortable: true },
-  { key: "value", label: "Value", render: (v: number) => `$${v.toLocaleString()}` },
+const columns: Column<Opportunity>[] = [
+  { key: "title", header: "Title", sortable: true },
+  { key: "customerName", header: "Customer", sortable: true },
+  { key: "value", header: "Value", render: (o) => `$${o.value.toLocaleString()}` },
   {
     key: "stage",
-    label: "Stage",
-    render: (v: string) => {
-      const s = stageMap[v] ?? { label: v, variant: "muted" as const }
+    header: "Stage",
+    render: (o) => {
+      const s = stageMap[o.stage] ?? { label: o.stage, variant: "muted" as const }
       return <Badge variant={s.variant}>{s.label}</Badge>
     },
   },
-  { key: "probability", label: "Prob.", render: (v: number) => `${v}%` },
-  { key: "expectedClose", label: "Expected Close" },
-  { key: "assignedTo", label: "Assigned To" },
+  { key: "probability", header: "Prob.", render: (o) => `${o.probability}%` },
+  { key: "expectedClose", header: "Expected Close" },
+  { key: "assignedTo", header: "Assigned To" },
 ]
 
 export default function OpportunityTable({ data, loading, search, onSearch, page, onPageChange, onRowClick }: Props) {
   return (
-    <DataTable
+    <DataTable<Opportunity>
       columns={columns}
       data={data?.items ?? []}
+      keyExtractor={(o) => o.id}
       total={data?.total ?? 0}
       loading={loading}
       search={search}

@@ -28,6 +28,9 @@ import {
   Settings,
   LogOut,
   ChevronDown,
+  Briefcase,
+  Clock,
+  Calendar,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -95,6 +98,16 @@ const navSections: NavSection[] = [
       { label: "Profit & Loss", to: "/reports/profit-loss", icon: TrendingUp },
       { label: "Balance Sheet", to: "/reports/balance-sheet", icon: BookOpen },
       { label: "GST Summary", to: "/reports/gst", icon: Landmark },
+    ],
+  },
+  {
+    label: "HR",
+    items: [
+      { label: "Dashboard", to: "/hrms", icon: Briefcase },
+      { label: "Employees", to: "/hrms/employees", icon: Users },
+      { label: "Attendance", to: "/hrms/attendance", icon: Clock },
+      { label: "Leave", to: "/hrms/leave", icon: Calendar },
+      { label: "Payroll", to: "/hrms/payroll", icon: CreditCard },
     ],
   },
   {
@@ -196,6 +209,18 @@ export default function Sidebar() {
   const [expandedSections, setExpandedSections] = useState<string[]>(
     navSections.map((s) => s.label),
   );
+
+  // Sync expandedSections when navSections changes (e.g. after HMR)
+  useEffect(() => {
+    setExpandedSections((prev) => {
+      const all = navSections.map((s) => s.label);
+      const next = [...prev];
+      for (const label of all) {
+        if (!next.includes(label)) next.push(label);
+      }
+      return next.length === prev.length ? prev : next;
+    });
+  }, []);
 
   const toggleSection = (label: string) => {
     setExpandedSections((prev) =>

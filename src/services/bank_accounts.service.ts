@@ -30,8 +30,11 @@ export interface BankAccountFormData {
 }
 
 export const bankAccountService = {
-  list: (): Promise<BankAccountListResponse> => {
-    return apiClient("/bank-accounts")
+  list: (params: { search?: string; page?: number } = {}): Promise<BankAccountListResponse> => {
+    const qs = new URLSearchParams()
+    if (params.search) qs.set("search", params.search)
+    if (params.page) qs.set("page", String(params.page))
+    return apiClient(`/bank-accounts?${qs}`)
   },
 
   getById: (id: string): Promise<BankAccount> => {

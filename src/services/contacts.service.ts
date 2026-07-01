@@ -28,9 +28,12 @@ export interface ContactFormData {
 }
 
 export const contactService = {
-  list: (customerId?: string): Promise<ContactListResponse> => {
-    const qs = customerId ? `?customerId=${customerId}` : ""
-    return apiClient(`/contacts${qs}`)
+  list: (params: { search?: string; page?: number; customerId?: string } = {}): Promise<ContactListResponse> => {
+    const qs = new URLSearchParams()
+    if (params.search) qs.set("search", params.search)
+    if (params.page) qs.set("page", String(params.page))
+    if (params.customerId) qs.set("customerId", params.customerId)
+    return apiClient(`/contacts?${qs}`)
   },
 
   getById: (id: string): Promise<Contact> => {

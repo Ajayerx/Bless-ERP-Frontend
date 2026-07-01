@@ -33,8 +33,9 @@ export interface JournalEntryFormData {
 }
 
 export const journalEntryService = {
-  list: (params: { page?: number; pageSize?: number } = {}): Promise<JournalEntryListResponse> => {
+  list: (params: { search?: string; page?: number; pageSize?: number } = {}): Promise<JournalEntryListResponse> => {
     const qs = new URLSearchParams()
+    if (params.search) qs.set("search", params.search)
     if (params.page) qs.set("page", String(params.page))
     if (params.pageSize) qs.set("pageSize", String(params.pageSize))
     return apiClient(`/journal-entries?${qs}`)

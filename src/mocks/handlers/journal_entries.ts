@@ -7,11 +7,14 @@ export const journalEntryHandlers = [
   http.get("*/journal-entries", async ({ request }) => {
     await delay()
     const url = new URL(request.url)
+    const search = url.searchParams.get("search")?.toLowerCase()
     const page = Number(url.searchParams.get("page")) || 1
     const pageSize = Number(url.searchParams.get("pageSize")) || 10
-    const start = (page - 1) * pageSize
-    const items = data.slice(start, start + pageSize)
-    return HttpResponse.json({ data: { items, total: data.length, page, pageSize }, error: null })
+    let items = data
+    if (search) items = items.filter((j) => j.description.toLowerCase().includes(search) || j.number.toLowerCase().includes(search))
+    const total = items.length
+    const paged = items.slice((page - 1) * pageSize, page * pageSize)
+    return HttpResponse.json({ data: { items: paged, total, page, pageSize }, error: null })
   }),
 
   http.get("*/journal-entries/:id", async ({ params }) => {

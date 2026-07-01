@@ -4,9 +4,17 @@ import bankAccounts from "../data/bank_accounts.json"
 let data = [...bankAccounts]
 
 export const bankAccountHandlers = [
-  http.get("*/bank-accounts", async () => {
+  http.get("*/bank-accounts", async ({ request }) => {
     await delay()
-    return HttpResponse.json({ data: { items: data, total: data.length }, error: null })
+    const url = new URL(request.url)
+    const search = url.searchParams.get("search")?.toLowerCase()
+    const page = Number(url.searchParams.get("page")) || 1
+    const pageSize = 10
+    let items = data
+    if (search) items = items.filter((a) => a.name.toLowerCase().includes(search) || a.accountNumber.includes(search))
+    const total = items.length
+    const paged = items.slice((page - 1) * pageSize, page * pageSize)
+    return HttpResponse.json({ data: { items: paged, total }, error: null })
   }),
 
   http.get("*/bank-accounts/:id", async ({ params }) => {

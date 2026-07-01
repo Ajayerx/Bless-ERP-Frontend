@@ -28,9 +28,9 @@ async function startMsw() {
   }
 }
 
-function bootstrap() {
+async function bootstrap() {
   if (import.meta.env.DEV) {
-    startMsw()
+    await startMsw()
   }
 
   createRoot(document.getElementById("root")!).render(

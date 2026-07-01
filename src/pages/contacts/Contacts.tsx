@@ -18,7 +18,7 @@ export default function Contacts() {
   const fetchData = useCallback(async () => {
     setLoading(true)
     try {
-      const result = await contactService.list()
+      const result = await contactService.list({ search, page })
       setData(result)
     } finally { setLoading(false) }
   }, [search, page])
@@ -40,7 +40,7 @@ export default function Contacts() {
           data={data} loading={loading} search={search}
           onSearch={(q) => { setSearch(q); setPage(1) }}
           page={page} onPageChange={setPage}
-          onRowClick={(id) => navigate(`/contacts/${id}`)}
+          onRowClick={(item) => navigate(`/contacts/${item.id}`)}
         />
       </motion.div>
     </>
