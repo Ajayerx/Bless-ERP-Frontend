@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "build:mock": "vite build --mode mock",
     "lint": "oxlint",
     "preview": "vite preview"
   },
@@ -35,6 +36,7 @@
     "axios": "^1.18.1",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "date-fns": "^4.4.0",
     "framer-motion": "^12.42.0",
     "lucide-react": "^1.21.0",
     "msw": "^2.14.6",

@@ -4,7 +4,7 @@ import { useEffect, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { ArrowLeft, Plus, Trash2, Save, Search, ChevronDown, Loader2 } from "lucide-react"
 import { Button, Card, CardContent, CardHeader, CardTitle } from "@/components/ui"
-import { quotationService, customerService, type Customer, productService } from "@/services"
+import { quotationService, customerService, type Customer, productService, type Quotation } from "@/services"
 import type { Product } from "@/services/products.service"
 import { formatCurrency } from "@/lib/utils"
 import { GST_RATE, QST_RATE } from "@/config/tax.config"
@@ -29,8 +29,13 @@ function createEmptyLine(): LineItemForm {
   }
 }
 
-export default function QuotationForm() {
+interface QuotationFormProps {
+  quotation?: Quotation | null
+}
+
+export default function QuotationForm({ quotation: initialData }: QuotationFormProps) {
   const navigate = useNavigate()
+  const mode = initialData ? "edit" : "create"
 
   const [customerId, setCustomerId] = useState("")
   const [customerName, setCustomerName] = useState("")
@@ -51,6 +56,26 @@ export default function QuotationForm() {
     customerService.list({ pageSize: 100 }).then((res) => setCustomers(res.items))
     productService.list({ pageSize: 100 }).then((res) => setProducts(res.items))
   }, [])
+
+  useEffect(() => {
+    if (!initialData) return
+    setCustomerId(initialData.customerId)
+    setCustomerName(initialData.customerName)
+    setCustomerSearch(initialData.customerName)
+    setIssueDate(initialData.issueDate)
+    setValidUntil(initialData.validUntil)
+    setNotes(initialData.notes ?? "")
+    setLineItems(
+      initialData.items.map((item) => ({
+        id: crypto.randomUUID(),
+        productId: item.productId,
+        productName: item.productName,
+        qty: item.qty,
+        rate: item.rate,
+        amount: item.amount,
+      }))
+    )
+  }, [initialData])
 
   const filteredCustomers = customers.filter(
     (c) => c.name.toLowerCase().includes(customerSearch.toLowerCase()) ||
@@ -93,11 +118,16 @@ export default function QuotationForm() {
     if (!customerId) return
     setSaving(true)
     try {
-      await quotationService.create({
+      const data = {
         customerId, customerName, issueDate, validUntil, notes,
         items: lineItems.map(({ id, ...rest }) => rest),
         subtotal, gst: gstAmount, qst: qstAmount, total: grandTotal,
-      })
+      }
+      if (mode === "edit" && initialData) {
+        await quotationService.update(initialData.id, data)
+      } else {
+        await quotationService.create(data)
+      }
       navigate("/quotations")
     } finally { setSaving(false) }
   }
@@ -115,8 +145,8 @@ export default function QuotationForm() {
             <ArrowLeft size={20} />
           </button>
           <div>
-            <h1 className="text-2xl font-bold text-heading">New Quotation</h1>
-            <p className="text-sm text-muted mt-0.5">Create a new customer quotation.</p>
+            <h1 className="text-2xl font-bold text-heading">{mode === "create" ? "New Quotation" : "Edit Quotation"}</h1>
+            <p className="text-sm text-muted mt-0.5">{mode === "create" ? "Create a new customer quotation." : "Update an existing quotation."}</p>
           </div>
         </div>
         <div className="flex items-center gap-3">

@@ -40,7 +40,7 @@ export default function BillDetailCard({ bill }: BillDetailCardProps) {
               <DollarSign size={18} className="text-muted mt-0.5" />
               <div>
                 <p className="text-xs font-semibold text-muted uppercase tracking-wider">Amount</p>
-                <p className="text-2xl font-bold text-heading mt-1 tabular-nums">{formatCurrency(bill.amount)}</p>
+                <p className="text-2xl font-bold text-heading mt-1 tabular-nums">{formatCurrency(bill.amount ?? 0)}</p>
               </div>
             </div>
           </CardContent>

@@ -1,16 +1,29 @@
 import { apiClient } from "./api-client"
 
+import type { LineItem } from "./invoices.service"
+
 export interface PurchaseOrder {
   id: string
   number: string
-  supplierId: string
+  supplierId?: string
   supplierName: string
-  orderDate: string
-  expectedDelivery: string
+  orderDate?: string
+  expectedDelivery?: string
   total: number
-  status: "draft" | "sent" | "received" | "cancelled"
+  status: string
   notes?: string
   createdAt: string
+  vendorId?: string
+  vendorName: string
+  vendorContact?: string
+  billTo?: string
+  shippingAddress?: string
+  issueDate?: string
+  deliveryDate?: string
+  lineItems?: LineItem[]
+  subtotal?: number
+  gst?: number
+  qst?: number
 }
 
 export interface PurchaseOrderListResponse {
@@ -22,12 +35,23 @@ export interface PurchaseOrderListResponse {
 }
 
 export interface PurchaseOrderFormData {
-  supplierName: string
-  total: number
-  orderDate: string
+  supplierName?: string
+  total?: number
+  orderDate?: string
   expectedDelivery?: string
-  status?: "draft" | "sent" | "received" | "cancelled"
+  status?: string
   notes?: string
+  vendorId?: string
+  vendorName?: string
+  vendorContact?: string
+  billTo?: string
+  shippingAddress?: string
+  issueDate?: string
+  deliveryDate?: string
+  lineItems?: Omit<LineItem, "id">[]
+  subtotal?: number
+  gst?: number
+  qst?: number
 }
 
 export const purchaseOrderService = {

@@ -63,7 +63,11 @@ export interface DashboardData {
 }
 
 export const dashboardService = {
-  async get(): Promise<DashboardData> {
-    return apiClient<DashboardData>("/dashboard")
+  async get(startDate?: string, endDate?: string): Promise<DashboardData> {
+    const params = new URLSearchParams()
+    if (startDate) params.set("startDate", startDate)
+    if (endDate) params.set("endDate", endDate)
+    const qs = params.toString()
+    return apiClient<DashboardData>(`/dashboard${qs ? `?${qs}` : ""}`)
   },
 }

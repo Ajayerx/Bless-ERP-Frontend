@@ -17,19 +17,19 @@ export default function PaymentDetail() {
     paymentService.getById(id).then(setPayment).catch(() => null).finally(() => setLoading(false))
   }, [id])
 
-  if (loading) return <><Topbar /><div className="p-6 max-w-2xl mx-auto space-y-4"><Skeleton className="h-8 w-48" /><Skeleton className="h-48 w-full" /></div></>
+  if (loading) return <><Topbar /><div className="p-6 space-y-6"><Skeleton className="h-8 w-48" /><Skeleton className="h-48 w-full" /></div></>
   if (!payment) return <><Topbar /><div className="p-6 text-center text-muted">Payment not found</div></>
 
   return (
     <>
       <Topbar />
-      <motion.div className="p-6 max-w-2xl mx-auto" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.3 }}>
+      <motion.div className="p-6 space-y-6" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.3 }}>
         <div className="flex items-center gap-3 mb-6">
           <Link to="/payments" className="flex items-center gap-2 text-sm text-muted hover:text-body transition-colors">
             <ArrowLeft size={18} /><span>Back to Payments</span>
           </Link>
         </div>
-        <div className="bg-white rounded-2xl shadow-card p-6 space-y-4">
+        <div className="bg-surface rounded-[16px] border border-border shadow-card p-6 space-y-4">
           <h1 className="text-2xl font-bold text-heading">Payment Details</h1>
           <div className="grid grid-cols-2 gap-4 text-sm">
             <div><span className="text-muted">Invoice</span><p className="text-body font-medium">{payment.invoiceNumber}</p></div>

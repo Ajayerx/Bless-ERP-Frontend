@@ -11,11 +11,11 @@ import { leadService } from "@/services"
 import type { Lead } from "@/modules/crm/types"
 import { formatCurrency } from "@/lib/utils"
 
-const statusStyles: Record<string, { label: string; variant: "success" | "warning" | "default" | "danger" | "info" | "purple" | "primary" }> = {
+const statusStyles: Record<string, { label: string; variant: "success" | "warning" | "default" | "danger" | "info" | "purple" }> = {
   new: { label: "New", variant: "info" },
   contacted: { label: "Contacted", variant: "warning" },
   qualified: { label: "Qualified", variant: "purple" },
-  proposal: { label: "Proposal", variant: "primary" },
+  proposal: { label: "Proposal", variant: "purple" },
   lost: { label: "Lost", variant: "danger" },
 }
 

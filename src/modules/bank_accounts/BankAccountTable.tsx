@@ -44,7 +44,7 @@ export default function BankAccountTable({ data, loading, search, onSearch, page
       keyExtractor={(a) => a.id}
       total={data?.total ?? 0}
       loading={loading}
-      search={search}
+      searchQuery={search}
       onSearch={onSearch}
       page={page}
       pageSize={10}

@@ -13,9 +13,9 @@ interface Props {
   onRowClick?: (item: Contact) => void
 }
 
-const statusMap: Record<string, { label: string; variant: "success" | "info" | "muted" }> = {
+const statusMap: Record<string, { label: string; variant: "success" | "info" | "default" }> = {
   true: { label: "Primary", variant: "success" },
-  false: { label: "Secondary", variant: "muted" },
+  false: { label: "Secondary", variant: "default" },
 }
 
 const columns: Column<Contact>[] = [
@@ -41,7 +41,7 @@ export default function ContactTable({ data, loading, search, onSearch, page, on
       keyExtractor={(c) => c.id}
       total={data?.total ?? 0}
       loading={loading}
-      search={search}
+      searchQuery={search}
       onSearch={onSearch}
       page={page}
       pageSize={10}

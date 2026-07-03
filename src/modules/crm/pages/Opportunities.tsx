@@ -15,7 +15,7 @@ import { opportunityService, customerService, type Customer } from "@/services"
 import type { Opportunity } from "@/modules/crm/types"
 import { formatCurrency, formatDate } from "@/lib/utils"
 
-const stageStyles: Record<string, { label: string; variant: "success" | "warning" | "default" | "danger" | "info" | "purple" | "primary" }> = {
+const stageStyles: Record<string, { label: string; variant: "success" | "warning" | "default" | "danger" | "info" | "purple" }> = {
   prospecting: { label: "Prospecting", variant: "default" },
   qualification: { label: "Qualification", variant: "info" },
   proposal: { label: "Proposal", variant: "warning" },

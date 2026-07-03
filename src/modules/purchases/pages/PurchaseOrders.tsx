@@ -11,12 +11,12 @@ import { purchaseOrderService } from "@/services"
 import type { PurchaseOrder } from "@/modules/purchases/types"
 import { formatCurrency, formatDate } from "@/lib/utils"
 
-const statusConfig: Record<string, { label: string; variant: "success" | "warning" | "default" | "danger" | "info" | "purple" | "primary" }> = {
-  draft: { label: "Draft", variant: "default" },
-  pending_approval: { label: "Pending Approval", variant: "warning" },
-  approved: { label: "Approved", variant: "primary" },
-  ordered: { label: "Ordered", variant: "info" },
-  partially_received: { label: "Partially Received", variant: "purple" },
+const statusConfig: Record<string, { label: string; variant: "success" | "warning" | "default" | "danger" | "info" | "purple" }> = {
+  draft: { label: "Draft", variant: "warning" },
+  approved: { label: "Approved", variant: "purple" },
+  pending_approval: { label: "Pending Approval", variant: "info" },
+  ordered: { label: "Ordered", variant: "purple" },
+  partially_received: { label: "Partially Received", variant: "info" },
   received: { label: "Received", variant: "success" },
   cancelled: { label: "Cancelled", variant: "danger" },
 }
@@ -40,19 +40,19 @@ const columns: Column<PurchaseOrder>[] = [
   {
     key: "vendorName",
     header: "Vendor",
-    render: (po) => <span className="text-sm font-medium text-body">{po.vendorName}</span>,
+    render: (po) => <span className="text-sm font-medium text-body">{po.vendorName ?? ""}</span>,
   },
   {
     key: "deliveryDate",
     header: "Delivery",
     className: "text-right",
-    render: (po) => <span className="text-sm text-muted tabular-nums">{formatDate(po.deliveryDate)}</span>,
+    render: (po) => <span className="text-sm text-muted tabular-nums">{formatDate(po.deliveryDate ?? "")}</span>,
   },
   {
     key: "total",
     header: "Amount",
     className: "text-right",
-    render: (po) => <span className="font-semibold tabular-nums text-heading">{formatCurrency(po.total)}</span>,
+    render: (po) => <span className="font-semibold tabular-nums text-heading">{formatCurrency(po.total ?? 0)}</span>,
   },
   {
     key: "status",

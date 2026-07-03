@@ -41,7 +41,7 @@ export const quotationHandlers = [
       ...body,
       createdAt: new Date().toISOString(),
     }
-    quotations = [newQuotation, ...quotations]
+    quotations = [newQuotation as any, ...quotations]
     return HttpResponse.json({ data: newQuotation, error: null }, { status: 201 })
   }),
 

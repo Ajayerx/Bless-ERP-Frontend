@@ -37,7 +37,7 @@ const columns: Column<Bill>[] = [
     key: "amount",
     header: "Amount",
     className: "text-right",
-    render: (b) => <span className="font-semibold tabular-nums text-heading">{formatCurrency(b.amount)}</span>,
+    render: (b) => <span className="font-semibold tabular-nums text-heading">{formatCurrency(b.amount ?? 0)}</span>,
   },
   {
     key: "dueDate",
@@ -85,8 +85,8 @@ export default function BillTable({
   onFilterChange,
   onRowClick,
 }: BillTableProps) {
-  const totalAmount = data?.items?.reduce((s, b) => s + b.amount, 0) ?? 0
-  const overdueAmount = data?.items?.filter((b) => b.status === "overdue")?.reduce((s, b) => s + b.amount, 0) ?? 0
+  const totalAmount = data?.items?.reduce((s, b) => s + (b.amount ?? 0), 0) ?? 0
+  const overdueAmount = data?.items?.filter((b) => b.status === "overdue")?.reduce((s, b) => s + (b.amount ?? 0), 0) ?? 0
 
   return (
     <div className="space-y-6">

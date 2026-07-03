@@ -7,7 +7,7 @@ import { ArrowLeft, FileText, Pencil } from "lucide-react"
 import Topbar from "@/components/layout/Topbar"
 import { Card, CardContent, Badge, Skeleton, Button } from "@/components/ui"
 import { invoiceService, type Invoice } from "@/services"
-import { formatCurrency, formatDate } from "@/lib/utils"
+import { formatDate } from "@/lib/utils"
 import InvoicePDFButton from "@/modules/invoices/InvoicePDFButton"
 import InvoiceLineItems from "@/modules/invoices/InvoiceLineItems"
 import InvoiceTotals from "@/modules/invoices/InvoiceTotals"
@@ -77,7 +77,7 @@ export default function InvoiceDetail() {
           </div>
         </div>
 
-        <Card className="max-w-3xl mx-auto">
+        <Card>
           <CardContent>
             <div className="flex justify-between items-start mb-8">
               <div>

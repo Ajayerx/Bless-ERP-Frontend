@@ -98,7 +98,7 @@ export default function SalesOrderDetailCard({ salesOrder }: SalesOrderDetailCar
           <DataTable
             columns={itemColumns}
             data={salesOrder.items}
-            keyExtractor={(_, i) => String(i)}
+            keyExtractor={(item: any) => item.id || String(Math.random())}
             pageSize={50}
           />
         </CardContent>

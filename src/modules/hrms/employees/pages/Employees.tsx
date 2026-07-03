@@ -101,28 +101,24 @@ export default function Employees() {
             title="Total Active"
             value={String(data.filter((e) => e.status === "Active").length)}
             trend={0}
-            trendDirection="up"
             icon={<Users size={18} />}
           />
           <KpiCard
             title="On Leave"
             value={String(data.filter((e) => e.status === "On Leave").length)}
             trend={0}
-            trendDirection="neutral"
             icon={<UserMinus size={18} />}
           />
           <KpiCard
             title="Resigned"
             value={String(data.filter((e) => e.status === "Resigned").length)}
             trend={0}
-            trendDirection="down"
             icon={<UserX size={18} />}
           />
           <KpiCard
             title="Terminated"
             value={String(data.filter((e) => e.status === "Terminated").length)}
             trend={0}
-            trendDirection="down"
             icon={<UserCheck size={18} />}
           />
         </div>

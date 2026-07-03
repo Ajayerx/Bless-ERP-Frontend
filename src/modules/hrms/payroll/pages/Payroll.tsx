@@ -136,28 +136,24 @@ export default function Payroll() {
           title="Total Payroll Cost"
           value={formatCurrency(kpi?.totalCost ?? 0)}
           trend={0}
-          trendDirection="neutral"
           icon={<DollarSign size={20} />}
         />
         <KpiCard
           title="Paid"
           value={String(kpi?.paidCount ?? 0)}
           trend={0}
-          trendDirection="neutral"
           icon={<CheckCircle2 size={20} />}
         />
         <KpiCard
           title="Processing"
           value={String(kpi?.processingCount ?? 0)}
           trend={0}
-          trendDirection="neutral"
           icon={<Clock size={20} />}
         />
         <KpiCard
           title="Draft"
           value={String(kpi?.draftCount ?? 0)}
           trend={0}
-          trendDirection="neutral"
           icon={<CreditCard size={20} />}
         />
       </div>

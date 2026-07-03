@@ -27,7 +27,7 @@ export default function RecentPaymentsCard({ data }: Props) {
           {data.map((pay) => (
             <div
               key={pay.id}
-              className="flex items-center gap-4 px-6 py-3.5 hover:bg-gray-50 transition-colors"
+                className="flex items-center gap-4 px-6 py-4 hover:bg-gray-50 transition-colors"
             >
               <div className="w-9 h-9 rounded-[10px] bg-gray-50 text-gray-400 flex items-center justify-center shrink-0">
                 <FileText size={16} />

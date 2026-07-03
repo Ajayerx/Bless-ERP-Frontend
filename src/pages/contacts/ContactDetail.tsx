@@ -29,14 +29,14 @@ export default function ContactDetail() {
     } finally { setDeleting(false); setShowDeleteModal(false) }
   }
 
-  if (loading) return <><Topbar /><div className="p-6 max-w-2xl mx-auto space-y-4"><Skeleton className="h-8 w-48" /><Skeleton className="h-48 w-full" /></div></>
+  if (loading) return <><Topbar /><div className="p-6 space-y-6"><Skeleton className="h-8 w-48" /><Skeleton className="h-48 w-full" /></div></>
 
   if (!contact) return <><Topbar /><div className="p-6 text-center text-muted">Contact not found</div></>
 
   return (
     <>
       <Topbar />
-      <motion.div className="p-6 max-w-2xl mx-auto" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.3 }}>
+      <motion.div className="p-6 space-y-6" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.3 }}>
         <div className="flex items-center justify-between mb-6">
           <Link to="/contacts"><ArrowLeft size={18} /><span>Back to Contacts</span></Link>
           <div className="flex gap-2">
@@ -44,10 +44,10 @@ export default function ContactDetail() {
             <Button variant="outline" onClick={() => setShowDeleteModal(true)} className="text-danger-600 border-danger-200 hover:bg-danger-50"><Trash2 size={14} /> Delete</Button>
           </div>
         </div>
-        <div className="bg-white rounded-2xl shadow-card p-6 space-y-4">
+          <div className="bg-surface rounded-[16px] border border-border shadow-card p-6 space-y-4">
           <div className="flex items-center justify-between">
             <h1 className="text-2xl font-bold text-heading">{contact.name}</h1>
-            <Badge variant={contact.isPrimary ? "success" : "muted"}>{contact.isPrimary ? "Primary" : "Secondary"}</Badge>
+            <Badge variant={contact.isPrimary ? "success" : "default"}>{contact.isPrimary ? "Primary" : "Secondary"}</Badge>
           </div>
           <div className="grid grid-cols-2 gap-4 text-sm">
             <div><span className="text-muted">Email</span><p className="text-body font-medium">{contact.email}</p></div>

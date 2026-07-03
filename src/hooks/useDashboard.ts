@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react"
 import { dashboardService, type DashboardData } from "@/services"
 
-export function useDashboard() {
+export function useDashboard(startDate?: string, endDate?: string) {
   const [data, setData] = useState<DashboardData | null>(null)
   const [loading, setLoading] = useState(true)
 
@@ -11,7 +11,7 @@ export function useDashboard() {
     const fetch = () => {
       setLoading(true)
       dashboardService
-        .get()
+        .get(startDate, endDate)
         .then((d) => { if (!cancelled) setData(d) })
         .catch(() => {})
         .finally(() => { if (!cancelled) setLoading(false) })
@@ -28,7 +28,7 @@ export function useDashboard() {
       cancelled = true
       document.removeEventListener("visibilitychange", onVisibility)
     }
-  }, [])
+  }, [startDate, endDate])
 
   return { data, loading }
 }

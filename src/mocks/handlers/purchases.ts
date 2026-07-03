@@ -157,7 +157,7 @@ const billHandlers = [
       filtered = filtered.filter(
         (b) =>
           b.number.toLowerCase().includes(search) ||
-          b.vendorName.toLowerCase().includes(search)
+          ((b as any).vendorName ?? b.supplierName ?? "").toLowerCase().includes(search)
       )
     }
 

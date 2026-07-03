@@ -29,7 +29,7 @@ async function startMsw() {
 }
 
 async function bootstrap() {
-  if (import.meta.env.DEV) {
+  if (import.meta.env.DEV || import.meta.env.VITE_ENABLE_MSW === "true") {
     await startMsw()
   }
 

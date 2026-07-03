@@ -49,7 +49,7 @@ const columns: Column<Bill>[] = [
     className: "text-right",
     render: (b) => (
       <span className="font-semibold tabular-nums text-heading">
-        {formatCurrency(b.total)}
+        {formatCurrency(b.total ?? 0)}
       </span>
     ),
   },

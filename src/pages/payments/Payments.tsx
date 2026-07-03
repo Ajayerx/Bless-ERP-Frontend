@@ -6,7 +6,6 @@ import { motion } from "framer-motion";
 import {
   DollarSign,
   FileText,
-  CheckCircle2,
   BadgeCheck,
 } from "lucide-react";
 import Topbar from "@/components/layout/Topbar";
@@ -75,15 +74,11 @@ export default function Payments() {
     fetchData();
   };
 
-  const overdueCount = unpaidInvoices.filter(
-    (inv) => inv.status === "overdue",
-  ).length;
-
   return (
     <>
       <Topbar />
       <motion.div
-        className="p-6 space-y-8"
+        className="p-6 space-y-6"
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ duration: 0.3 }}

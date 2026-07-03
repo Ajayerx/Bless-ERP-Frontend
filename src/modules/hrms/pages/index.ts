@@ -1,0 +1,7 @@
+export { default as HrmsDashboard } from "./HrmsDashboard"
+export { default as Employees } from "./Employees"
+export { default as EmployeeDetail } from "./EmployeeDetail"
+export { default as Attendance } from "./Attendance"
+export { default as Leave } from "./Leave"
+export { default as Payroll } from "./Payroll"
+export { default as PayrollDetail } from "./PayrollDetail"

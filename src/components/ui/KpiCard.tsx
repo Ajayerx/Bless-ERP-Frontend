@@ -26,7 +26,7 @@ export default function KpiCard({
   const sparkData = hasSparkline ? sparkline.map((v) => ({ v })) : []
 
   return (
-    <div className="bg-surface rounded-[16px] border border-border shadow-card p-5 flex flex-col relative overflow-hidden">
+    <div className="bg-surface rounded-[16px] border border-border shadow-card p-6 flex flex-col relative overflow-hidden">
       <div className="flex items-start justify-between mb-3">
         <div className="flex items-center gap-3">
           <div
@@ -70,7 +70,7 @@ export default function KpiCard({
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={sparkData}>
                 <Line
-                  type="monotone"
+                  type="linear"
                   dataKey="v"
                   stroke={chartColor}
                   strokeWidth={2}

@@ -83,9 +83,9 @@ export default function StockTransferForm({ transfer, onSaved, onCancel }: Stock
     setSaving(true)
     try {
       if (transfer) {
-        await inventoryService.updateWarehouse(transfer.id, form)
+        await inventoryService.updateWarehouse(transfer.id, form as any)
       } else {
-        await inventoryService.createTransfer(form)
+        await inventoryService.createTransfer(form as any)
       }
       onSaved()
     } catch {

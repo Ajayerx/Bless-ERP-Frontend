@@ -2,7 +2,6 @@
 
 import { CheckCircle2, Clock, FileText, DollarSign } from "lucide-react"
 import DataTable, { type Column } from "@/components/ui/DataTable"
-import { Card, CardContent } from "@/components/ui"
 import { type Payment, type PaymentListResponse } from "@/services"
 import { formatCurrency, formatDate, cn } from "@/lib/utils"
 import { methodConfig } from "./PaymentMethodSelect"

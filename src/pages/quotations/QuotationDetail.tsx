@@ -7,12 +7,12 @@ import Topbar from "@/components/layout/Topbar"
 import { Skeleton, Button, Badge, Modal } from "@/components/ui"
 import { quotationService, type Quotation } from "@/services"
 
-const statusMap: Record<string, { label: string; variant: "warning" | "info" | "success" | "danger" | "muted" }> = {
+const statusMap: Record<string, { label: string; variant: "warning" | "info" | "success" | "danger" | "default" }> = {
   draft: { label: "Draft", variant: "warning" },
-  sent: { label: "Sent", variant: "info" },
+  active: { label: "Active", variant: "info" },
   accepted: { label: "Accepted", variant: "success" },
-  declined: { label: "Declined", variant: "danger" },
-  converted: { label: "Converted", variant: "muted" },
+  rejected: { label: "Rejected", variant: "danger" },
+  converted: { label: "Converted", variant: "default" },
 }
 
 export default function QuotationDetail() {
@@ -37,7 +37,7 @@ export default function QuotationDetail() {
     } finally { setDeleting(false); setShowDeleteModal(false) }
   }
 
-  if (loading) return <><Topbar /><div className="p-6 max-w-2xl mx-auto space-y-4"><Skeleton className="h-8 w-48" /><Skeleton className="h-48 w-full" /></div></>
+  if (loading) return <><Topbar /><div className="p-6 space-y-6"><Skeleton className="h-8 w-48" /><Skeleton className="h-48 w-full" /></div></>
   if (!quotation) return <><Topbar /><div className="p-6 text-center text-muted">Quotation not found</div></>
 
   const status = statusMap[quotation.status] ?? { label: quotation.status, variant: "warning" as const }
@@ -45,7 +45,7 @@ export default function QuotationDetail() {
   return (
     <>
       <Topbar />
-      <motion.div className="p-6 max-w-3xl mx-auto" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.3 }}>
+      <motion.div className="p-6 space-y-6" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.3 }}>
         <div className="flex items-center justify-between mb-6">
           <Link to="/quotations" className="flex items-center gap-2 text-sm text-muted hover:text-body transition-colors">
             <ArrowLeft size={18} /><span>Back to Quotations</span>
@@ -55,7 +55,7 @@ export default function QuotationDetail() {
             <Button variant="outline" onClick={() => setShowDeleteModal(true)} className="text-danger-600 border-danger-200 hover:bg-danger-50"><Trash2 size={14} /> Delete</Button>
           </div>
         </div>
-        <div className="bg-white rounded-2xl shadow-card p-6 space-y-4">
+        <div className="bg-surface rounded-[16px] border border-border shadow-card p-6 space-y-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <FileText size={24} className="text-primary-600" />

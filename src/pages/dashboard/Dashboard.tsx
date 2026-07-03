@@ -1,13 +1,12 @@
 "use client"
 
+import { useState } from "react"
 import { motion } from "framer-motion"
 import {
   DollarSign,
   Users,
   Package,
   CreditCard,
-  ChevronDown,
-  CalendarDays,
 } from "lucide-react"
 import Topbar from "@/components/layout/Topbar"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -18,6 +17,10 @@ import TopCustomersCard from "@/modules/dashboard/TopCustomersCard"
 import InventoryAlertsCard from "@/modules/dashboard/InventoryAlertsCard"
 import RecentPaymentsCard from "@/modules/dashboard/RecentPaymentsCard"
 import QuickActionsBar from "@/modules/dashboard/QuickActionsBar"
+import DateRangeSelector, {
+  type DatePreset,
+  presetLabels,
+} from "@/modules/dashboard/DateRangeSelector"
 import { useDashboard } from "@/hooks/useDashboard"
 import { useAuth } from "@/context/AuthContext"
 import { formatCurrency } from "@/lib/utils"
@@ -75,8 +78,17 @@ const kpiConfig = [
 ]
 
 export default function Dashboard() {
-  const { data, loading } = useDashboard()
+  const [datePreset, setDatePreset] = useState<DatePreset>("this_week")
+  const [startDate, setStartDate] = useState<string>()
+  const [endDate, setEndDate] = useState<string>()
+  const { data, loading } = useDashboard(startDate, endDate)
   const { user } = useAuth()
+
+  const handleDateChange = (preset: DatePreset, start: string, end: string) => {
+    setDatePreset(preset)
+    setStartDate(start)
+    setEndDate(end)
+  }
 
   if (loading) {
     return (
@@ -124,11 +136,7 @@ export default function Dashboard() {
               Here&apos;s what&apos;s happening with your business today.
             </p>
           </div>
-          <button className="inline-flex items-center gap-2 px-4 py-2.5 bg-surface border border-border rounded-[12px] text-sm font-semibold text-body hover:bg-gray-50 transition-colors shadow-sm">
-            <CalendarDays size={16} className="text-muted" />
-            May 12 – May 18, 2024
-            <ChevronDown size={14} className="text-muted" />
-          </button>
+          <DateRangeSelector value={datePreset} onChange={handleDateChange} />
         </motion.div>
 
         {/* KPI Cards */}
@@ -159,7 +167,7 @@ export default function Dashboard() {
           variants={itemVariants}
           className="grid grid-cols-1 lg:grid-cols-3 gap-5"
         >
-          <SalesOverviewChart data={data?.salesChart ?? []} />
+          <SalesOverviewChart data={data?.salesChart ?? []} periodLabel={presetLabels[datePreset]} />
           <RecentInvoicesCard data={data?.recentInvoices ?? []} />
         </motion.div>
 

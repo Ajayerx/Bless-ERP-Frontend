@@ -105,28 +105,24 @@ export default function Leave() {
           title="Total Requests"
           value={kpis.total.toString()}
           trend={0}
-          trendDirection="neutral"
           icon={<FileText size={20} />}
         />
         <KpiCard
           title="Pending"
           value={kpis.pending.toString()}
           trend={0}
-          trendDirection="neutral"
           icon={<Clock size={20} />}
         />
         <KpiCard
           title="Approved"
           value={kpis.approved.toString()}
           trend={0}
-          trendDirection="neutral"
           icon={<CheckCircle2 size={20} />}
         />
         <KpiCard
           title="Rejected"
           value={kpis.rejected.toString()}
           trend={0}
-          trendDirection="neutral"
           icon={<XCircle size={20} />}
         />
       </div>

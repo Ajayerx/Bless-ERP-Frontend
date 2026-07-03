@@ -32,7 +32,7 @@ export default function StockCountForm({ count, onSaved, onCancel }: StockCountF
       setForm({
         warehouseId: count.warehouseId,
         notes: count.notes,
-        items: count.items.map((i) => ({ productName: i.productName, sku: i.sku, actualQuantity: i.actualQuantity, unit: i.unit })),
+        items: count.items.map((i) => ({ productId: i.productId, productName: i.productName, sku: i.sku, actualQuantity: i.actualQuantity, unit: i.unit })),
       })
     }
   }, [count])
@@ -45,7 +45,7 @@ export default function StockCountForm({ count, onSaved, onCancel }: StockCountF
   const addItem = () => {
     setForm((prev) => ({
       ...prev,
-      items: [...prev.items, { productName: "", sku: "", actualQuantity: 0, unit: "ea" }],
+      items: [...prev.items, { productId: "", productName: "", sku: "", actualQuantity: 0, unit: "ea" }],
     }))
   }
 
@@ -93,8 +93,6 @@ export default function StockCountForm({ count, onSaved, onCancel }: StockCountF
     }
   }
 
-  const inputClass =
-    "w-full px-3 py-2.5 bg-white border border-border rounded-[12px] text-sm text-body placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 transition-all duration-200"
   const labelClass = "block text-xs font-semibold text-muted mb-1.5 uppercase tracking-wider"
 
   return (
@@ -106,7 +104,7 @@ export default function StockCountForm({ count, onSaved, onCancel }: StockCountF
       <div className="grid grid-cols-2 gap-4">
         <div className="col-span-2">
           <label htmlFor="warehouseId" className={labelClass}>Warehouse *</label>
-          <select id="warehouseId" name="warehouseId" value={form.warehouseId} onChange={handleChange} className={inputClass}>
+          <select id="warehouseId" name="warehouseId" value={form.warehouseId} onChange={handleChange} className="w-full px-3 py-2.5 bg-white border border-border rounded-[12px] text-sm text-body placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 transition-all duration-200">
             <option value="">Select warehouse...</option>
             {warehouses.map((w) => (
               <option key={w.id} value={w.id}>{w.name}</option>
@@ -115,7 +113,7 @@ export default function StockCountForm({ count, onSaved, onCancel }: StockCountF
         </div>
         <div className="col-span-2">
           <label htmlFor="notes" className={labelClass}>Notes</label>
-          <textarea id="notes" name="notes" value={form.notes} onChange={handleChange} rows={2} className={inputClass} placeholder="Optional notes about this count..." />
+          <textarea id="notes" name="notes" value={form.notes} onChange={handleChange} rows={2} className="w-full px-3 py-2.5 bg-white border border-border rounded-[12px] text-sm text-body placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 transition-all duration-200" placeholder="Optional notes about this count..." />
         </div>
       </div>
 

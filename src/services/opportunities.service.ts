@@ -8,12 +8,16 @@ export interface Opportunity {
   customerId: string
   customerName: string
   value: number
-  stage: OpportunityStage
+  stage: string
   probability: number
   expectedClose: string
   assignedTo: string
   notes: string
   createdAt: string
+  name: string
+  contactId?: string
+  expectedCloseDate: string
+  estimatedValue: number
 }
 
 export interface OpportunityListResponse {
@@ -22,22 +26,27 @@ export interface OpportunityListResponse {
 }
 
 export interface OpportunityFormData {
-  title: string
+  title?: string
   customerId: string
-  customerName: string
-  value: number
-  stage: OpportunityStage
-  probability: number
-  expectedClose: string
-  assignedTo: string
-  notes: string
+  customerName?: string
+  value?: number
+  stage?: string
+  probability?: number
+  expectedClose?: string
+  assignedTo?: string
+  notes?: string
+  name?: string
+  contactId?: string
+  expectedCloseDate?: string
+  estimatedValue?: number
 }
 
 export const opportunityService = {
-  list: (params: { search?: string; page?: number } = {}): Promise<OpportunityListResponse> => {
+  list: (params: { search?: string; page?: number; pageSize?: number } = {}): Promise<OpportunityListResponse> => {
     const qs = new URLSearchParams()
     if (params.search) qs.set("search", params.search)
     if (params.page) qs.set("page", String(params.page))
+    if (params.pageSize) qs.set("pageSize", String(params.pageSize))
     return apiClient(`/opportunities?${qs}`)
   },
 

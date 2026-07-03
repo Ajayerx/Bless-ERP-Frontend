@@ -12,20 +12,20 @@ export type PurchaseOrderStatus =
 export interface PurchaseOrder {
   id: string
   number: string
-  vendorId: string
+  vendorId?: string
   vendorName: string
-  vendorContact: string
-  billTo: string
-  shippingAddress: string
-  issueDate: string
-  deliveryDate: string
-  status: PurchaseOrderStatus
-  lineItems: LineItem[]
-  subtotal: number
-  gst: number
-  qst: number
-  total: number
-  notes: string
+  vendorContact?: string
+  billTo?: string
+  shippingAddress?: string
+  issueDate?: string
+  deliveryDate?: string
+  status: string
+  lineItems?: LineItem[]
+  subtotal?: number
+  gst?: number
+  qst?: number
+  total?: number
+  notes?: string
   createdAt: string
 }
 
@@ -38,11 +38,11 @@ export interface PurchaseOrderListResponse {
 }
 
 export interface PurchaseOrderFormData {
-  vendorId: string
+  vendorId?: string
   vendorName: string
-  vendorContact: string
-  billTo: string
-  shippingAddress: string
+  vendorContact?: string
+  billTo?: string
+  shippingAddress?: string
   issueDate: string
   deliveryDate: string
   lineItems: Omit<LineItem, "id">[]
@@ -89,17 +89,17 @@ export type BillStatus = "draft" | "pending" | "paid" | "overdue" | "cancelled"
 export interface Bill {
   id: string
   number: string
-  vendorId: string
+  vendorId?: string
   vendorName: string
-  billTo: string
+  billTo?: string
   issueDate: string
   dueDate: string
-  status: BillStatus
-  lineItems: LineItem[]
-  subtotal: number
-  gst: number
-  qst: number
-  total: number
+  status: string
+  lineItems?: LineItem[]
+  subtotal?: number
+  gst?: number
+  qst?: number
+  total?: number
   notes: string
   createdAt: string
 }
@@ -113,9 +113,9 @@ export interface BillListResponse {
 }
 
 export interface BillFormData {
-  vendorId: string
+  vendorId?: string
   vendorName: string
-  billTo: string
+  billTo?: string
   issueDate: string
   dueDate: string
   lineItems: Omit<LineItem, "id">[]

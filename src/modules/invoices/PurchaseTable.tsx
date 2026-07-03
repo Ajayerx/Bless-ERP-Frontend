@@ -1,6 +1,6 @@
 "use client"
 
-import { ShoppingCart, CheckCircle2, Clock, XCircle, FileText } from "lucide-react"
+import { ShoppingCart, CheckCircle2, Clock, XCircle } from "lucide-react"
 import DataTable, { type Column } from "@/components/ui/DataTable"
 import { Badge } from "@/components/ui"
 import { type PurchaseOrder, type PurchaseOrderListResponse } from "@/services/purchase_orders.service"
@@ -64,7 +64,7 @@ const columns: Column<PurchaseOrder>[] = [
         <div>
           <p className="font-semibold text-heading">{po.number}</p>
           <p className="text-xs text-muted">
-            {formatDate(po.orderDate)}
+            {formatDate(po.orderDate ?? "")}
           </p>
         </div>
       </div>
@@ -96,7 +96,7 @@ const columns: Column<PurchaseOrder>[] = [
     key: "expectedDate",
     header: "Expected",
     render: (po) => (
-      <span className="text-sm text-muted">{formatDate(po.expectedDate)}</span>
+      <span className="text-sm text-muted">{formatDate((po as any).expectedDate || po.deliveryDate)}</span>
     ),
   },
 ]

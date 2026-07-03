@@ -11,12 +11,12 @@ import { purchaseOrderService } from "@/services"
 import type { PurchaseOrder } from "@/modules/purchases/types"
 import { formatCurrency, formatDate } from "@/lib/utils"
 
-const statusConfig: Record<string, { label: string; variant: "success" | "warning" | "default" | "danger" | "info" | "purple" | "primary" }> = {
-  draft: { label: "Draft", variant: "default" },
-  pending_approval: { label: "Pending Approval", variant: "warning" },
-  approved: { label: "Approved", variant: "primary" },
-  ordered: { label: "Ordered", variant: "info" },
-  partially_received: { label: "Partially Received", variant: "purple" },
+const statusConfig: Record<string, { label: string; variant: "success" | "warning" | "default" | "danger" | "info" | "purple" }> = {
+  draft: { label: "Draft", variant: "warning" },
+  approved: { label: "Approved", variant: "purple" },
+  pending_approval: { label: "Pending Approval", variant: "info" },
+  ordered: { label: "Ordered", variant: "purple" },
+  partially_received: { label: "Partially Received", variant: "info" },
   received: { label: "Received", variant: "success" },
   cancelled: { label: "Cancelled", variant: "danger" },
 }
@@ -161,14 +161,14 @@ export default function PurchaseOrderDetail() {
               <div className="flex items-start gap-3">
                 <Calendar size={16} className="text-muted mt-0.5 shrink-0" />
                 <div>
-                  <p className="text-sm font-semibold text-heading">{formatDate(order.issueDate)}</p>
+                  <p className="text-sm font-semibold text-heading">{formatDate(order.issueDate ?? "")}</p>
                   <p className="text-xs text-muted">Order Date</p>
                 </div>
               </div>
               <div className="flex items-start gap-3">
                 <Truck size={16} className="text-muted mt-0.5 shrink-0" />
                 <div>
-                  <p className="text-sm font-semibold text-heading">{formatDate(order.deliveryDate)}</p>
+                  <p className="text-sm font-semibold text-heading">{formatDate(order.deliveryDate ?? "")}</p>
                   <p className="text-xs text-muted">Expected Delivery</p>
                 </div>
               </div>
@@ -199,7 +199,7 @@ export default function PurchaseOrderDetail() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border/40">
-                {order.lineItems.map((item, idx) => (
+                {(order.lineItems ?? []).map((item, idx) => (
                   <tr key={item.id || idx} className="hover:bg-gray-50/60 transition-colors">
                     <td className="px-5 py-3 text-sm font-medium text-heading">{item.productName}</td>
                     <td className="px-5 py-3 text-sm text-muted">{item.sku}</td>
@@ -221,23 +221,23 @@ export default function PurchaseOrderDetail() {
             <CardContent className="space-y-2 pt-6">
               <div className="flex justify-between text-sm">
                 <span className="text-muted">Subtotal</span>
-                <span className="font-semibold text-heading tabular-nums">{formatCurrency(order.subtotal)}</span>
+                <span className="font-semibold text-heading tabular-nums">{formatCurrency(order.subtotal ?? 0)}</span>
               </div>
-              {order.gst > 0 && (
+              {(order.gst ?? 0) > 0 && (
                 <div className="flex justify-between text-sm">
                   <span className="text-muted">GST (5%)</span>
-                  <span className="text-body tabular-nums">{formatCurrency(order.gst)}</span>
+                  <span className="text-body tabular-nums">{formatCurrency(order.gst ?? 0)}</span>
                 </div>
               )}
-              {order.qst > 0 && (
+              {(order.qst ?? 0) > 0 && (
                 <div className="flex justify-between text-sm">
                   <span className="text-muted">QST (9.975%)</span>
-                  <span className="text-body tabular-nums">{formatCurrency(order.qst)}</span>
+                  <span className="text-body tabular-nums">{formatCurrency(order.qst ?? 0)}</span>
                 </div>
               )}
               <div className="border-t border-border pt-2 flex justify-between text-base">
                 <span className="font-bold text-heading">Total</span>
-                <span className="font-bold text-heading tabular-nums">{formatCurrency(order.total)}</span>
+                <span className="font-bold text-heading tabular-nums">{formatCurrency(order.total ?? 0)}</span>
               </div>
             </CardContent>
           </Card>

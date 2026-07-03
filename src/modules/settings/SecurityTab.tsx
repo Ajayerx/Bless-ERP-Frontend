@@ -40,8 +40,6 @@ export default function SecurityTab({ security, onChange }: SecurityTabProps) {
     setTimeout(() => setPasswordChanged(false), 3000)
   }
 
-  const inputClass =
-    "w-full px-3 py-2.5 bg-white border border-border rounded-[12px] text-sm text-body placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 transition-all duration-200"
   const labelClass = "block text-xs font-semibold text-muted mb-1.5 uppercase tracking-wider"
 
   return (

@@ -35,7 +35,7 @@ export default function BankAccountDetail() {
     } finally { setDeleting(false); setShowDeleteModal(false) }
   }
 
-  if (loading) return <><Topbar /><div className="p-6 max-w-2xl mx-auto space-y-4"><Skeleton className="h-8 w-48" /><Skeleton className="h-48 w-full" /></div></>
+  if (loading) return <><Topbar /><div className="p-6 space-y-4"><Skeleton className="h-8 w-48" /><Skeleton className="h-48 w-full" /></div></>
   if (!account) return <><Topbar /><div className="p-6 text-center text-muted">Account not found</div></>
 
   const type = typeMap[account.type] ?? { label: account.type, variant: "info" as const }
@@ -43,7 +43,7 @@ export default function BankAccountDetail() {
   return (
     <>
       <Topbar />
-      <motion.div className="p-6 max-w-2xl mx-auto" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.3 }}>
+      <motion.div className="p-6 space-y-6" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.3 }}>
         <div className="flex items-center justify-between mb-6">
           <Link to="/bank-accounts"><ArrowLeft size={18} /><span>Back to Bank Accounts</span></Link>
           <div className="flex gap-2">

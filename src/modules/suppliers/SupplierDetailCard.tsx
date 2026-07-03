@@ -1,6 +1,6 @@
 "use client"
 
-import { Truck, Mail, Phone, MapPin, BadgeCheck, DollarSign, Hash } from "lucide-react"
+import { Mail, Phone, MapPin, BadgeCheck, DollarSign, Hash } from "lucide-react"
 import { Card, CardContent, Badge, Avatar } from "@/components/ui"
 import { type Supplier } from "@/services"
 import { formatCurrency } from "@/lib/utils"

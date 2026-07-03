@@ -13,12 +13,12 @@ interface Props {
   onRowClick?: (item: Opportunity) => void
 }
 
-const stageMap: Record<string, { label: string; variant: "warning" | "info" | "danger" | "success" | "muted" }> = {
+const stageMap: Record<string, { label: string; variant: "warning" | "info" | "danger" | "success" | "default" }> = {
   qualification: { label: "Qualification", variant: "warning" },
   proposal: { label: "Proposal", variant: "info" },
   negotiation: { label: "Negotiation", variant: "danger" },
   closed_won: { label: "Closed Won", variant: "success" },
-  closed_lost: { label: "Closed Lost", variant: "muted" },
+  closed_lost: { label: "Closed Lost", variant: "default" },
 }
 
 const columns: Column<Opportunity>[] = [
@@ -29,7 +29,7 @@ const columns: Column<Opportunity>[] = [
     key: "stage",
     header: "Stage",
     render: (o) => {
-      const s = stageMap[o.stage] ?? { label: o.stage, variant: "muted" as const }
+      const s = stageMap[o.stage] ?? { label: o.stage, variant: "default" as const }
       return <Badge variant={s.variant}>{s.label}</Badge>
     },
   },
@@ -46,7 +46,7 @@ export default function OpportunityTable({ data, loading, search, onSearch, page
       keyExtractor={(o) => o.id}
       total={data?.total ?? 0}
       loading={loading}
-      search={search}
+      searchQuery={search}
       onSearch={onSearch}
       page={page}
       pageSize={10}

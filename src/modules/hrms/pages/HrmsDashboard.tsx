@@ -54,67 +54,54 @@ export default function HrmsDashboard() {
           title="Total Employees"
           value={data.totalEmployees.toLocaleString("en-IN")}
           trend={0}
-          trendDirection="neutral"
           icon={<Users size={20} />}
         />
         <KpiCard
           title="Present Today"
           value={data.presentToday.toLocaleString("en-IN")}
           trend={0}
-          trendDirection="neutral"
           icon={<CalendarCheck size={20} />}
         />
         <KpiCard
           title="Absent Today"
           value={data.absentToday.toLocaleString("en-IN")}
           trend={0}
-          trendDirection="neutral"
           icon={<UserMinus size={20} />}
-          variant="warning"
         />
         <KpiCard
           title="Late Today"
           value={data.lateToday.toLocaleString("en-IN")}
           trend={0}
-          trendDirection="neutral"
           icon={<Clock size={20} />}
-          variant="warning"
         />
         <KpiCard
           title="On Leave"
           value={data.onLeave.toLocaleString("en-IN")}
           trend={0}
-          trendDirection="neutral"
           icon={<UserPlus size={20} />}
         />
         <KpiCard
           title="Pending Leaves"
           value={data.pendingLeaveRequests.toLocaleString("en-IN")}
           trend={0}
-          trendDirection="neutral"
           icon={<AlertTriangle size={20} />}
-          variant="warning"
         />
         <KpiCard
           title="Monthly Payroll"
           value={formatCurrency(data.monthlyPayrollCost)}
           trend={0}
-          trendDirection="neutral"
           icon={<CreditCard size={20} />}
         />
         <KpiCard
           title="Pending Payroll"
           value={data.pendingPayroll.toLocaleString("en-IN")}
           trend={0}
-          trendDirection="neutral"
           icon={<CreditCard size={20} />}
-          variant="warning"
         />
         <KpiCard
           title="Processed Payroll"
           value={data.processedPayroll.toLocaleString("en-IN")}
           trend={0}
-          trendDirection="neutral"
           icon={<CreditCard size={20} />}
         />
       </div>

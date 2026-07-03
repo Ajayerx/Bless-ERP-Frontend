@@ -104,35 +104,30 @@ export default function Attendance() {
           value={String(present)}
           icon={<CheckCircle2 size={20} />}
           trend={0}
-          trendDirection="up"
         />
         <KpiCard
           title="Absent"
           value={String(absent)}
           icon={<XCircle size={20} />}
           trend={0}
-          trendDirection="down"
         />
         <KpiCard
           title="Late"
           value={String(late)}
           icon={<AlertTriangle size={20} />}
           trend={0}
-          trendDirection="up"
         />
         <KpiCard
           title="Half Day"
           value={String(halfDay)}
           icon={<CalendarDays size={20} />}
           trend={0}
-          trendDirection="neutral"
         />
         <KpiCard
           title="WFH"
           value={String(wfh)}
           icon={<Home size={20} />}
           trend={0}
-          trendDirection="up"
         />
       </div>
 

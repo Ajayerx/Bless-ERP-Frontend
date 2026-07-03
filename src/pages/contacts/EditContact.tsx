@@ -30,13 +30,13 @@ export default function EditContact() {
     } finally { setSaving(false) }
   }
 
-  if (loading) return <><Topbar /><div className="p-6 max-w-2xl mx-auto space-y-4"><Skeleton className="h-8 w-48" /><Skeleton className="h-48 w-full" /></div></>
+  if (loading) return <><Topbar /><div className="p-6 space-y-6"><Skeleton className="h-8 w-48" /><Skeleton className="h-48 w-full" /></div></>
   if (!contact) return <><Topbar /><div className="p-6 text-center text-muted">Contact not found</div></>
 
   return (
     <>
       <Topbar />
-      <motion.div className="p-6 max-w-2xl mx-auto" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.3 }}>
+      <motion.div className="p-6 space-y-6" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.3 }}>
         <div className="flex items-center justify-between mb-6">
           <Link to={`/contacts/${id}`} className="flex items-center gap-2 text-sm text-muted hover:text-body transition-colors">
             <ArrowLeft size={18} /> Back
@@ -44,7 +44,7 @@ export default function EditContact() {
           <Button onClick={() => formRef.current?.submit()} loading={saving}><Save size={14} /> Save Changes</Button>
         </div>
         <h1 className="text-2xl font-bold text-heading mb-6">Edit Contact</h1>
-        <div className="bg-white rounded-2xl shadow-card p-6">
+        <div className="bg-surface rounded-[16px] border border-border shadow-card p-6">
           <ContactForm ref={formRef} defaultValues={contact} onSubmit={onSubmit} />
         </div>
       </motion.div>

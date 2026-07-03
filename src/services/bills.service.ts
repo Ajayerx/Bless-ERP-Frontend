@@ -1,17 +1,27 @@
 import { apiClient } from "./api-client"
 
+import type { LineItem } from "./invoices.service"
+
 export interface Bill {
   id: string
-  supplierId: string
+  supplierId?: string
   supplierName: string
   number: string
-  amount: number
+  amount?: number
   issueDate: string
   dueDate: string
-  status: "received" | "paid" | "overdue"
-  category: string
+  status: "received" | "paid" | "overdue" | "pending" | "draft" | "cancelled"
+  category?: string
   notes: string
   createdAt: string
+  vendorId?: string
+  vendorName?: string
+  billTo?: string
+  lineItems?: LineItem[]
+  subtotal?: number
+  gst?: number
+  qst?: number
+  total?: number
 }
 
 export interface BillListResponse {
@@ -22,13 +32,21 @@ export interface BillListResponse {
 }
 
 export interface BillFormData {
-  supplierName: string
-  amount: number
+  supplierName?: string
+  amount?: number
   issueDate: string
   dueDate: string
-  status?: "received" | "paid" | "overdue"
+  status?: string
   category?: string
   notes?: string
+  vendorId?: string
+  vendorName?: string
+  billTo?: string
+  lineItems?: Omit<LineItem, "id">[]
+  subtotal?: number
+  gst?: number
+  qst?: number
+  total?: number
 }
 
 export const billService = {

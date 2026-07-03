@@ -52,7 +52,7 @@ export default function PurchaseDetailCard({ purchaseOrder }: PurchaseDetailCard
               <Calendar size={18} className="text-muted mt-0.5" />
               <div>
                 <p className="text-xs font-semibold text-muted uppercase tracking-wider">Order Date</p>
-                <p className="text-2xl font-bold text-heading mt-1">{formatDate(purchaseOrder.orderDate)}</p>
+                <p className="text-2xl font-bold text-heading mt-1">{formatDate(purchaseOrder.orderDate ?? "")}</p>
               </div>
             </div>
           </CardContent>
@@ -63,7 +63,7 @@ export default function PurchaseDetailCard({ purchaseOrder }: PurchaseDetailCard
               <Truck size={18} className="text-muted mt-0.5" />
               <div>
                 <p className="text-xs font-semibold text-muted uppercase tracking-wider">Expected</p>
-                <p className="text-2xl font-bold text-heading mt-1">{formatDate(purchaseOrder.expectedDate)}</p>
+                <p className="text-2xl font-bold text-heading mt-1">{formatDate((purchaseOrder as any).expectedDate || purchaseOrder.deliveryDate)}</p>
               </div>
             </div>
           </CardContent>

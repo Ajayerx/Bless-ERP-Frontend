@@ -200,7 +200,7 @@ export default function BillDetail() {
           </CardHeader>
           <DataTable
             columns={lineItemColumns}
-            data={bill.lineItems}
+            data={bill.lineItems ?? []}
             keyExtractor={(li) => li.id}
             pageSize={50}
           />
@@ -211,23 +211,23 @@ export default function BillDetail() {
             <CardContent className="space-y-2">
               <div className="flex justify-between text-sm">
                 <span className="text-muted">Subtotal</span>
-                <span className="font-semibold text-heading tabular-nums">{formatCurrency(bill.subtotal)}</span>
+                <span className="font-semibold text-heading tabular-nums">{formatCurrency(bill.subtotal ?? 0)}</span>
               </div>
-              {bill.gst > 0 && (
+              {(bill.gst ?? 0) > 0 && (
                 <div className="flex justify-between text-sm">
                   <span className="text-muted">GST (5%)</span>
-                  <span className="text-body tabular-nums">{formatCurrency(bill.gst)}</span>
+                  <span className="text-body tabular-nums">{formatCurrency(bill.gst ?? 0)}</span>
                 </div>
               )}
-              {bill.qst > 0 && (
+              {(bill.qst ?? 0) > 0 && (
                 <div className="flex justify-between text-sm">
                   <span className="text-muted">QST (9.975%)</span>
-                  <span className="text-body tabular-nums">{formatCurrency(bill.qst)}</span>
+                  <span className="text-body tabular-nums">{formatCurrency(bill.qst ?? 0)}</span>
                 </div>
               )}
               <div className="border-t border-border pt-2 flex justify-between text-base">
                 <span className="font-bold text-heading">Total</span>
-                <span className="font-bold text-heading tabular-nums">{formatCurrency(bill.total)}</span>
+                <span className="font-bold text-heading tabular-nums">{formatCurrency(bill.total ?? 0)}</span>
               </div>
             </CardContent>
           </Card>

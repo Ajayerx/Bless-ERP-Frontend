@@ -35,5 +35,11 @@ export type { Settings, CompanyInfo, TaxConfig, AppDefaults, AppUser, UserProfil
 export { purchaseOrderService } from "./purchase_orders.service"
 export type { PurchaseOrder, PurchaseOrderListResponse } from "./purchase_orders.service"
 
+export { vendorService } from "./vendors.service"
+export type { Vendor, VendorFormData, VendorListResponse } from "./vendors.service"
+export { leadService } from "./leads.service"
+export type { Lead, LeadFormData, LeadListResponse } from "./leads.service"
+export { followUpService } from "./follow-ups.service"
+export type { FollowUp, FollowUpListResponse } from "./follow-ups.service"
 export { accountingService } from "@/modules/accounting/services"
 export { apiClient, ApiError } from "./api-client"

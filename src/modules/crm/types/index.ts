@@ -6,9 +6,9 @@ export interface Contact {
   phone: string
   jobTitle: string
   company: string
-  customerId: string
+  customerId?: string
   notes: string
-  status: "active" | "inactive"
+  status: string
   createdAt: string
 }
 
@@ -27,8 +27,8 @@ export interface Lead {
   email: string
   phone: string
   company: string
-  source: "website" | "referral" | "cold_call" | "social_media" | "event" | "other"
-  status: "new" | "contacted" | "qualified" | "proposal" | "lost"
+  source: string
+  status: string
   estimatedValue: number
   notes: string
   assignedTo: string
@@ -48,8 +48,8 @@ export interface Opportunity {
   name: string
   customerId: string
   customerName: string
-  contactId: string
-  stage: "prospecting" | "qualification" | "proposal" | "negotiation" | "closed_won" | "closed_lost"
+  contactId?: string
+  stage: string
   probability: number
   expectedCloseDate: string
   estimatedValue: number
@@ -70,12 +70,12 @@ export interface FollowUp {
   id: string
   title: string
   description: string
-  relatedType: "lead" | "opportunity" | "contact"
+  relatedType: string
   relatedId: string
   relatedName: string
   dueDate: string
-  status: "pending" | "completed"
-  priority: "low" | "medium" | "high"
+  status: string
+  priority: string
   assignedTo: string
   createdAt: string
 }

@@ -24,7 +24,7 @@ const billColumns = [
     </div>
   )},
   { key: "total", header: "Amount", className: "text-right", render: (b: Bill) => (
-    <span className="font-semibold tabular-nums text-heading text-sm">{formatCurrency(b.total)}</span>
+    <span className="font-semibold tabular-nums text-heading text-sm">{formatCurrency(b.total ?? 0)}</span>
   )},
   { key: "status", header: "Status", render: (b: Bill) => {
     const colors: Record<string, "success" | "info" | "warning" | "danger" | "default"> = {

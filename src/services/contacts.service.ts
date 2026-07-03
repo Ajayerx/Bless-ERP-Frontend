@@ -10,6 +10,11 @@ export interface Contact {
   isPrimary: boolean
   notes: string
   createdAt: string
+  firstName: string
+  lastName: string
+  jobTitle: string
+  company: string
+  status: string
 }
 
 export interface ContactListResponse {
@@ -18,20 +23,26 @@ export interface ContactListResponse {
 }
 
 export interface ContactFormData {
-  customerId: string
-  name: string
+  customerId?: string
+  name?: string
   email: string
-  phone: string
-  role: string
-  isPrimary: boolean
-  notes: string
+  phone?: string
+  role?: string
+  isPrimary?: boolean
+  notes?: string
+  firstName?: string
+  lastName?: string
+  jobTitle?: string
+  company?: string
+  status?: string
 }
 
 export const contactService = {
-  list: (params: { search?: string; page?: number; customerId?: string } = {}): Promise<ContactListResponse> => {
+  list: (params: { search?: string; page?: number; pageSize?: number; customerId?: string } = {}): Promise<ContactListResponse> => {
     const qs = new URLSearchParams()
     if (params.search) qs.set("search", params.search)
     if (params.page) qs.set("page", String(params.page))
+    if (params.pageSize) qs.set("pageSize", String(params.pageSize))
     if (params.customerId) qs.set("customerId", params.customerId)
     return apiClient(`/contacts?${qs}`)
   },

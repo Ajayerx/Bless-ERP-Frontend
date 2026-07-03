@@ -6,7 +6,7 @@ import { motion } from "framer-motion"
 import { ArrowLeft, Save } from "lucide-react"
 import Topbar from "@/components/layout/Topbar"
 import { Button, Skeleton } from "@/components/ui"
-import { invoiceService, customerService, type Customer, type Invoice } from "@/services"
+import { invoiceService, customerService, type Customer, type Invoice, type Product } from "@/services"
 import InvoiceForm from "@/modules/invoices/InvoiceForm"
 import InvoiceLineItems from "@/modules/invoices/InvoiceLineItems"
 import InvoiceTotals from "@/modules/invoices/InvoiceTotals"
@@ -140,7 +140,7 @@ export default function EditInvoice() {
   return (
     <>
       <Topbar />
-      <motion.div className="p-6 space-y-6 max-w-5xl mx-auto" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.3 }}>
+      <motion.div className="p-6 space-y-6 " initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.3 }}>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
             <button onClick={() => navigate(`/invoices/${id}`)} className="p-2 rounded-[10px] text-muted hover:text-body hover:bg-gray-100 transition-colors">
@@ -168,7 +168,7 @@ export default function EditInvoice() {
           <>
             <InvoiceForm customers={customers} formData={formData} onChange={handleFormChange} />
             <InvoiceLineItems
-              items={lineItems} products={products} productDropdowns={productDropdowns}
+              items={lineItems} products={products as Product[]} productDropdowns={productDropdowns}
               onUpdate={updateLine} onRemove={removeLine} onAdd={addLine}
               onProductDropdownChange={(lid, dd) => setProductDropdowns((prev) => ({ ...prev, [lid]: dd }))}
               onSelectProduct={selectProduct}

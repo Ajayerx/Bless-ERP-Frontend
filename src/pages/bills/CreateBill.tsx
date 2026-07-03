@@ -4,7 +4,7 @@ import { useNavigate } from "react-router-dom"
 import { motion } from "framer-motion"
 import { ArrowLeft } from "lucide-react"
 import Topbar from "@/components/layout/Topbar"
-import { Button, Input, Select, Textarea, Link } from "@/components/ui"
+import { Button, Input, Textarea, Link } from "@/components/ui"
 import { useForm } from "react-hook-form"
 import { billService } from "@/services"
 
@@ -34,7 +34,7 @@ export default function CreateBill() {
   return (
     <>
       <Topbar />
-      <motion.div className="p-6 max-w-2xl mx-auto" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.3 }}>
+      <motion.div className="p-6" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.3 }}>
         <div className="flex items-center gap-3 mb-6">
           <Link to="/bills"><ArrowLeft size={18} /><span>Back to Bills</span></Link>
         </div>

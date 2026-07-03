@@ -23,7 +23,7 @@ export default function PurchaseDetail() {
   return (
     <>
       <Topbar />
-      <motion.div className="p-6 max-w-4xl mx-auto" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.3 }}>
+      <motion.div className="p-6 space-y-6" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.3 }}>
         {loading ? (
           <div className="space-y-4">
             <Skeleton className="h-8 w-48" />

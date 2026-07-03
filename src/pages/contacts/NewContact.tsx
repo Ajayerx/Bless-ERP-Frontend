@@ -24,7 +24,7 @@ export default function NewContact() {
   return (
     <>
       <Topbar />
-      <motion.div className="p-6 max-w-2xl mx-auto" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.3 }}>
+      <motion.div className="p-6 space-y-6" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.3 }}>
         <div className="flex items-center justify-between mb-6">
           <Link to="/contacts" className="flex items-center gap-2 text-sm text-muted hover:text-body transition-colors">
             <ArrowLeft size={18} /> Back to Contacts
@@ -32,7 +32,7 @@ export default function NewContact() {
           <Button onClick={() => formRef.current?.submit()} loading={loading}><Save size={14} /> Save Contact</Button>
         </div>
         <h1 className="text-2xl font-bold text-heading mb-6">New Contact</h1>
-        <div className="bg-white rounded-2xl shadow-card p-6">
+        <div className="bg-surface rounded-[16px] border border-border shadow-card p-6">
           <ContactForm ref={formRef} onSubmit={onSubmit} />
         </div>
       </motion.div>

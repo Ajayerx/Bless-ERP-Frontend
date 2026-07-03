@@ -7,12 +7,12 @@ import Topbar from "@/components/layout/Topbar"
 import { Skeleton, Button, Link, Badge, Modal } from "@/components/ui"
 import { opportunityService, type Opportunity } from "@/services/opportunities.service"
 
-const stageMap: Record<string, { label: string; variant: "warning" | "info" | "danger" | "success" | "muted" }> = {
+const stageMap: Record<string, { label: string; variant: "warning" | "info" | "danger" | "success" | "default" }> = {
   qualification: { label: "Qualification", variant: "warning" },
   proposal: { label: "Proposal", variant: "info" },
   negotiation: { label: "Negotiation", variant: "danger" },
   closed_won: { label: "Closed Won", variant: "success" },
-  closed_lost: { label: "Closed Lost", variant: "muted" },
+  closed_lost: { label: "Closed Lost", variant: "default" },
 }
 
 export default function OpportunityDetail() {
@@ -37,15 +37,15 @@ export default function OpportunityDetail() {
     } finally { setDeleting(false); setShowDeleteModal(false) }
   }
 
-  if (loading) return <><Topbar /><div className="p-6 max-w-2xl mx-auto space-y-4"><Skeleton className="h-8 w-48" /><Skeleton className="h-48 w-full" /></div></>
+  if (loading) return <><Topbar /><div className="p-6 space-y-4"><Skeleton className="h-8 w-48" /><Skeleton className="h-48 w-full" /></div></>
   if (!opp) return <><Topbar /><div className="p-6 text-center text-muted">Opportunity not found</div></>
 
-  const stage = stageMap[opp.stage] ?? { label: opp.stage, variant: "muted" as const }
+  const stage = stageMap[opp.stage] ?? { label: opp.stage, variant: "default" as const }
 
   return (
     <>
       <Topbar />
-      <motion.div className="p-6 max-w-2xl mx-auto" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.3 }}>
+      <motion.div className="p-6 space-y-6" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.3 }}>
         <div className="flex items-center justify-between mb-6">
           <Link to="/opportunities"><ArrowLeft size={18} /><span>Back to Opportunities</span></Link>
           <div className="flex gap-2">
