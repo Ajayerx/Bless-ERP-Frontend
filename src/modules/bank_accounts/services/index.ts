@@ -1,33 +1,5 @@
 import { apiClient } from "@/services/api-client"
-
-export type BankAccountType = "chequing" | "savings" | "credit"
-
-export interface BankAccount {
-  id: string
-  name: string
-  accountNumber: string
-  type: BankAccountType
-  balance: number
-  currency: string
-  institution: string
-  isDefault: boolean
-  createdAt: string
-}
-
-export interface BankAccountListResponse {
-  items: BankAccount[]
-  total: number
-}
-
-export interface BankAccountFormData {
-  name: string
-  accountNumber: string
-  type: BankAccountType
-  balance: number
-  currency: string
-  institution: string
-  isDefault: boolean
-}
+export type { BankAccountType, BankAccount, BankAccountListResponse, BankAccountFormData } from "../types"
 
 export const bankAccountService = {
   list: (params: { search?: string; page?: number } = {}): Promise<BankAccountListResponse> => {

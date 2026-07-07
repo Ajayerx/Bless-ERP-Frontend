@@ -6,6 +6,7 @@ import { ArrowLeft, Plus, Trash2, Save, Search, ChevronDown, Loader2 } from "luc
 import { Button, Card, CardContent, CardHeader, CardTitle } from "@/components/ui"
 import { quotationService, customerService, type Customer, productService } from "@/services"
 import type { Product } from "@/services"
+import type { Quotation, QuotationFormData } from "@/services"
 import { formatCurrency } from "@/lib/utils"
 import { GST_RATE, QST_RATE } from "@/config/tax.config"
 
@@ -29,8 +30,15 @@ function createEmptyLine(): LineItemForm {
   }
 }
 
-export default function QuotationForm() {
+interface QuotationFormProps {
+  quotation?: Quotation | null
+  onSubmit?: (data: QuotationFormData) => Promise<void>
+  loading?: boolean
+}
+
+export default function QuotationForm({ quotation: initialData, onSubmit: externalSubmit, loading: externalLoading }: QuotationFormProps = {}) {
   const navigate = useNavigate()
+  const mode = initialData ? "edit" : "create"
 
   const [customerId, setCustomerId] = useState("")
   const [customerName, setCustomerName] = useState("")
@@ -51,6 +59,28 @@ export default function QuotationForm() {
     customerService.list({ pageSize: 100 }).then((res) => setCustomers(res.items))
     productService.list({ pageSize: 100 }).then((res) => setProducts(res.items))
   }, [])
+
+  useEffect(() => {
+    if (!initialData) return
+    setCustomerId(initialData.customerId)
+    setCustomerName(initialData.customerName)
+    setCustomerSearch(initialData.customerName)
+    setIssueDate(initialData.issueDate)
+    setValidUntil(initialData.validUntil)
+    setNotes(initialData.notes ?? "")
+    if (initialData.items && initialData.items.length > 0) {
+      setLineItems(
+        initialData.items.map((item) => ({
+          id: crypto.randomUUID(),
+          productId: item.productId,
+          productName: item.productName,
+          qty: item.qty,
+          rate: item.rate,
+          amount: item.amount,
+        }))
+      )
+    }
+  }, [initialData])
 
   const filteredCustomers = customers.filter(
     (c) => c.name.toLowerCase().includes(customerSearch.toLowerCase()) ||
@@ -89,15 +119,33 @@ export default function QuotationForm() {
   const qstAmount = Math.round(subtotal * QST_RATE * 100) / 100
   const grandTotal = Math.round((subtotal + gstAmount + qstAmount) * 100) / 100
 
+  const isSaving = externalLoading ?? saving
+
   const handleSave = async () => {
     if (!customerId) return
-    setSaving(true)
-    try {
-      await quotationService.create({
+    if (externalSubmit) {
+      await externalSubmit({
         customerId, customerName, issueDate, validUntil, notes,
         items: lineItems.map(({ id, ...rest }) => rest),
         subtotal, gst: gstAmount, qst: qstAmount, total: grandTotal,
       })
+      return
+    }
+    setSaving(true)
+    try {
+      if (mode === "edit" && initialData) {
+        await quotationService.update(initialData.id, {
+          customerId, customerName, issueDate, validUntil, notes,
+          items: lineItems.map(({ id, ...rest }) => rest),
+          subtotal, gst: gstAmount, qst: qstAmount, total: grandTotal,
+        })
+      } else {
+        await quotationService.create({
+          customerId, customerName, issueDate, validUntil, notes,
+          items: lineItems.map(({ id, ...rest }) => rest),
+          subtotal, gst: gstAmount, qst: qstAmount, total: grandTotal,
+        })
+      }
       navigate("/quotations")
     } finally { setSaving(false) }
   }
@@ -115,15 +163,15 @@ export default function QuotationForm() {
             <ArrowLeft size={20} />
           </button>
           <div>
-            <h1 className="text-2xl font-bold text-heading">New Quotation</h1>
-            <p className="text-sm text-muted mt-0.5">Create a new customer quotation.</p>
+            <h1 className="text-2xl font-bold text-heading">{mode === "create" ? "New Quotation" : "Edit Quotation"}</h1>
+            <p className="text-sm text-muted mt-0.5">{mode === "create" ? "Create a new customer quotation." : "Update an existing quotation."}</p>
           </div>
         </div>
         <div className="flex items-center gap-3">
           <Button variant="secondary" onClick={() => navigate("/quotations")}>Cancel</Button>
-          <Button onClick={handleSave} disabled={saving || !customerId}>
-            {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
-            {saving ? "Saving..." : "Save Quotation"}
+          <Button onClick={handleSave} disabled={isSaving || !customerId}>
+            {isSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+            {isSaving ? "Saving..." : mode === "create" ? "Save Quotation" : "Update Quotation"}
           </Button>
         </div>
       </div>

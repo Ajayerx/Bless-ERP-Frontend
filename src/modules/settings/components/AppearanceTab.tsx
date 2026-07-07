@@ -1,6 +1,6 @@
 "use client"
 
-import { Palette, Monitor, Sun, Moon, Type, Globe, Eye } from "lucide-react"
+import { Palette, Monitor, Sun, Moon, Type, Globe, Eye, Clock } from "lucide-react"
 import { Card, CardContent } from "@/components/ui"
 import { Switch } from "@/components/ui/switch"
 import type { AppearanceSettings } from "@/services"
@@ -26,6 +26,31 @@ const LANGUAGES = [
   { value: "en-CA", label: "English (Canada)" },
   { value: "en-US", label: "English (US)" },
   { value: "fr-CA", label: "Français (Canada)" },
+]
+
+const TIMEZONES = [
+  "America/New_York",
+  "America/Chicago",
+  "America/Denver",
+  "America/Los_Angeles",
+  "America/Toronto",
+  "America/Vancouver",
+  "America/Montreal",
+  "America/Halifax",
+  "America/St_Johns",
+  "America/Winnipeg",
+  "America/Regina",
+  "America/Edmonton",
+  "Europe/London",
+  "Europe/Paris",
+  "Europe/Berlin",
+  "Asia/Kolkata",
+  "Asia/Dubai",
+  "Asia/Singapore",
+  "Asia/Tokyo",
+  "Australia/Sydney",
+  "Pacific/Auckland",
+  "UTC",
 ]
 
 export default function AppearanceTab({ appearance, onChange }: AppearanceTabProps) {
@@ -103,6 +128,21 @@ export default function AppearanceTab({ appearance, onChange }: AppearanceTabPro
             >
               {LANGUAGES.map(({ value, label }) => (
                 <option key={value} value={value}>{label}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-muted mb-1.5 uppercase tracking-wider">
+              <span className="inline-flex items-center gap-1.5"><Clock size={13} /> Timezone</span>
+            </label>
+            <select
+              value={appearance.timezone}
+              onChange={(e) => update("timezone", e.target.value)}
+              className="w-full px-3 py-2.5 bg-white border border-border rounded-[12px] text-sm text-body focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500"
+            >
+              <option value="">Select timezone</option>
+              {TIMEZONES.map((tz) => (
+                <option key={tz} value={tz}>{tz}</option>
               ))}
             </select>
           </div>

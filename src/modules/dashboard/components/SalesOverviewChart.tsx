@@ -1,4 +1,4 @@
-import { ChevronDown } from "lucide-react"
+
 import {
   AreaChart,
   Area,
@@ -14,17 +14,17 @@ import type { SalesDay } from "@/services"
 
 interface Props {
   data: SalesDay[]
+  periodLabel?: string
 }
 
-export default function SalesOverviewChart({ data }: Props) {
+export default function SalesOverviewChart({ data, periodLabel = "This Week" }: Props) {
   return (
     <Card className="lg:col-span-2">
       <CardHeader>
         <CardTitle>Sales Overview</CardTitle>
-        <button className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-body bg-surface border border-border rounded-[8px] hover:bg-gray-50 transition-colors">
-          This Week
-          <ChevronDown size={12} />
-        </button>
+        <span className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-body bg-surface border border-border rounded-[8px]">
+          {periodLabel}
+        </span>
       </CardHeader>
       <CardContent>
         <div className="h-[300px]">

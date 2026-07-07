@@ -12,24 +12,13 @@ async function startMsw() {
   try {
     const { worker } = await import("./mocks/browser")
     await worker.start({ onUnhandledRequest: "bypass" })
-
-    document.addEventListener("visibilitychange", () => {
-      if (document.visibilityState === "visible") {
-        worker.start({ onUnhandledRequest: "bypass" }).catch(() => {})
-      }
-    })
-
-    window.addEventListener("online", () => {
-      worker.start({ onUnhandledRequest: "bypass" }).catch(() => {})
-    })
   } catch (err) {
     console.error("[MSW] Failed to start mock service worker:", err)
-    setTimeout(startMsw, 1000)
   }
 }
 
 async function bootstrap() {
-  if (import.meta.env.DEV || import.meta.env.VITE_ENABLE_MSW === "true") {
+  if (import.meta.env.VITE_ENABLE_MSW === "true") {
     await startMsw()
   }
 

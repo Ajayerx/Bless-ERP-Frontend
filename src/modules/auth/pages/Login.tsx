@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { useAuth } from "@/context/AuthContext";
 import { ApiError } from "@/services";
@@ -9,7 +8,6 @@ import { LogIn, Building2 } from "lucide-react";
 
 export default function Login() {
   const { login } = useAuth();
-  const navigate = useNavigate();
   const [email, setEmail] = useState("Administrator");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -25,7 +23,6 @@ export default function Login() {
     setLoading(true);
     try {
       await login(email, password);
-      navigate("/", { replace: true });
     } catch (err) {
       if (err instanceof ApiError) {
         setError(err.message);

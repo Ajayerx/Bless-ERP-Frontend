@@ -10,4 +10,12 @@ export default defineConfig({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  server: {
+    proxy: {
+      "/api": {
+        target: "http://blesserp.local:8000",
+        changeOrigin: true,
+      },
+    },
+  },
 })

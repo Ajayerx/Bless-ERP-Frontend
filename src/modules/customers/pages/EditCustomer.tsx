@@ -24,7 +24,7 @@ export default function EditCustomer() {
     <>
       <Topbar />
       <motion.div
-        className="p-6 max-w-3xl mx-auto"
+        className="p-6"
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ duration: 0.3 }}

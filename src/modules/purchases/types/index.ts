@@ -1,4 +1,4 @@
-import type { LineItem } from "@/services/invoices.service"
+import type { LineItem } from "@/modules/invoices/services"
 
 export type PurchaseOrderStatus =
   | "draft"

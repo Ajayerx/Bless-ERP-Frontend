@@ -1,66 +1,5 @@
 import { apiClient } from "@/services/api-client"
-
-export interface KpiMetric {
-  label: string
-  value: number
-  currency?: string
-  trend: number
-  trendDirection: "up" | "down" | "neutral"
-  sparkline: number[]
-}
-
-export interface SalesDay {
-  date: string
-  value: number
-}
-
-export interface RecentInvoice {
-  id: string
-  number: string
-  date: string
-  customerName: string
-  amount: number
-  status: "paid" | "partial" | "unpaid"
-}
-
-export interface TopCustomer {
-  id: string
-  name: string
-  amount: number
-  initial: string
-  color: string
-}
-
-export interface InventoryAlert {
-  id: string
-  productName: string
-  stock: number
-  reorderLevel: number
-  status: "low_stock" | "reorder_soon"
-  color: string
-}
-
-export interface RecentPayment {
-  id: string
-  number: string
-  date: string
-  customerName: string
-  amount: number
-}
-
-export interface DashboardData {
-  kpis: {
-    totalRevenue: KpiMetric
-    accountsReceivable: KpiMetric
-    inventoryValue: KpiMetric
-    cashFlow: KpiMetric
-  }
-  salesChart: SalesDay[]
-  recentInvoices: RecentInvoice[]
-  topCustomers: TopCustomer[]
-  inventoryAlerts: InventoryAlert[]
-  recentPayments: RecentPayment[]
-}
+export type { KpiMetric, SalesDay, RecentInvoice, TopCustomer, InventoryAlert, RecentPayment, DashboardData } from "../types"
 
 interface SalesInvoiceRow {
   name: string
@@ -93,9 +32,23 @@ interface BinRow {
 interface ItemRow {
   item_code: string
   item_name: string
+  shelf_life_in_days?: number
+}
+
+interface BatchRow {
+  name: string
+  item: string
+  expiry_date: string
+  batch_qty: number
+}
+
+interface PurchaseOrderItemRow {
+  item_code: string
+  parent: string
 }
 
 const LOW_STOCK_THRESHOLD = 10
+const EXPIRY_WARNING_DAYS = 30
 
 function buildListUrl(
   doctype: string,
@@ -176,9 +129,63 @@ async function fetchBins(): Promise<BinRow[]> {
 async function fetchItems(): Promise<ItemRow[]> {
   return apiClient<ItemRow[]>(
     buildListUrl("Item", {
-      fields: ["item_code", "item_name"],
+      fields: ["item_code", "item_name", "shelf_life_in_days"],
     })
   )
+}
+
+async function fetchExpiringBatches(): Promise<BatchRow[]> {
+  const futureDate = new Date()
+  futureDate.setDate(futureDate.getDate() + EXPIRY_WARNING_DAYS)
+  return apiClient<BatchRow[]>(
+    buildListUrl("Batch", {
+      fields: ["name", "item", "expiry_date", "batch_qty"],
+      filters: [
+        ["expiry_date", "between", [isoDate(new Date()), isoDate(futureDate)]],
+        ["batch_qty", ">", 0],
+      ],
+    })
+  )
+}
+
+interface FrappePOListRow {
+  name: string
+}
+
+interface FrappePurchaseOrderDoc {
+  name: string
+  items: { item_code: string }[]
+}
+
+// Frappe v15+ blocks direct child-table queries through the REST API
+// (check_parent_permission).  Instead we list draft Purchase Orders and
+// fetch each full document, which includes its child `items` table.
+async function fetchPendingPurchaseItems(): Promise<PurchaseOrderItemRow[]> {
+  const poNames = await apiClient<FrappePOListRow[]>(
+    buildListUrl("Purchase Order", {
+      fields: ["name"],
+      filters: [["docstatus", "=", 0]],
+    })
+  )
+
+  if (!poNames.length) return []
+
+  const docs = await Promise.all(
+    poNames.map((po) =>
+      apiClient<FrappePurchaseOrderDoc>(
+        `/resource/Purchase Order/${encodeURIComponent(po.name)}`,
+      ).catch(() => null),
+    ),
+  )
+
+  const result: PurchaseOrderItemRow[] = []
+  for (const doc of docs) {
+    if (!doc) continue
+    for (const item of doc.items ?? []) {
+      result.push({ item_code: item.item_code, parent: doc.name })
+    }
+  }
+  return result
 }
 
 function buildKpis(
@@ -262,11 +269,19 @@ function buildKpis(
   }
 }
 
-function buildSalesChart(invoices: SalesInvoiceRow[]): SalesDay[] {
+function buildSalesChart(invoices: SalesInvoiceRow[], startDate?: string, endDate?: string): SalesDay[] {
+  let filtered = invoices
+  if (startDate) {
+    filtered = filtered.filter((inv) => inv.posting_date >= startDate)
+  }
+  if (endDate) {
+    filtered = filtered.filter((inv) => inv.posting_date <= endDate)
+  }
+
   const days: SalesDay[] = []
   for (let i = 13; i >= 0; i--) {
     const day = isoDate(daysAgo(i))
-    const value = invoices
+    const value = filtered
       .filter((inv) => inv.posting_date === day)
       .reduce((sum, inv) => sum + inv.grand_total, 0)
     days.push({ date: day, value })
@@ -305,21 +320,107 @@ function buildTopCustomers(invoices: SalesInvoiceRow[]): TopCustomer[] {
 
 function buildInventoryAlerts(
   bins: BinRow[],
-  items: ItemRow[]
+  items: ItemRow[],
+  expiringBatches: BatchRow[],
+  pendingPurchaseItems: PurchaseOrderItemRow[],
 ): InventoryAlert[] {
   const itemNames = new Map(items.map((it) => [it.item_code, it.item_name]))
-  return bins
-    .filter((b) => b.actual_qty <= LOW_STOCK_THRESHOLD)
-    .sort((a, b) => a.actual_qty - b.actual_qty)
+  const alerts: InventoryAlert[] = []
+
+  // Stock-based alerts (negative, out_of_stock, low_stock, reorder_soon, overstock)
+  for (const b of bins) {
+    if (b.actual_qty < 0) {
+      alerts.push({
+        id: `${b.item_code}-${b.warehouse}-neg`,
+        productName: itemNames.get(b.item_code) ?? b.item_code,
+        stock: b.actual_qty,
+        reorderLevel: LOW_STOCK_THRESHOLD,
+        status: "negative_stock",
+        color: "#7F1D1D",
+      })
+    } else if (b.actual_qty === 0) {
+      alerts.push({
+        id: `${b.item_code}-${b.warehouse}-oos`,
+        productName: itemNames.get(b.item_code) ?? b.item_code,
+        stock: 0,
+        reorderLevel: LOW_STOCK_THRESHOLD,
+        status: "out_of_stock",
+        color: "#B91C1C",
+      })
+    } else if (b.actual_qty <= 3) {
+      alerts.push({
+        id: `${b.item_code}-${b.warehouse}-low`,
+        productName: itemNames.get(b.item_code) ?? b.item_code,
+        stock: b.actual_qty,
+        reorderLevel: LOW_STOCK_THRESHOLD,
+        status: "low_stock",
+        color: "#DC2626",
+      })
+    } else if (b.actual_qty <= LOW_STOCK_THRESHOLD) {
+      alerts.push({
+        id: `${b.item_code}-${b.warehouse}-reorder`,
+        productName: itemNames.get(b.item_code) ?? b.item_code,
+        stock: b.actual_qty,
+        reorderLevel: LOW_STOCK_THRESHOLD,
+        status: "reorder_soon",
+        color: "#F59E0B",
+      })
+    } else if (b.actual_qty > 100) {
+      alerts.push({
+        id: `${b.item_code}-${b.warehouse}-over`,
+        productName: itemNames.get(b.item_code) ?? b.item_code,
+        stock: b.actual_qty,
+        reorderLevel: LOW_STOCK_THRESHOLD,
+        status: "overstock",
+        color: "#3B82F6",
+      })
+    }
+  }
+
+  // Expiring products
+  const expiringItems = new Set(expiringBatches.map((b) => b.item))
+  for (const itemCode of expiringItems) {
+    alerts.push({
+      id: `exp-${itemCode}`,
+      productName: itemNames.get(itemCode) ?? itemCode,
+      stock: 0,
+      reorderLevel: 0,
+      status: "expiring",
+      color: "#8B5CF6",
+    })
+  }
+
+  // Pending purchase
+  const pendingItems = new Map<string, string[]>()
+  for (const po of pendingPurchaseItems) {
+    if (!pendingItems.has(po.item_code)) pendingItems.set(po.item_code, [])
+    pendingItems.get(po.item_code)!.push(po.parent)
+  }
+  for (const [itemCode, pos] of pendingItems) {
+    alerts.push({
+      id: `pending-${itemCode}`,
+      productName: itemNames.get(itemCode) ?? itemCode,
+      stock: 0,
+      reorderLevel: 0,
+      status: "pending_purchase",
+      color: "#EA580C",
+    })
+  }
+
+  return alerts
+    .sort((a, b) => {
+      const order: Record<string, number> = {
+        negative_stock: 0,
+        out_of_stock: 1,
+        low_stock: 2,
+        reorder_soon: 3,
+        expiring: 4,
+        pending_purchase: 5,
+        overstock: 6,
+      }
+      return (order[a.status] ?? 99) - (order[b.status] ?? 99)
+    })
     .slice(0, 10)
-    .map((b) => ({
-      id: `${b.item_code}-${b.warehouse}`,
-      productName: itemNames.get(b.item_code) ?? b.item_code,
-      stock: b.actual_qty,
-      reorderLevel: LOW_STOCK_THRESHOLD,
-      status: b.actual_qty <= 0 ? "low_stock" : "reorder_soon",
-      color: b.actual_qty <= 0 ? "#DC2626" : "#F59E0B",
-    }))
 }
 
 function buildRecentPayments(payments: PaymentEntryRow[]): RecentPayment[] {
@@ -333,20 +434,22 @@ function buildRecentPayments(payments: PaymentEntryRow[]): RecentPayment[] {
 }
 
 export const dashboardService = {
-  async get(): Promise<DashboardData> {
-    const [invoices, payments, bins, items] = await Promise.all([
-      fetchSalesInvoices(),
-      fetchPaymentEntries(),
-      fetchBins(),
-      fetchItems(),
+  async get(startDate?: string, endDate?: string): Promise<DashboardData> {
+    const [invoices, payments, bins, items, batches, pendingPOs] = await Promise.all([
+      fetchSalesInvoices().catch(() => [] as SalesInvoiceRow[]),
+      fetchPaymentEntries().catch(() => [] as PaymentEntryRow[]),
+      fetchBins().catch(() => [] as BinRow[]),
+      fetchItems().catch(() => [] as ItemRow[]),
+      fetchExpiringBatches().catch(() => [] as BatchRow[]),
+      fetchPendingPurchaseItems().catch(() => [] as PurchaseOrderItemRow[]),
     ])
 
     return {
       kpis: buildKpis(invoices, payments, bins),
-      salesChart: buildSalesChart(invoices),
+      salesChart: buildSalesChart(invoices, startDate, endDate),
       recentInvoices: buildRecentInvoices(invoices),
       topCustomers: buildTopCustomers(invoices),
-      inventoryAlerts: buildInventoryAlerts(bins, items),
+      inventoryAlerts: buildInventoryAlerts(bins, items, batches, pendingPOs),
       recentPayments: buildRecentPayments(payments),
     }
   },

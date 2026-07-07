@@ -24,7 +24,7 @@ export default function NewOpportunity() {
   return (
     <>
       <Topbar />
-      <motion.div className="p-6 max-w-2xl mx-auto" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.3 }}>
+      <motion.div className="p-6" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.3 }}>
         <div className="flex items-center justify-between mb-6">
           <Link to="/opportunities" className="flex items-center gap-2 text-sm text-muted hover:text-body transition-colors">
             <ArrowLeft size={18} /> Back to Opportunities

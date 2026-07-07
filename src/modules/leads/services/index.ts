@@ -1,27 +1,5 @@
 import { apiClient } from "@/services/api-client"
-
-export interface Lead {
-  id: string
-  firstName: string
-  lastName: string
-  email: string
-  phone: string
-  company: string
-  source: "website" | "referral" | "cold_call" | "social_media" | "event" | "other"
-  status: "new" | "contacted" | "qualified" | "proposal" | "lost"
-  estimatedValue: number
-  notes: string
-  assignedTo: string
-  createdAt: string
-}
-
-export interface LeadListResponse {
-  items: Lead[]
-  total: number
-  page: number
-  pageSize: number
-  totalPages: number
-}
+export type { Lead, LeadFormData, LeadListResponse } from "../types"
 
 export const leadService = {
   async list(params: { search?: string; page?: number; pageSize?: number }): Promise<LeadListResponse> {

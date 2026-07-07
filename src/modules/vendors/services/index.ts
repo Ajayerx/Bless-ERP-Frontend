@@ -1,33 +1,5 @@
 import { apiClient } from "@/services/api-client"
-
-export interface Vendor {
-  id: string
-  name: string
-  contactName: string
-  email: string
-  phone: string
-  billingAddress: string
-  taxId: string
-  balance: number
-  status: "active" | "inactive"
-  createdAt: string
-}
-
-export interface VendorListResponse {
-  items: Vendor[]
-  total: number
-  page: number
-  pageSize: number
-}
-
-export interface VendorFormData {
-  name: string
-  contactName: string
-  email: string
-  phone: string
-  billingAddress: string
-  taxId: string
-}
+export type { Vendor, VendorListResponse, VendorFormData } from "../types"
 
 export const vendorService = {
   list: (params: { search?: string; page?: number; pageSize?: number }): Promise<VendorListResponse> => {

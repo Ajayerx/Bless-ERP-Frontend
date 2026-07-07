@@ -30,6 +30,7 @@ import {
   Briefcase,
   Clock,
   Calendar,
+  Grid3x3,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -41,6 +42,7 @@ interface NavItem {
   to?: string;
   icon: LucideIcon;
   badge?: string;
+  children?: NavItem[];
 }
 
 interface NavSection {
@@ -100,13 +102,24 @@ const navSections: NavSection[] = [
     ],
   },
   {
-    label: "HR",
+    label: "APPS",
     items: [
-      { label: "Dashboard", to: "/hrms", icon: Briefcase },
-      { label: "Employees", to: "/hrms/employees", icon: Users },
-      { label: "Attendance", to: "/hrms/attendance", icon: Clock },
-      { label: "Leave", to: "/hrms/leave", icon: Calendar },
-      { label: "Payroll", to: "/hrms/payroll", icon: CreditCard },
+      { label: "App Store", to: "/apps", icon: Grid3x3 },
+      { label: "BlessPOS", icon: ShoppingCart, badge: "Soon" as const },
+      { label: "BlessShipping", icon: Truck, badge: "Soon" as const },
+      { label: "BlessSupply", icon: Package, badge: "Soon" as const },
+      { label: "BlessEats", icon: ShoppingBag, badge: "Soon" as const },
+      {
+        label: "Human Resources",
+        icon: Briefcase,
+        children: [
+          { label: "Dashboard", to: "/hrms", icon: Briefcase },
+          { label: "Employees", to: "/hrms/employees", icon: Users },
+          { label: "Attendance", to: "/hrms/attendance", icon: Clock },
+          { label: "Leave", to: "/hrms/leave", icon: Calendar },
+          { label: "Payroll", to: "/hrms/payroll", icon: CreditCard },
+        ],
+      },
     ],
   },
   {
@@ -205,25 +218,52 @@ export default function Sidebar() {
   const { logout } = useAuth();
   const location = useLocation();
   const { collapsed, setCollapsed } = useSidebar();
-  const [expandedSections, setExpandedSections] = useState<string[]>(
-    navSections.map((s) => s.label),
-  );
+  const [expandedSections, setExpandedSections] = useState<string[]>([]);
+  const [expandedSubGroups, setExpandedSubGroups] = useState<string[]>([]);
 
-  // Sync expandedSections when navSections changes (e.g. after HMR)
+  // Auto-expand section + sub-group containing the active route on navigation
   useEffect(() => {
     setExpandedSections((prev) => {
-      const all = navSections.map((s) => s.label);
-      const next = [...prev];
-      for (const label of all) {
-        if (!next.includes(label)) next.push(label);
+      const activeSection = navSections.find((section) =>
+        section.items.some((item) => {
+          if (item.to && (location.pathname === item.to || location.pathname.startsWith(item.to + "/"))) return true
+          if (item.children) return item.children.some(
+            (child) => child.to && (location.pathname === child.to || location.pathname.startsWith(child.to + "/")),
+          )
+          return false
+        }),
+      );
+      if (activeSection && !prev.includes(activeSection.label)) {
+        return [...prev, activeSection.label];
       }
-      return next.length === prev.length ? prev : next;
+      return prev;
     });
-  }, []);
+
+    setExpandedSubGroups((prev) => {
+      const next = [...prev];
+      navSections.forEach((section) => {
+        section.items.forEach((item) => {
+          if (!item.children) return;
+          const key = `${section.label}::${item.label}`;
+          const hasActive = item.children.some(
+            (child) => child.to && (location.pathname === child.to || location.pathname.startsWith(child.to + "/")),
+          );
+          if (hasActive && !next.includes(key)) next.push(key);
+        });
+      });
+      return next;
+    });
+  }, [location.pathname]);
 
   const toggleSection = (label: string) => {
     setExpandedSections((prev) =>
       prev.includes(label) ? prev.filter((l) => l !== label) : [...prev, label],
+    );
+  };
+
+  const toggleSubGroup = (key: string) => {
+    setExpandedSubGroups((prev) =>
+      prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key],
     );
   };
 
@@ -302,6 +342,7 @@ export default function Sidebar() {
           // Find the best-matching route to avoid double-highlighting
           // (e.g., /inventory should not highlight when /inventory/warehouses is active)
           const matchingItems = section.items
+            .flatMap((item) => [item, ...(item.children ?? [])])
             .filter((item) => item.to && (location.pathname === item.to || location.pathname.startsWith(item.to + "/")))
             .sort((a, b) => (b.to?.length ?? 0) - (a.to?.length ?? 0));
           const activeItemTo = matchingItems[0]?.to;
@@ -338,6 +379,103 @@ export default function Sidebar() {
                   >
                     <div className="space-y-0.5 pb-1">
                       {section.items.map((item) => {
+                        // ── sub‑group (e.g. HR inside APPS) ──
+                        if (item.children) {
+                          const subKey = `${section.label}::${item.label}`;
+                          const subExpanded = expandedSubGroups.includes(subKey);
+                          const hasActiveSub = !!(
+                            activeItemTo &&
+                            item.children.some((c) => c.to === activeItemTo)
+                          );
+
+                          return (
+                            <div key={item.label}>
+                              {/* Sub‑group toggle header */}
+                              <NavItemWrapper label={item.label} collapsed={collapsed}>
+                                <button
+                                  onClick={() => toggleSubGroup(subKey)}
+                                  className={cn(
+                                    "flex items-center gap-3 w-full px-3 py-2 rounded-[10px] text-sm font-medium transition-all duration-200 relative",
+                                    collapsed && "justify-center px-2",
+                                    hasActiveSub
+                                      ? "bg-primary-50 text-primary-600"
+                                      : "text-muted hover:bg-gray-100 hover:text-body",
+                                  )}
+                                >
+                                  <item.icon
+                                    size={18}
+                                    className={cn(
+                                      "shrink-0 transition-colors",
+                                      hasActiveSub && "text-primary-600",
+                                    )}
+                                  />
+                                  {!collapsed && (
+                                    <>
+                                      <span className="flex-1 text-left">{item.label}</span>
+                                      <motion.div
+                                        animate={{ rotate: subExpanded ? 180 : 0 }}
+                                        transition={{ duration: 0.2 }}
+                                      >
+                                        <ChevronDown size={12} />
+                                      </motion.div>
+                                    </>
+                                  )}
+                                </button>
+                              </NavItemWrapper>
+
+                              {/* Sub‑group children */}
+                              <AnimatePresence initial={false}>
+                                {subExpanded && (
+                                  <motion.div
+                                    initial={{ height: 0, opacity: 0 }}
+                                    animate={{ height: "auto", opacity: 1 }}
+                                    exit={{ height: 0, opacity: 0 }}
+                                    transition={{ duration: 0.2 }}
+                                    className="overflow-visible"
+                                  >
+                                    <div className={cn("space-y-0.5 pb-1", collapsed ? "pl-0" : "pl-4")}>
+                                      {item.children.map((child) => {
+                                        const active = child.to === activeItemTo;
+
+                                        const childClass = cn(
+                                          "flex items-center gap-3 px-3 py-2 rounded-[10px] text-sm font-medium transition-all duration-200 relative",
+                                          collapsed && "justify-center px-2",
+                                          active
+                                            ? "bg-primary-50 text-primary-600"
+                                            : "text-muted hover:bg-gray-100 hover:text-body",
+                                        );
+
+                                        return (
+                                          <NavItemWrapper
+                                            key={child.label}
+                                            label={child.label}
+                                            collapsed={collapsed}
+                                          >
+                                            <NavLink to={child.to!} className={childClass}>
+                                              <child.icon
+                                                size={18}
+                                                className={cn(
+                                                  "shrink-0 transition-colors",
+                                                  active && "text-primary-600",
+                                                )}
+                                              />
+                                              {!collapsed && <span>{child.label}</span>}
+                                              {active && !collapsed && (
+                                                <div className="absolute inset-0 rounded-[10px] bg-primary-50 -z-10" />
+                                              )}
+                                            </NavLink>
+                                          </NavItemWrapper>
+                                        );
+                                      })}
+                                    </div>
+                                  </motion.div>
+                                )}
+                              </AnimatePresence>
+                            </div>
+                          );
+                        }
+
+                        // ── regular item ──
                         const active = item.to === activeItemTo;
 
                         const baseClass = cn(

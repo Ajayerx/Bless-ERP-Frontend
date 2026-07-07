@@ -7,7 +7,7 @@ import { motion } from "framer-motion"
 import Topbar from "@/components/layout/Topbar"
 import { Skeleton, Button } from "@/components/ui"
 import { purchaseOrderService, type PurchaseOrder } from "@/services"
-import PurchaseDetailCard from "@/modules/invoices/components/PurchaseDetailCard"
+import PurchaseDetailCard from "../components/PurchaseDetailCard"
 
 export default function PurchaseDetail() {
   const { id } = useParams<{ id: string }>()

@@ -2,25 +2,25 @@ import { Routes, Route, Navigate } from "react-router-dom";
 import { useAuth } from "./context/AuthContext";
 import ErrorBoundary from "./components/ErrorBoundary";
 import AppLayout from "./components/layout/AppLayout";
-import { Login } from "./pages/auth";
-import { Dashboard } from "./pages/dashboard";
-import { Customers, NewCustomer, CustomerDetail, EditCustomer } from "./pages/customers";
-import { Products, NewProduct, ProductDetail, EditProduct } from "./pages/products";
-import { Invoices, InvoiceDetail, CreateInvoice, EditInvoice } from "./pages/invoices";
-import { Payments, PaymentDetail } from "./pages/payments";
-import { SalesReportPage, ARReportPage, InventoryReportPage, ProfitLossPage, BalanceSheetPage, GSTSummaryPage } from "./pages/reports";
-import { Expenses, NewExpense, ExpenseDetail, EditExpense } from "./pages/expenses";
-import { Suppliers, NewSupplier, SupplierDetail, EditSupplier } from "./pages/suppliers";
-import { Bills, BillDetail, CreateBill, EditBill } from "./pages/bills";
-import { Purchases, PurchaseDetail, CreatePurchaseOrder, EditPurchaseOrder } from "./pages/purchases";
-import { Quotations, NewQuotation, QuotationDetail, EditQuotation } from "./pages/quotations";
-import { SalesOrders, SalesOrderDetail } from "./pages/sales-orders";
-import { Taxes } from "./pages/taxes";
-import { Settings } from "./pages/settings";
-import { Contacts, NewContact, ContactDetail, EditContact } from "./pages/contacts";
-import { Opportunities, NewOpportunity, OpportunityDetail, EditOpportunity } from "./pages/opportunities";
-import { BankAccounts, NewBankAccount, BankAccountDetail, EditBankAccount } from "./pages/bank-accounts";
-import { JournalEntries, NewJournalEntry, JournalEntryDetail, EditJournalEntry } from "./pages/journal-entries";
+import { Login } from "./modules/auth/pages";
+import { Dashboard } from "./modules/dashboard/pages";
+import { Customers, NewCustomer, CustomerDetail, EditCustomer } from "./modules/customers/pages";
+import { Products, NewProduct, ProductDetail, EditProduct } from "./modules/products/pages";
+import { Invoices, InvoiceDetail, CreateInvoice, EditInvoice } from "./modules/invoices/pages";
+import { Payments, PaymentDetail } from "./modules/payments/pages";
+import { SalesReportPage, ARReportPage, InventoryReportPage, ProfitLossPage, BalanceSheetPage, GSTSummaryPage } from "./modules/reports/pages";
+import { Expenses, NewExpense, ExpenseDetail, EditExpense } from "./modules/expenses/pages";
+import { Suppliers, NewSupplier, SupplierDetail, EditSupplier } from "./modules/suppliers/pages";
+import { Bills, BillDetail, CreateBill, EditBill } from "./modules/bills/pages";
+import { Purchases, PurchaseDetail, CreatePurchaseOrder, EditPurchaseOrder } from "./modules/purchases/pages";
+import { Quotations, NewQuotation, QuotationDetail, EditQuotation } from "./modules/quotations/pages";
+import { SalesOrders, SalesOrderDetail } from "./modules/sales-orders/pages";
+import { Taxes } from "./modules/taxes/pages";
+import { Settings } from "./modules/settings/pages";
+import { Contacts, NewContact, ContactDetail, EditContact } from "./modules/contacts/pages";
+import { Opportunities, NewOpportunity, OpportunityDetail, EditOpportunity } from "./modules/opportunities/pages";
+import { BankAccounts, NewBankAccount, BankAccountDetail, EditBankAccount } from "./modules/bank_accounts/pages";
+import { JournalEntries, NewJournalEntry, JournalEntryDetail, EditJournalEntry } from "./modules/journal_entries/pages";
 import {
   StockLevels,
   Warehouses,
@@ -33,8 +33,9 @@ import {
   StockCounts,
   StockCountDetail,
   NewStockCount,
-} from "./pages/inventory";
+} from "./modules/inventory/pages";
 import HrmsDashboard from "./modules/hrms/pages/HrmsDashboard";
+import Apps from "./modules/apps/pages/Apps";
 import Employees from "./modules/hrms/employees/pages/Employees";
 import EmployeeDetail from "./modules/hrms/employees/pages/EmployeeDetail";
 import Attendance from "./modules/hrms/attendance/pages/Attendance";
@@ -42,20 +43,25 @@ import Leave from "./modules/hrms/leave/pages/Leave";
 import Payroll from "./modules/hrms/payroll/pages/Payroll";
 import PayrollDetail from "./modules/hrms/payroll/pages/PayrollDetail";
 
+function Spinner() {
+  return <div className="flex items-center justify-center h-screen"><div className="w-8 h-8 border-2 border-primary-500 border-t-transparent rounded-full animate-spin" /></div>;
+}
+
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, loading } = useAuth();
+  if (loading) return <Spinner />;
   if (!isAuthenticated) return <Navigate to="/login" replace />;
   return <>{children}</>;
 }
 
 function App() {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, loading } = useAuth();
 
   return (
     <Routes>
       <Route
         path="/login"
-        element={isAuthenticated ? <Navigate to="/" replace /> : <Login />}
+        element={loading ? <Spinner /> : isAuthenticated ? <Navigate to="/" replace /> : <Login />}
       />
       <Route
         path="/"
@@ -139,6 +145,7 @@ function App() {
         <Route path="hrms/leave" element={<Leave />} />
         <Route path="hrms/payroll" element={<Payroll />} />
         <Route path="hrms/payroll/:id" element={<PayrollDetail />} />
+        <Route path="apps" element={<Apps />} />
         <Route path="settings" element={<Settings />} />
         <Route path="reports/sales" element={<SalesReportPage />} />
         <Route path="reports/ar" element={<ARReportPage />} />

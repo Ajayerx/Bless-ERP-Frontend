@@ -18,6 +18,10 @@ import { settingsHandlers } from "./settings"
 import { purchaseOrderHandlers } from "./purchase_orders"
 import { inventoryHandlers } from "./inventory"
 import { hrmsHandlers } from "./hrms"
+import { frappeAuthHandlers } from "./frappe-auth"
+import { frappeSettingsHandlers } from "./frappe-settings"
+import { frappeCustomerHandlers } from "./frappe-customers"
+import { frappeLookupHandlers } from "./frappe-lookups"
 
 export const handlers = [
   ...authHandlers,
@@ -40,4 +44,9 @@ export const handlers = [
   ...purchaseOrderHandlers,
   ...inventoryHandlers,
   ...hrmsHandlers,
+  // Frappe REST handlers — more specific first, wildcard last
+  ...frappeAuthHandlers,
+  ...frappeSettingsHandlers,
+  ...frappeCustomerHandlers,
+  ...frappeLookupHandlers,
 ]

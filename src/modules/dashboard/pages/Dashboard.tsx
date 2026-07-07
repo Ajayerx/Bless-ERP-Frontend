@@ -1,13 +1,13 @@
 "use client"
 
+import { useState } from "react"
 import { motion } from "framer-motion"
 import {
   DollarSign,
   Users,
   Package,
   CreditCard,
-  ChevronDown,
-  CalendarDays,
+  SlidersHorizontal,
 } from "lucide-react"
 import Topbar from "@/components/layout/Topbar"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -18,7 +18,17 @@ import TopCustomersCard from "../components/TopCustomersCard"
 import InventoryAlertsCard from "../components/InventoryAlertsCard"
 import RecentPaymentsCard from "../components/RecentPaymentsCard"
 import QuickActionsBar from "../components/QuickActionsBar"
+import TodaySalesWidget from "../components/TodaySalesWidget"
+import PendingOrdersWidget from "../components/PendingOrdersWidget"
+import LowStockWidget from "../components/LowStockWidget"
+import TasksWidget from "../components/TasksWidget"
+import CalendarWidget from "../components/CalendarWidget"
+import NotificationsWidget from "../components/NotificationsWidget"
+import CustomerActivitiesWidget from "../components/CustomerActivitiesWidget"
 import { useDashboard } from "../hooks/useDashboard"
+import DateRangeSelector, { type DatePreset, presetLabels } from "../components/DateRangeSelector"
+import WidgetSettingsPanel from "../components/WidgetSettingsPanel"
+import { useDashboardWidgets } from "../hooks/useDashboardWidgets"
 import { useAuth } from "@/context/AuthContext"
 import { formatCurrency } from "@/lib/utils"
 
@@ -75,8 +85,19 @@ const kpiConfig = [
 ]
 
 export default function Dashboard() {
-  const { data, loading } = useDashboard()
+  const [datePreset, setDatePreset] = useState<DatePreset>("this_week")
+  const [startDate, setStartDate] = useState("")
+  const [endDate, setEndDate] = useState("")
+  const [widgetSettingsOpen, setWidgetSettingsOpen] = useState(false)
+  const { data, loading } = useDashboard(startDate, endDate)
   const { user } = useAuth()
+  const { isVisible, toggleWidget, visibleWidgets, availableWidgets } = useDashboardWidgets()
+
+  const handleDateChange = (preset: DatePreset, sd: string, ed: string) => {
+    setDatePreset(preset)
+    setStartDate(sd)
+    setEndDate(ed)
+  }
 
   if (loading) {
     return (
@@ -124,59 +145,100 @@ export default function Dashboard() {
               Here&apos;s what&apos;s happening with your business today.
             </p>
           </div>
-          <button className="inline-flex items-center gap-2 px-4 py-2.5 bg-surface border border-border rounded-[12px] text-sm font-semibold text-body hover:bg-gray-50 transition-colors shadow-sm">
-            <CalendarDays size={16} className="text-muted" />
-            May 12 – May 18, 2024
-            <ChevronDown size={14} className="text-muted" />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setWidgetSettingsOpen(true)}
+              className="inline-flex items-center gap-2 px-3 py-2 bg-surface border border-border rounded-[12px] text-sm font-semibold text-body hover:bg-gray-50 transition-colors shadow-sm"
+            >
+              <SlidersHorizontal size={14} />
+              Customize
+            </button>
+            <DateRangeSelector value={datePreset} onChange={handleDateChange} />
+          </div>
         </motion.div>
 
         {/* KPI Cards */}
-        <motion.div
-          variants={itemVariants}
-          className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5"
-        >
-          {kpiConfig.map((cfg) => {
-            const metric = kpis?.[cfg.key]
-            return (
-              <KpiCard
-                key={cfg.key}
-                title={cfg.title}
-                value={metric ? formatCurrency(metric.value) : "$0"}
-                trend={metric?.trend ?? 0}
-                icon={cfg.icon}
-                iconBgColor={cfg.iconBgColor}
-                chartColor={cfg.chartColor}
-                trendColor={cfg.trendColor}
-                sparkline={metric?.sparkline ?? []}
-              />
-            )
-          })}
-        </motion.div>
+        {isVisible("kpiCards") && (
+          <motion.div
+            variants={itemVariants}
+            className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5"
+          >
+            {kpiConfig.map((cfg) => {
+              const metric = kpis?.[cfg.key]
+              return (
+                <KpiCard
+                  key={cfg.key}
+                  title={cfg.title}
+                  value={metric ? formatCurrency(metric.value) : "$0"}
+                  trend={metric?.trend ?? 0}
+                  icon={cfg.icon}
+                  iconBgColor={cfg.iconBgColor}
+                  chartColor={cfg.chartColor}
+                  trendColor={cfg.trendColor}
+                  sparkline={metric?.sparkline ?? []}
+                />
+              )
+            })}
+          </motion.div>
+        )}
 
         {/* Middle: Sales Overview + Recent Invoices */}
-        <motion.div
-          variants={itemVariants}
-          className="grid grid-cols-1 lg:grid-cols-3 gap-5"
-        >
-          <SalesOverviewChart data={data?.salesChart ?? []} />
-          <RecentInvoicesCard data={data?.recentInvoices ?? []} />
-        </motion.div>
+        {(isVisible("salesChart") || isVisible("recentInvoices")) && (
+          <motion.div
+            variants={itemVariants}
+            className="grid grid-cols-1 lg:grid-cols-3 gap-5"
+          >
+            {isVisible("salesChart") && (
+              <div className="lg:col-span-2">
+                <SalesOverviewChart data={data?.salesChart ?? []} periodLabel={presetLabels[datePreset]} />
+              </div>
+            )}
+            {isVisible("recentInvoices") && (
+              <RecentInvoicesCard data={data?.recentInvoices ?? []} />
+            )}
+          </motion.div>
+        )}
 
         {/* Bottom: Top Customers + Inventory Alerts + Recent Payments */}
-        <motion.div
-          variants={itemVariants}
-          className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5"
-        >
-          <TopCustomersCard data={data?.topCustomers ?? []} />
-          <InventoryAlertsCard data={data?.inventoryAlerts ?? []} />
-          <RecentPaymentsCard data={data?.recentPayments ?? []} />
-        </motion.div>
+        {(isVisible("topCustomers") || isVisible("inventoryAlerts") || isVisible("recentPayments")) && (
+          <motion.div
+            variants={itemVariants}
+            className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5"
+          >
+            {isVisible("topCustomers") && <TopCustomersCard data={data?.topCustomers ?? []} />}
+            {isVisible("inventoryAlerts") && <InventoryAlertsCard data={data?.inventoryAlerts ?? []} />}
+            {isVisible("recentPayments") && <RecentPaymentsCard data={data?.recentPayments ?? []} />}
+          </motion.div>
+        )}
 
         {/* Quick Actions */}
-        <motion.div variants={itemVariants}>
-          <QuickActionsBar />
+        {isVisible("quickActions") && (
+          <motion.div variants={itemVariants}>
+            <QuickActionsBar />
+          </motion.div>
+        )}
+
+        {/* New Widgets Grid */}
+        <motion.div
+          variants={itemVariants}
+          className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5"
+        >
+          {isVisible("todaySales") && <TodaySalesWidget />}
+          {isVisible("pendingOrders") && <PendingOrdersWidget />}
+          {isVisible("lowStock") && <LowStockWidget />}
+          {isVisible("tasks") && <TasksWidget />}
+          {isVisible("calendar") && <CalendarWidget />}
+          {isVisible("notifications") && <NotificationsWidget />}
+          {isVisible("customerActivities") && <CustomerActivitiesWidget />}
         </motion.div>
+
+        <WidgetSettingsPanel
+          open={widgetSettingsOpen}
+          onOpenChange={setWidgetSettingsOpen}
+          widgets={availableWidgets}
+          visibleWidgets={visibleWidgets}
+          onToggle={toggleWidget}
+        />
       </motion.div>
     </>
   )

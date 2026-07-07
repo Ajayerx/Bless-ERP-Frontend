@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { motion } from "framer-motion"
 import {
   Search,
@@ -10,9 +10,9 @@ import {
   Moon,
   Globe,
   LogOut,
-  Settings,
   User,
   ChevronDown,
+  Building2,
 } from "lucide-react"
 import {
   DropdownMenu,
@@ -23,39 +23,44 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui"
 import { Avatar } from "@/components/ui/avatar"
+import { useNavigate } from "react-router-dom"
 import { useAuth } from "@/context/AuthContext"
 import { useTheme } from "@/context/ThemeContext"
 import { cn } from "@/lib/utils"
+import GlobalSearch from "./GlobalSearch"
 
 export default function Topbar() {
+  const navigate = useNavigate()
   const { user, logout } = useAuth()
   const { theme, toggleTheme } = useTheme()
-  const [searchFocused, setSearchFocused] = useState(false)
+  const [searchOpen, setSearchOpen] = useState(false)
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+        e.preventDefault()
+        setSearchOpen(true)
+      }
+    }
+    window.addEventListener("keydown", handler)
+    return () => window.removeEventListener("keydown", handler)
+  }, [])
 
   return (
     <header className="h-16 bg-surface border-b border-border flex items-center justify-between px-6 sticky top-0 z-20">
       {/* Search */}
       <div className="relative max-w-md w-full">
-        <Search
-          size={16}
-          className={cn(
-            "absolute left-3.5 top-1/2 -translate-y-1/2 transition-colors duration-200",
-            searchFocused ? "text-primary-500" : "text-muted"
-          )}
-        />
-        <input
-          type="text"
-          placeholder="Search anything..."
-          onFocus={() => setSearchFocused(true)}
-          onBlur={() => setSearchFocused(false)}
-          className={cn(
-            "w-full pl-10 pr-4 py-2.5 bg-gray-50 border rounded-[12px] text-sm text-body placeholder:text-muted transition-all duration-200",
-            "focus:outline-none focus:ring-2 focus:ring-primary-500/20",
-            searchFocused
-              ? "border-primary-500 bg-surface shadow-sm"
-              : "border-transparent hover:bg-gray-100"
-          )}
-        />
+        <button
+          onClick={() => setSearchOpen(true)}
+          className="flex items-center gap-2 w-full pl-10 pr-4 py-2.5 bg-gray-50 border border-transparent rounded-[12px] text-sm text-muted transition-all duration-200 hover:bg-gray-100 hover:border-border text-left"
+        >
+          <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted" />
+          <span>Search anything...</span>
+          <kbd className="ml-auto hidden sm:inline-flex text-[10px] font-semibold px-1.5 py-0.5 rounded bg-gray-200 text-muted">
+            Ctrl+K
+          </kbd>
+        </button>
+        <GlobalSearch open={searchOpen} onOpenChange={setSearchOpen} />
       </div>
 
       {/* Right actions */}
@@ -63,19 +68,6 @@ export default function Topbar() {
         {/* Help */}
         <button className="p-2.5 rounded-[10px] text-muted hover:text-body hover:bg-gray-100 transition-colors">
           <HelpCircle size={18} />
-        </button>
-
-        {/* Theme toggle */}
-        <button
-          onClick={toggleTheme}
-          className="p-2.5 rounded-[10px] text-muted hover:text-body hover:bg-gray-100 transition-colors"
-        >
-          {theme === "light" ? <Moon size={18} /> : <Sun size={18} />}
-        </button>
-
-        {/* Language */}
-        <button className="p-2.5 rounded-[10px] text-muted hover:text-body hover:bg-gray-100 transition-colors">
-          <Globe size={18} />
         </button>
 
         {/* Notifications */}
@@ -107,13 +99,25 @@ export default function Topbar() {
           <DropdownMenuContent align="end" className="w-56">
             <DropdownMenuLabel>{user?.name}</DropdownMenuLabel>
             <DropdownMenuSeparator />
-            <DropdownMenuItem>
+            <DropdownMenuItem onClick={() => navigate("/settings?tab=profile")}>
               <User size={16} />
-              Profile
+              My Profile
             </DropdownMenuItem>
-            <DropdownMenuItem>
-              <Settings size={16} />
-              Settings
+            <DropdownMenuItem onClick={() => navigate("/settings?tab=general")}>
+              <Building2 size={16} />
+              Company Settings
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => navigate("/settings?tab=notifications")}>
+              <Bell size={16} />
+              Notifications
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => navigate("/settings?tab=appearance")}>
+              <Globe size={16} />
+              Language
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={toggleTheme}>
+              {theme === "light" ? <Moon size={16} /> : <Sun size={16} />}
+              {theme === "light" ? "Dark Mode" : "Light Mode"}
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem

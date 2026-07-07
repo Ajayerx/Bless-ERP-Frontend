@@ -1,34 +1,5 @@
 import { apiClient } from "@/services/api-client"
-
-export interface Expense {
-  id: string
-  category: string
-  amount: number
-  date: string
-  supplier: string
-  description: string
-  paymentMethod: string
-  status: "paid" | "unpaid"
-  notes: string
-  createdAt: string
-}
-
-export interface ExpenseListResponse {
-  items: Expense[]
-  total: number
-  page: number
-  pageSize: number
-}
-
-export interface ExpenseFormData {
-  category: string
-  amount: number
-  date: string
-  supplier: string
-  description: string
-  paymentMethod: string
-  notes: string
-}
+export type { Expense, ExpenseListResponse, ExpenseFormData } from "../types"
 
 export const expenseService = {
   list: (params: { search?: string; page?: number; pageSize?: number; category?: string }): Promise<ExpenseListResponse> => {

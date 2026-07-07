@@ -5,6 +5,9 @@ import {
   CreditCard,
   Wallet,
   ArrowLeftRight,
+  ShoppingCart,
+  Truck,
+  ShoppingBag,
 } from "lucide-react"
 import { useNavigate } from "react-router-dom"
 
@@ -14,6 +17,18 @@ const actions = [
     icon: FileText,
     color: "#2563EB",
     to: "/invoices/new",
+  },
+  {
+    label: "Sales Order",
+    icon: ShoppingBag,
+    color: "#0891B2",
+    to: "/sales-orders",
+  },
+  {
+    label: "Purchase Order",
+    icon: ShoppingCart,
+    color: "#7C3AED",
+    to: "/purchases/new",
   },
   {
     label: "Add Customer",
@@ -26,6 +41,12 @@ const actions = [
     icon: Package,
     color: "#F59E0B",
     to: "/products/new",
+  },
+  {
+    label: "Add Supplier",
+    icon: Truck,
+    color: "#E11D48",
+    to: "/suppliers/new",
   },
   {
     label: "Record Payment",

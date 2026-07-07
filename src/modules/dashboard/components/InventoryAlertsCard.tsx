@@ -1,5 +1,6 @@
-import { ArrowRight } from "lucide-react"
+import { ArrowRight, ChevronDown, ChevronUp } from "lucide-react"
 import { useNavigate } from "react-router-dom"
+import { useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui"
 import type { InventoryAlert } from "@/services"
 
@@ -8,12 +9,21 @@ interface Props {
 }
 
 const statusConfig: Record<string, { label: string; badge: string }> = {
-  low_stock: { label: "Low Stock", badge: "bg-red-500 text-white" },
+  out_of_stock: { label: "Out of Stock", badge: "bg-red-700 text-white" },
+  negative_stock: { label: "Negative Stock", badge: "bg-red-900 text-white" },
+  low_stock: { label: "Low Stock", badge: "bg-amber-500 text-white" },
+  overstock: { label: "Overstock", badge: "bg-blue-500 text-white" },
+  expiring: { label: "Expiring", badge: "bg-purple-500 text-white" },
+  pending_purchase: { label: "Pending Purchase", badge: "bg-orange-500 text-white" },
   reorder_soon: { label: "Reorder Soon", badge: "bg-amber-500 text-white" },
 }
 
+const INITIAL_SHOW = 4
+
 export default function InventoryAlertsCard({ data }: Props) {
   const navigate = useNavigate()
+  const [showAll, setShowAll] = useState(false)
+  const visible = showAll ? data : data.slice(0, INITIAL_SHOW)
 
   return (
     <Card>
@@ -28,7 +38,7 @@ export default function InventoryAlertsCard({ data }: Props) {
       </CardHeader>
       <CardContent className="p-0">
         <div className="divide-y divide-border">
-          {data.map((item) => {
+          {visible.map((item) => {
             const cfg = statusConfig[item.status]
             return (
               <div
@@ -57,6 +67,19 @@ export default function InventoryAlertsCard({ data }: Props) {
             )
           })}
         </div>
+
+        {data.length > INITIAL_SHOW && (
+          <button
+            onClick={() => setShowAll(!showAll)}
+            className="flex items-center justify-center gap-1 w-full py-3 text-xs font-semibold text-muted hover:text-body border-t border-border transition-colors"
+          >
+            {showAll ? (
+              <>Show Less <ChevronUp size={14} /></>
+            ) : (
+              <>Show {data.length - INITIAL_SHOW} More <ChevronDown size={14} /></>
+            )}
+          </button>
+        )}
       </CardContent>
     </Card>
   )

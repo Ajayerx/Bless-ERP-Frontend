@@ -1,11 +1,88 @@
-const API_BASE = "/api"
+import { API_CONFIG } from "../config/api.config"
+
 export class ApiError extends Error {
-  public status: number;  // ← declare here
+  public status: number
 
   constructor(status: number, message: string) {
-    super(message);
-    this.status = status;  // ← assign here
-    this.name = "ApiError";
+    super(message)
+    this.status = status
+    this.name = "ApiError"
+  }
+}
+
+// --- CSRF token -------------------------------------------------------
+// Frappe sets a "csrf_token" cookie on login; every non‑GET request must
+// echo its value in the X-Frappe-CSRF-Token header, or the server returns 403.
+function getCsrfToken(): string | undefined {
+  const match = document.cookie.match(/\bcsrf_token=([^;]+)/)
+  return match ? decodeURIComponent(match[1]) : undefined
+}
+
+// --- 401/403 handling -------------------------------------------------
+// AuthContext registers a callback here on mount, so this file never has
+// to import AuthContext directly (avoids a circular import: AuthContext
+// -> authService -> apiClient -> AuthContext).
+//
+// A simple guard prevents re‑entrant calls (e.g. onUnauthorized itself
+// triggering another 401/403 from the session‑verification request).
+type UnauthorizedHandler = () => void
+let onUnauthorized: UnauthorizedHandler | null = null
+let unauthorizing = false
+
+export function registerUnauthorizedHandler(fn: UnauthorizedHandler) {
+  onUnauthorized = fn
+}
+
+// --- ERPNext error message unwrapping ----------------------------------
+// ERPNext puts the real, human-readable error in `_server_messages`, which
+// is a JSON-encoded array of JSON-encoded strings (sometimes double-encoded).
+// Falling back to `body.message` alone misses almost all validation errors.
+function extractServerMessages(raw: unknown): string[] {
+  if (typeof raw !== "string") return []
+  try {
+    const arr = JSON.parse(raw)
+    if (!Array.isArray(arr)) return []
+    return arr.map((item) => {
+      if (typeof item !== "string") return String(item)
+      try {
+        const parsed = JSON.parse(item)
+        if (parsed && typeof parsed === "object" && "message" in parsed) {
+          return String(parsed.message)
+        }
+        return item
+      } catch {
+        return item
+      }
+    })
+  } catch {
+    return []
+  }
+}
+
+function stripHtml(s: string): string {
+  return s.replace(/<[^>]*>/g, "").trim()
+}
+
+export function parseErrorMessage(body: any, fallback = "Something went wrong"): string {
+  const serverMessages = extractServerMessages(body?._server_messages)
+  if (serverMessages.length > 0) return stripHtml(serverMessages.join(" "))
+  if (typeof body?._error_message === "string") return stripHtml(body._error_message)
+  if (typeof body?.message === "string") return stripHtml(body.message)
+  if (typeof body?.exception === "string") return stripHtml(body.exception)
+  return fallback
+}
+
+// --- Safe JSON parsing --------------------------------------------------
+// Guards against ERPNext/nginx ever returning HTML (a crashed bench, a
+// 502 page) instead of JSON, which would otherwise throw a confusing
+// "Unexpected token '<'" error.
+async function safeParseJson(res: Response): Promise<any> {
+  const text = await res.text()
+  if (!text) return {}
+  try {
+    return JSON.parse(text)
+  } catch {
+    throw new ApiError(res.status, "Server returned an unexpected response. Please try again.")
   }
 }
 
@@ -13,19 +90,45 @@ export async function apiClient<T>(
   endpoint: string,
   options: RequestInit = {}
 ): Promise<T> {
-  const res = await fetch(`${API_BASE}${endpoint}`, {
-    ...options,
-    headers: {
-      "Content-Type": "application/json",
-      ...(options.headers as Record<string, string>),
-    },
-  })
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), API_CONFIG.timeout)
 
-  const body = await res.json()
-
-  if (!res.ok) {
-    throw new ApiError(res.status, body.error?.message ?? "Something went wrong")
+  let res: Response
+  try {
+    const method = (options.method ?? "GET").toUpperCase()
+    const csrf = method !== "GET" ? getCsrfToken() : undefined
+    res = await fetch(`${API_CONFIG.baseUrl}${endpoint}`, {
+      ...options,
+      credentials: "include",
+      signal: controller.signal,
+      headers: {
+        ...API_CONFIG.headers,
+        ...(csrf ? { "X-Frappe-CSRF-Token": csrf } : {}),
+        ...(options.headers as Record<string, string>),
+      },
+    })
+  } catch (err) {
+    if ((err as Error).name === "AbortError") {
+      throw new ApiError(0, "Request timed out. Please check your connection.")
+    }
+    throw new ApiError(0, "Network error. Is the ERPNext server reachable?")
+  } finally {
+    clearTimeout(timeoutId)
   }
 
-  return body.data as T
+  const body = await safeParseJson(res)
+
+  if (!res.ok) {
+    if ((res.status === 401 || res.status === 403) && !unauthorizing) {
+      unauthorizing = true
+      try {
+        onUnauthorized?.()
+      } finally {
+        unauthorizing = false
+      }
+    }
+    throw new ApiError(res.status, parseErrorMessage(body))
+  }
+
+  return (body.data ?? body.message) as T
 }

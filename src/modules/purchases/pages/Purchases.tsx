@@ -7,7 +7,7 @@ import { Plus } from "lucide-react"
 import Topbar from "@/components/layout/Topbar"
 import { Button } from "@/components/ui"
 import { purchaseOrderService, type PurchaseOrderListResponse } from "@/services"
-import PurchaseTable from "@/modules/invoices/components/PurchaseTable"
+import PurchaseTable from "../components/PurchaseTable"
 
 type StatusFilter = "All" | "Draft" | "Sent" | "Received" | "Cancelled"
 

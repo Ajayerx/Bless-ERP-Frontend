@@ -1,6 +1,6 @@
 "use client"
 
-import { Bell, Mail, FileText, ShoppingCart, Package, TrendingUp, Megaphone } from "lucide-react"
+import { Bell, Mail, FileText, ShoppingCart, Package, TrendingUp, Megaphone, MessageSquare, Copy, AtSign } from "lucide-react"
 import { Card, CardContent } from "@/components/ui"
 import { Switch } from "@/components/ui/switch"
 import type { NotificationPreferences } from "@/services"
@@ -18,6 +18,9 @@ const NOTIFICATION_ITEMS: { key: keyof NotificationPreferences; label: string; d
   { key: "weeklyReport", label: "Weekly Report", description: "Weekly sales and performance summary", icon: TrendingUp },
   { key: "monthlyReport", label: "Monthly Report", description: "Monthly financial and operational report", icon: TrendingUp },
   { key: "marketingEmails", label: "Marketing Emails", description: "Product updates, tips, and promotions", icon: Megaphone },
+  { key: "threadNotify", label: "Thread Notifications", description: "Get notified of replies in email threads", icon: MessageSquare },
+  { key: "sendMeCopy", label: "Send Me a Copy", description: "Receive a copy of outgoing emails", icon: Copy },
+  { key: "allowedInMentions", label: "Allow Mentions", description: "Allow your name to appear in @ mentions", icon: AtSign },
 ]
 
 export default function NotificationsTab({ notifications, onChange }: NotificationsTabProps) {

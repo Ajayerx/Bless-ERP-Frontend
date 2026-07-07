@@ -43,13 +43,13 @@ export default function EditExpense() {
     } finally { setSaving(false) }
   }
 
-  if (loading) return <><Topbar /><div className="p-6 max-w-2xl mx-auto space-y-4"><Skeleton className="h-8 w-48" /><Skeleton className="h-48 w-full" /></div></>
+  if (loading) return <><Topbar /><div className="p-6 space-y-4"><Skeleton className="h-8 w-48" /><Skeleton className="h-48 w-full" /></div></>
   if (!expense) return <><Topbar /><div className="p-6 text-center text-muted">Expense not found</div></>
 
   return (
     <>
       <Topbar />
-      <motion.div className="p-6 max-w-2xl mx-auto" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.3 }}>
+      <motion.div className="p-6" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.3 }}>
         <div className="flex items-center gap-3 mb-6">
           <Link to={`/expenses/${id}`}><ArrowLeft size={18} /><span>Back</span></Link>
         </div>

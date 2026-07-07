@@ -77,7 +77,7 @@ export default function InvoiceDetail() {
           </div>
         </div>
 
-        <Card className="max-w-3xl mx-auto">
+        <Card>
           <CardContent>
             <div className="flex justify-between items-start mb-8">
               <div>

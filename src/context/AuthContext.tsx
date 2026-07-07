@@ -1,53 +1,77 @@
-import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from "react"
-import { authService, type User } from "../services"
+import {
+  createContext,
+  useContext,
+  useState,
+  useCallback,
+  useEffect,
+  type ReactNode,
+} from "react";
+import { authService, type User } from "../services";
+import { registerUnauthorizedHandler } from "../services/api-client";
 
 interface AuthContextType {
-  user: User | null
-  isAuthenticated: boolean
-  login: (email: string, password: string) => Promise<void>
-  logout: () => Promise<void>
+  user: User | null;
+  isAuthenticated: boolean;
+  loading: boolean;
+  login: (email: string, password: string) => Promise<void>;
+  logout: () => Promise<void>;
 }
 
-const AuthContext = createContext<AuthContextType | null>(null)
+const AuthContext = createContext<AuthContextType | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(() => {
-    try {
-      const stored = localStorage.getItem("auth_user")
-      return stored ? JSON.parse(stored) : null
-    } catch {
-      return null
-    }
-  })
+  const [user, setUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const token = localStorage.getItem("auth_token")
-    if (!token) setUser(null)
-  }, [])
+    let cancelled = false;
+    authService
+      .getCurrentUser()
+      .then((u) => {
+        if (!cancelled) {
+          setUser(u);
+          setLoading(false);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const login = useCallback(async (email: string, password: string) => {
-    const { user: loggedInUser, token } = await authService.login({ email, password })
-    localStorage.setItem("auth_token", token)
-    localStorage.setItem("auth_user", JSON.stringify(loggedInUser))
-    setUser(loggedInUser)
-  }, [])
+    const { full_name } = await authService.login(email, password);
+    setUser({ id: email, name: full_name || email });
+  }, []);
 
   const logout = useCallback(async () => {
-    await authService.logout()
-    localStorage.removeItem("auth_token")
-    localStorage.removeItem("auth_user")
-    setUser(null)
-  }, [])
+    await authService.logout();
+    setUser(null);
+  }, []);
+
+  // Any 401/403 from apiClient (session expired, revoked, etc.) verifies
+  // the session is truly invalid before clearing auth state.
+  useEffect(() => {
+    registerUnauthorizedHandler(() => {
+      authService.getCurrentUser().then((u) => {
+        if (!u) setUser(null);
+      });
+    });
+  }, []);
 
   return (
-    <AuthContext.Provider value={{ user, isAuthenticated: !!user, login, logout }}>
+    <AuthContext.Provider
+      value={{ user, isAuthenticated: !!user, loading, login, logout }}
+    >
       {children}
     </AuthContext.Provider>
-  )
+  );
 }
 
 export function useAuth() {
-  const ctx = useContext(AuthContext)
-  if (!ctx) throw new Error("useAuth must be used within AuthProvider")
-  return ctx
+  const ctx = useContext(AuthContext);
+  if (!ctx) throw new Error("useAuth must be used within AuthProvider");
+  return ctx;
 }

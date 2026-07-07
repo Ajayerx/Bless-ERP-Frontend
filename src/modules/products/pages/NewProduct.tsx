@@ -14,7 +14,7 @@ export default function NewProduct() {
     <>
       <Topbar />
       <motion.div
-        className="p-6 space-y-6 max-w-3xl mx-auto"
+        className="p-6 space-y-6"
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ duration: 0.3 }}

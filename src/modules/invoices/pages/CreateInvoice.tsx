@@ -128,7 +128,7 @@ export default function CreateInvoice() {
     <>
       <Topbar />
       <motion.div
-        className="p-6 space-y-6 max-w-5xl mx-auto"
+        className="p-6 space-y-6"
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ duration: 0.3 }}

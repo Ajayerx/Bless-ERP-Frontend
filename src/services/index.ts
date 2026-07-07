@@ -1,45 +1,67 @@
-export { authService } from "./auth.service"
-export type { AuthService, AuthResponse, LoginRequest, User } from "./auth.service"
-export { dashboardService } from "./dashboard.service"
-export type { DashboardData, KpiMetric, SalesDay, RecentInvoice, TopCustomer, InventoryAlert, RecentPayment } from "./dashboard.service"
-export { customerService } from "./customers.service"
-export type { Customer, CustomerFormData, CustomerListResponse } from "./customers.service"
-export { invoiceService } from "./invoices.service"
-export type { Invoice, InvoiceFormData, InvoiceListResponse, LineItem, Product } from "./invoices.service"
-export { paymentService } from "./payments.service"
-export type { Payment, PaymentListResponse, RecordPaymentData } from "./payments.service"
-export { reportService } from "./reports.service"
-export type { TaxSummary, TaxBreakdownRow, SalesReport, ARReport, InventoryReport, ProfitLoss, BalanceSheet } from "./reports.service"
-export { productService } from "./products.service"
-export type { Product as ProductItem, ProductListResponse } from "./products.service"
-export { supplierService } from "./suppliers.service"
-export type { Supplier, SupplierFormData, SupplierListResponse } from "./suppliers.service"
-export { expenseService } from "./expenses.service"
-export type { Expense, ExpenseFormData, ExpenseListResponse } from "./expenses.service"
-export { billService } from "./bills.service"
-export type { Bill, BillListResponse } from "./bills.service"
-export { bankAccountService } from "./bank_accounts.service"
-export type { BankAccount, BankAccountListResponse } from "./bank_accounts.service"
-export { journalEntryService } from "./journal_entries.service"
-export type { JournalEntry, JournalEntryListResponse } from "./journal_entries.service"
-export { salesOrderService } from "./sales_orders.service"
-export type { SalesOrder, SalesOrderItem, SalesOrderListResponse } from "./sales_orders.service"
-export { quotationService } from "./quotations.service"
-export type { Quotation, QuotationItem, QuotationFormData, QuotationListResponse } from "./quotations.service"
-export { contactService } from "./contacts.service"
-export type { Contact, ContactListResponse } from "./contacts.service"
-export { opportunityService } from "./opportunities.service"
-export type { Opportunity, OpportunityListResponse } from "./opportunities.service"
-export { settingsService } from "./settings.service"
-export type { Settings, CompanyInfo, TaxConfig, AppDefaults, AppUser, UserProfile, NotificationPreferences, SecuritySettings, AppearanceSettings } from "./settings.service"
-export { purchaseOrderService } from "./purchase_orders.service"
-export type { PurchaseOrder, PurchaseOrderListResponse } from "./purchase_orders.service"
-
-export { vendorService } from "./vendors.service"
-export type { Vendor, VendorFormData, VendorListResponse } from "./vendors.service"
-export { leadService } from "./leads.service"
-export type { Lead, LeadFormData, LeadListResponse } from "./leads.service"
-export { followUpService } from "./follow-ups.service"
-export type { FollowUp, FollowUpListResponse } from "./follow-ups.service"
-export { accountingService } from "@/modules/accounting/services"
+// Infrastructure
 export { apiClient, ApiError } from "./api-client"
+export { authService } from "./auth.service"
+export type { AuthService, User } from "./auth.service"
+
+// Module re-exports
+export { dashboardService } from "@/modules/dashboard/services"
+export type { DashboardData, KpiMetric, SalesDay, RecentInvoice, TopCustomer, InventoryAlert, RecentPayment } from "@/modules/dashboard/services"
+
+export { customerService } from "@/modules/customers/services"
+export type { Customer, CustomerFormData, CustomerListResponse } from "@/modules/customers/services"
+
+export { invoiceService } from "@/modules/invoices/services"
+export type { Invoice, InvoiceFormData, InvoiceListResponse, LineItem, Product } from "@/modules/invoices/services"
+
+export { paymentService } from "@/modules/payments/services"
+export type { Payment, PaymentListResponse, RecordPaymentData } from "@/modules/payments/services"
+
+export { reportService } from "@/modules/reports/services"
+export type { TaxSummary, TaxBreakdownRow, SalesReport, ARReport, InventoryReport, ProfitLoss, BalanceSheet } from "@/modules/reports/services"
+
+export { productService } from "@/modules/products/services"
+export type { Product as ProductItem, ProductListResponse } from "@/modules/products/services"
+
+export { supplierService } from "@/modules/suppliers/services"
+export type { Supplier, SupplierFormData, SupplierListResponse } from "@/modules/suppliers/services"
+
+export { expenseService } from "@/modules/expenses/services"
+export type { Expense, ExpenseFormData, ExpenseListResponse } from "@/modules/expenses/services"
+
+export { billService } from "@/modules/bills/services"
+export type { Bill, BillListResponse, BillFormData } from "@/modules/bills/services"
+
+export { bankAccountService } from "@/modules/bank_accounts/services"
+export type { BankAccount, BankAccountListResponse, BankAccountFormData } from "@/modules/bank_accounts/services"
+
+export { journalEntryService } from "@/modules/journal_entries/services"
+export type { JournalEntry, JournalEntryListResponse, JournalEntryFormData } from "@/modules/journal_entries/services"
+
+export { salesOrderService } from "@/modules/sales-orders/services"
+export type { SalesOrder, SalesOrderItem, SalesOrderListResponse } from "@/modules/sales-orders/services"
+
+export { quotationService } from "@/modules/quotations/services"
+export type { Quotation, QuotationItem, QuotationFormData, QuotationListResponse } from "@/modules/quotations/services"
+
+export { contactService } from "@/modules/contacts/services"
+export type { Contact, ContactListResponse, ContactFormData } from "@/modules/contacts/services"
+
+export { opportunityService } from "@/modules/opportunities/services"
+export type { Opportunity, OpportunityFormData, OpportunityListResponse } from "@/modules/opportunities/services"
+
+export { settingsService } from "@/modules/settings/services"
+export type { Settings, CompanyInfo, TaxConfig, AppDefaults, AppUser, UserProfile, NotificationPreferences, SecuritySettings, AppearanceSettings } from "@/modules/settings/services"
+
+export { purchaseOrderService } from "@/modules/purchases/services"
+export type { PurchaseOrder, PurchaseOrderListResponse, PurchaseOrderFormData } from "@/modules/purchases/services"
+
+export { vendorService } from "@/modules/vendors/services"
+export type { Vendor, VendorFormData, VendorListResponse } from "@/modules/vendors/services"
+
+export { leadService } from "@/modules/leads/services"
+export type { Lead, LeadFormData, LeadListResponse } from "@/modules/leads/services"
+
+export { followUpService } from "@/modules/followups/services"
+export type { FollowUp, FollowUpListResponse } from "@/modules/followups/services"
+
+export { accountingService } from "@/modules/accounting/services"

@@ -57,10 +57,12 @@
     { "id": "c_005", "name": "Sunny Market", "amount": 540.00, "initial": "S", "color": "bg-yellow-500" }
   ],
   "inventoryAlerts": [
-    { "id": "inv_al_001", "productName": "Peach Rings (500g)", "stock": 8, "reorderLevel": 20, "status": "low_stock", "color": "#fb7185" },
-    { "id": "inv_al_002", "productName": "Rainbow Candy (1kg)", "stock": 15, "reorderLevel": 30, "status": "low_stock", "color": "#c084fc" },
-    { "id": "inv_al_003", "productName": "Mango Candy (500g)", "stock": 12, "reorderLevel": 25, "status": "reorder_soon", "color": "#fbbf24" },
-    { "id": "inv_al_004", "productName": "Sour Belts (1kg)", "stock": 18, "reorderLevel": 30, "status": "low_stock", "color": "#a3e635" }
+    { "id": "inv_al_001", "productName": "Peach Rings (500g)", "stock": 0, "reorderLevel": 20, "status": "out_of_stock", "color": "#B91C1C" },
+    { "id": "inv_al_002", "productName": "Rainbow Candy (1kg)", "stock": -3, "reorderLevel": 30, "status": "negative_stock", "color": "#7F1D1D" },
+    { "id": "inv_al_003", "productName": "Mango Candy (500g)", "stock": 5, "reorderLevel": 25, "status": "low_stock", "color": "#DC2626" },
+    { "id": "inv_al_004", "productName": "Sour Belts (1kg)", "stock": 12, "reorderLevel": 30, "status": "reorder_soon", "color": "#F59E0B" },
+    { "id": "inv_al_005", "productName": "Gummy Bears (2kg)", "stock": 250, "reorderLevel": 50, "status": "overstock", "color": "#3B82F6" },
+    { "id": "inv_al_006", "productName": "Licorice Twists (500g)", "stock": 45, "reorderLevel": 20, "status": "expiring", "color": "#8B5CF6" }
   ],
   "recentPayments": [
     { "id": "pay_001", "number": "PAY-1005", "date": "May 18, 2024", "customerName": "Maple Store", "amount": 320.00 },

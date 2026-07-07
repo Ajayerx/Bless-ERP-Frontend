@@ -141,9 +141,6 @@ function buildColumns(
               Pay
             </Button>
           )}
-          <Button variant="secondary" size="sm">
-            View
-          </Button>
         </div>
       ),
     },
