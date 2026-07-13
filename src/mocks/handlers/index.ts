@@ -16,7 +16,6 @@ import { contactHandlers } from "./contacts"
 import { opportunityHandlers } from "./opportunities"
 import { settingsHandlers } from "./settings"
 import { purchaseOrderHandlers } from "./purchase_orders"
-import { inventoryHandlers } from "./inventory"
 import { hrmsHandlers } from "./hrms"
 import { frappeAuthHandlers } from "./frappe-auth"
 import { frappeSettingsHandlers } from "./frappe-settings"
@@ -42,7 +41,6 @@ export const handlers = [
   ...opportunityHandlers,
   ...settingsHandlers,
   ...purchaseOrderHandlers,
-  ...inventoryHandlers,
   ...hrmsHandlers,
   // Frappe REST handlers — more specific first, wildcard last
   ...frappeAuthHandlers,

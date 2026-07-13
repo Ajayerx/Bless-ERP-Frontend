@@ -2,8 +2,9 @@ import { apiClient } from "@/services/api-client"
 export type {
   Customer, CustomerListResponse, AddressInput, AllowedCompanyRow,
   CreditLimitRow, PartyAccountRow, SalesTeamRow, PortalUserRow,
-  CustomerFormData, CustomerDetail,
+  CustomerFormData, CustomerDetail, TransactionCounts,
 } from "../types"
+export type { AddressDoc }
 
 function buildListUrl(
   doctype: string,
@@ -34,16 +35,21 @@ async function getCount(doctype: string, filters?: unknown[]): Promise<number> {
   return Number(result)
 }
 
-async function fetchLinkOptions(doctype: string, orderByField = "name"): Promise<string[]> {
+async function fetchLinkOptions(doctype: string, orderByField = "name", filters?: unknown[]): Promise<string[]> {
   const rows = await apiClient<Array<{ name: string }>>(
-    buildListUrl(doctype, { fields: ["name"], order_by: `${orderByField} asc`, limit_page_length: 0 })
+    buildListUrl(doctype, {
+      fields: ["name"],
+      order_by: `${orderByField} asc`,
+      limit_page_length: 0,
+      filters,
+    })
   )
   return rows.map((r) => r.name)
 }
 
 export const customerLookups = {
-  customerGroups: () => fetchLinkOptions("Customer Group"),
-  territories: () => fetchLinkOptions("Territory"),
+  customerGroups: () => fetchLinkOptions("Customer Group", "name", [["is_group", "=", 0]]),
+  territories: () => fetchLinkOptions("Territory", "name", [["is_group", "=", 0]]),
   salutations: () => fetchLinkOptions("Salutation"),
   genders: () => fetchLinkOptions("Gender"),
   currencies: () => fetchLinkOptions("Currency"),
@@ -66,7 +72,8 @@ export const customerLookups = {
 interface CustomerRow extends Omit<Customer, "outstanding" | "status"> { }
 
 const CUSTOMER_FIELDS: (keyof CustomerRow)[] = [
-  "name", "naming_series", "salutation", "customer_name", "customer_type",
+  "name", "naming_series", "salutation", "customer_name",
+  "customer_type",
   "customer_group", "territory", "gender", "lead_name", "opportunity_name",
   "prospect_name", "crm_deal", "account_manager", "image",
   "default_currency", "default_bank_account", "default_price_list",
@@ -74,7 +81,8 @@ const CUSTOMER_FIELDS: (keyof CustomerRow)[] = [
   "market_segment", "industry", "customer_pos_id", "website", "language",
   "customer_details", "customer_primary_address", "primary_address",
   "customer_primary_contact", "mobile_no", "email_id", "first_name", "last_name",
-  "tax_id", "tax_category", "tax_withholding_category", "payment_terms",
+  "tax_id", "tax_category", "tax_withholding_category",
+  "payment_terms",
   "loyalty_program", "loyalty_program_tier",
   "default_sales_partner", "default_commission_rate",
   "so_required", "dn_required", "is_frozen", "disabled",
@@ -116,7 +124,7 @@ interface ContactDoc {
   phone_nos?: Array<{ phone: string; is_primary_mobile_no: 0 | 1 }>
 }
 
-interface AddressDoc {
+export interface AddressDoc {
   name: string
   address_type: "Billing" | "Shipping" | string
   address_line1: string
@@ -160,7 +168,7 @@ async function updateContact(
   })
 }
 
-async function createAddress(
+export async function createAddress(
   customerName: string,
   type: "Billing" | "Shipping",
   input: AddressInput
@@ -213,15 +221,33 @@ async function fetchAddressesForCustomer(customerName: string): Promise<AddressD
   )
 }
 
+async function fetchTransactionCounts(customerName: string): Promise<{
+  sales_orders: number
+  sales_invoices: number
+  opportunities: number
+  issues: number
+}> {
+  const [sales_orders, sales_invoices, opportunities, issues] = await Promise.all([
+    getCount("Sales Order", [["customer", "=", customerName], ["docstatus", "!=", 2]]),
+    getCount("Sales Invoice", [["customer", "=", customerName], ["docstatus", "!=", 2]]),
+    getCount("Opportunity", [["party_name", "=", customerName], ["docstatus", "!=", 2]]),
+    getCount("Issue", [["customer", "=", customerName]]),
+  ])
+  return { sales_orders, sales_invoices, opportunities, issues }
+}
+
+
 function toCustomerDocPayload(data: CustomerFormData): Record<string, unknown> {
   return {
     salutation: data.salutation,
-    customer_name: data.customer_name,
+    customer_name: data.customer_name.trim(),
     customer_type: data.customer_type,
     customer_group: data.customer_group,
     territory: data.territory,
     gender: data.gender,
+    lead_name: data.lead_name,
     account_manager: data.account_manager,
+    image: data.image,
     default_currency: data.default_currency,
     default_bank_account: data.default_bank_account,
     default_price_list: data.default_price_list,
@@ -229,6 +255,7 @@ function toCustomerDocPayload(data: CustomerFormData): Record<string, unknown> {
     represents_company: data.represents_company,
     market_segment: data.market_segment,
     industry: data.industry,
+    customer_pos_id: data.customer_pos_id,
     website: data.website,
     language: data.language,
     customer_details: data.customer_details,
@@ -253,6 +280,7 @@ function toCustomerDocPayload(data: CustomerFormData): Record<string, unknown> {
 
 export const customerService = {
   lookups: customerLookups,
+  createAddress,
 
   async list(params: {
     search?: string
@@ -291,7 +319,7 @@ export const customerService = {
   },
 
   async getById(name: string): Promise<CustomerDetail> {
-    const [fullDoc, addresses, outstandingMap] = await Promise.all([
+    const [fullDoc, addresses, outstandingMap, transaction_counts] = await Promise.all([
       apiClient<CustomerRow & {
         companies?: AllowedCompanyRow[]
         credit_limits?: CreditLimitRow[]
@@ -301,9 +329,11 @@ export const customerService = {
       }>(`/resource/Customer/${encodeURIComponent(name)}`),
       fetchAddressesForCustomer(name),
       fetchOutstandingByCustomer([name]),
+      fetchTransactionCounts(name),
     ])
     return {
       ...toCustomer(fullDoc, outstandingMap.get(name) ?? 0),
+      transaction_counts,
       addresses: addresses.map((a) => ({
         name: a.name,
         address_type: a.address_type,

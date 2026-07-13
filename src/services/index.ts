@@ -8,19 +8,22 @@ export { dashboardService } from "@/modules/dashboard/services"
 export type { DashboardData, KpiMetric, SalesDay, RecentInvoice, TopCustomer, InventoryAlert, RecentPayment } from "@/modules/dashboard/services"
 
 export { customerService } from "@/modules/customers/services"
-export type { Customer, CustomerFormData, CustomerListResponse } from "@/modules/customers/services"
+export type { Customer, CustomerFormData, CustomerListResponse, CustomerDetail, TransactionCounts } from "@/modules/customers/services"
 
 export { invoiceService } from "@/modules/invoices/services"
-export type { Invoice, InvoiceFormData, InvoiceListResponse, LineItem, Product } from "@/modules/invoices/services"
+export type { SalesInvoice, SalesInvoiceFormData, SalesInvoiceItem, SalesInvoiceTax, SalesInvoiceListResponse } from "@/modules/invoices/services"
 
 export { paymentService } from "@/modules/payments/services"
-export type { Payment, PaymentListResponse, RecordPaymentData } from "@/modules/payments/services"
+export type { PaymentEntry, PaymentEntryListResponse, PaymentMethod, PAYMENT_METHOD_MAP, RecordPaymentData, InvoiceAllocation, PaymentDeductionForm } from "@/modules/payments/services"
 
 export { reportService } from "@/modules/reports/services"
 export type { TaxSummary, TaxBreakdownRow, SalesReport, ARReport, InventoryReport, ProfitLoss, BalanceSheet } from "@/modules/reports/services"
 
 export { productService } from "@/modules/products/services"
-export type { Product as ProductItem, ProductListResponse } from "@/modules/products/services"
+export type {
+  Product, Product as ProductItem, ProductDetail, ProductListResponse,
+  ProductListParams, ProductFormData, WarehouseStock,
+} from "@/modules/products/services"
 
 export { supplierService } from "@/modules/suppliers/services"
 export type { Supplier, SupplierFormData, SupplierListResponse } from "@/modules/suppliers/services"

@@ -7,7 +7,9 @@ import { ArrowLeft, Plus, Trash2, Save, Search, ChevronDown } from "lucide-react
 import Topbar from "@/components/layout/Topbar"
 import { Button, Card, CardContent, CardHeader, CardTitle } from "@/components/ui"
 import { billService, vendorService } from "@/services"
-import type { Product } from "@/services/invoices.service"
+import { getDefaultTaxTemplate } from "@/services/tax-template"
+import type { TaxRow } from "@/services/tax-template"
+import type { Product } from "@/services"
 import { formatCurrency } from "@/lib/utils"
 
 interface LineItemForm {
@@ -22,14 +24,14 @@ interface LineItemForm {
   total: number
 }
 
-const GST_RATE = 0.05
-const QST_RATE = 0.09975
+const PURCHASE_DOCTYPE = "Purchase Taxes and Charges Template"
 
 function calcTotal(qty: number, price: number): number {
   return Math.round(qty * price * 100) / 100
 }
 
-function createEmptyLine(): LineItemForm {
+function createEmptyLine(taxRows: TaxRow[]): LineItemForm {
+  const first = taxRows[0] ?? { accountHead: "GST - BE", rate: 0.05, description: "GST @ 5.0" }
   return {
     id: crypto.randomUUID(),
     productId: "",
@@ -37,8 +39,8 @@ function createEmptyLine(): LineItemForm {
     sku: "",
     quantity: 1,
     price: 0,
-    taxRate: GST_RATE,
-    taxLabel: "GST",
+    taxRate: first.rate,
+    taxLabel: first.description ?? first.accountHead,
     total: 0,
   }
 }
@@ -54,21 +56,32 @@ export default function CreateBill() {
     const d = new Date(); d.setDate(d.getDate() + 30); return d.toISOString().slice(0, 10)
   })
   const [notes, setNotes] = useState("")
-  const [lineItems, setLineItems] = useState<LineItemForm[]>([createEmptyLine()])
+  const [lineItems, setLineItems] = useState<LineItemForm[]>([createEmptyLine([])])
   const [saving, setSaving] = useState(false)
   const [vendors, setVendors] = useState<Array<{ id: string; name: string; billingAddress: string }>>([])
   const [vendorSearch, setVendorSearch] = useState("")
   const [vendorDropdownOpen, setVendorDropdownOpen] = useState(false)
   const [products, setProducts] = useState<Product[]>([])
   const [productDropdowns, setProductDropdowns] = useState<Record<string, { open: boolean; search: string }>>({})
+  const [taxRows, setTaxRows] = useState<TaxRow[]>([])
+  const [templateLoading, setTemplateLoading] = useState(true)
 
   useEffect(() => {
-    vendorService.list({ pageSize: 100 }).then((res) => {
-      setVendors(res.items.map((v) => ({
-        id: v.id, name: v.name, billingAddress: v.billingAddress,
-      })))
-    })
-    fetch("/api/products").then(r => r.json()).then((body) => setProducts(body.data))
+    setTemplateLoading(true)
+    Promise.all([
+      vendorService.list({ pageSize: 100 }).then((res) => {
+        setVendors(res.items.map((v) => ({
+          id: v.id, name: v.name, billingAddress: v.billingAddress,
+        })))
+      }),
+      fetch("/api/products").then(r => r.json()).then((body) => setProducts(body.data)),
+      getDefaultTaxTemplate(PURCHASE_DOCTYPE).then((template) => {
+        if (template) {
+          setTaxRows(template.rows)
+          setLineItems([createEmptyLine(template.rows)])
+        }
+      }),
+    ]).finally(() => setTemplateLoading(false))
   }, [])
 
   const filteredVendors = vendors.filter(
@@ -81,7 +94,7 @@ export default function CreateBill() {
     setVendorSearch(v.name); setVendorDropdownOpen(false)
   }
 
-  const addLine = () => setLineItems((prev) => [...prev, createEmptyLine()])
+  const addLine = () => setLineItems((prev) => [...prev, createEmptyLine(taxRows)])
   const removeLine = (id: string) =>
     setLineItems((prev) => (prev.length > 1 ? prev.filter((l) => l.id !== id) : prev))
 
@@ -96,21 +109,29 @@ export default function CreateBill() {
     )
 
   const selectProduct = (lineId: string, product: Product) => {
-    updateLine(lineId, { productId: product.id, productName: product.name, sku: product.sku, price: product.price })
+    updateLine(lineId, { productId: product.item_code, productName: product.item_name, sku: product.item_code, price: product.standard_rate })
     setProductDropdowns((prev) => ({ ...prev, [lineId]: { open: false, search: "" } }))
   }
 
   const filteredProducts = useCallback(
-    (search: string) => products.filter((p) => p.name.toLowerCase().includes(search.toLowerCase()) || p.sku.toLowerCase().includes(search.toLowerCase())),
+    (search: string) => products.filter((p) => p.item_name?.toLowerCase().includes(search.toLowerCase()) || p.item_code?.toLowerCase().includes(search.toLowerCase())),
     [products]
   )
 
   const subtotal = lineItems.reduce((sum, l) => sum + l.total, 0)
-  const gstTotal = lineItems.filter((l) => l.taxLabel === "GST").reduce((sum, l) => sum + l.total, 0)
-  const qstTotal = lineItems.filter((l) => l.taxLabel === "QST").reduce((sum, l) => sum + l.total, 0)
-  const gstAmount = Math.round(gstTotal * GST_RATE * 100) / 100
-  const qstAmount = Math.round(qstTotal * QST_RATE * 100) / 100
-  const grandTotal = Math.round((subtotal + gstAmount + qstAmount) * 100) / 100
+  const taxAmountsByLabel: Record<string, number> = {}
+  for (const l of lineItems) {
+    const existing = taxAmountsByLabel[l.taxLabel] ?? 0
+    taxAmountsByLabel[l.taxLabel] = existing + l.total
+  }
+  const taxSummaries = taxRows.map((r) => {
+    const label = r.description ?? r.accountHead
+    const taxableTotal = taxAmountsByLabel[label] ?? 0
+    const amount = Math.round(taxableTotal * r.rate * 100) / 100
+    return { label, amount, rate: r.rate }
+  })
+  const taxTotal = taxSummaries.reduce((s, t) => s + t.amount, 0)
+  const grandTotal = Math.round((subtotal + taxTotal) * 100) / 100
 
   const handleSave = async () => {
     if (!vendorId) return
@@ -119,7 +140,7 @@ export default function CreateBill() {
       await billService.create({
         vendorId, vendorName, billTo, issueDate, dueDate, notes,
         lineItems: lineItems.map(({ id: _id, ...rest }) => rest),
-        subtotal, gst: gstAmount, qst: qstAmount, total: grandTotal,
+        subtotal, gst: taxSummaries[0]?.amount ?? 0, qst: taxSummaries[1]?.amount ?? 0, total: grandTotal,
       })
       navigate("/purchases/bills")
     } finally {
@@ -153,7 +174,7 @@ export default function CreateBill() {
           </div>
           <div className="flex items-center gap-3">
             <Button variant="secondary" onClick={() => navigate("/purchases/bills")}>Cancel</Button>
-            <Button onClick={handleSave} disabled={saving || !vendorId} loading={saving}>
+            <Button onClick={handleSave} disabled={saving || !vendorId || templateLoading} loading={saving}>
               <Save size={16} />
               {saving ? "Saving..." : "Save Bill"}
             </Button>
@@ -255,10 +276,10 @@ export default function CreateBill() {
                         {productDropdowns[line.id]?.open && (
                           <div className="absolute z-10 mt-1 w-full bg-surface border border-border rounded-[12px] shadow-xl max-h-40 overflow-y-auto">
                             {filteredProducts(productDropdowns[line.id]?.search ?? "").map((p) => (
-                              <button key={p.id} type="button" onClick={() => selectProduct(line.id, p)}
+                              <button key={p.name} type="button" onClick={() => selectProduct(line.id, p)}
                                 className="w-full text-left px-3 py-2 text-sm hover:bg-primary-50 text-body transition-colors">
-                                <span className="font-medium">{p.name}</span>
-                                <span className="text-xs text-muted ml-2">{p.sku}</span>
+                                <span className="font-medium">{p.item_name}</span>
+                                <span className="text-xs text-muted ml-2">{p.item_code}</span>
                               </button>
                             ))}
                           </div>
@@ -280,11 +301,14 @@ export default function CreateBill() {
                       <select value={`${line.taxRate}`}
                         onChange={(e) => {
                           const rate = parseFloat(e.target.value)
-                          updateLine(line.id, { taxRate: rate, taxLabel: rate === GST_RATE ? "GST" : "QST" })
+                          const row = taxRows.find((r) => r.rate === rate)
+                          updateLine(line.id, { taxRate: rate, taxLabel: row?.description ?? row?.accountHead ?? "" })
                         }}
                         className="w-full px-2 py-1.5 text-sm border border-border rounded-[10px] focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 bg-white">
-                        <option value={GST_RATE}>GST 5%</option>
-                        <option value={QST_RATE}>QST 9.975%</option>
+                        {taxRows.map((r) => {
+                          const label = r.description ?? r.accountHead
+                          return <option key={r.accountHead} value={r.rate}>{label}</option>
+                        })}
                       </select>
                     </td>
                     <td className="px-3 py-2.5 text-right">
@@ -315,14 +339,12 @@ export default function CreateBill() {
                 <span className="text-muted">Subtotal</span>
                 <span className="font-semibold text-heading tabular-nums">{formatCurrency(subtotal)}</span>
               </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-muted">GST (5%)</span>
-                <span className="text-body tabular-nums">{formatCurrency(gstAmount)}</span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-muted">QST (9.975%)</span>
-                <span className="text-body tabular-nums">{formatCurrency(qstAmount)}</span>
-              </div>
+              {taxSummaries.map((t) => (
+                <div key={t.label} className="flex justify-between text-sm">
+                  <span className="text-muted">{t.label} ({(t.rate * 100).toFixed(t.rate === 0.09975 ? 3 : 1)}%)</span>
+                  <span className="text-body tabular-nums">{formatCurrency(t.amount)}</span>
+                </div>
+              ))}
               <div className="border-t border-border pt-2 flex justify-between text-base">
                 <span className="font-bold text-heading">Total</span>
                 <span className="font-bold text-heading tabular-nums">{formatCurrency(grandTotal)}</span>

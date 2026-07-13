@@ -1,83 +1,70 @@
-"use client";
+"use client"
 
-import { useEffect, useState, useCallback } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
-import { motion } from "framer-motion";
-import {
-  DollarSign,
-  FileText,
-  CheckCircle2,
-  BadgeCheck,
-} from "lucide-react";
-import Topbar from "@/components/layout/Topbar";
-import { Button, Badge, Card, CardContent } from "@/components/ui";
-import RecordPaymentModal from "../components/RecordPaymentModal";
-import PaymentTable from "../components/PaymentTable";
-import {
-  paymentService,
-  type Invoice,
-  type PaymentListResponse,
-} from "@/services";
-import { formatCurrency, formatDate, cn } from "@/lib/utils";
+import { useEffect, useState, useCallback } from "react"
+import { useNavigate, useSearchParams } from "react-router-dom"
+import { motion } from "framer-motion"
+import { DollarSign, FileText, CheckCircle2, BadgeCheck } from "lucide-react"
+import Topbar from "@/components/layout/Topbar"
+import { Button, Badge, Card, CardContent } from "@/components/ui"
+import RecordPaymentModal from "../components/RecordPaymentModal"
+import PaymentTable from "../components/PaymentTable"
+import { paymentService, type SalesInvoice, type PaymentEntryListResponse } from "@/services"
+import { formatCurrency, formatDate, cn } from "@/lib/utils"
 
 export default function Payments() {
-  const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
-  const preselectedInvoiceId = searchParams.get("invoice");
+  const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const preselectedInvoiceId = searchParams.get("invoice")
 
-  const [unpaidInvoices, setUnpaidInvoices] = useState<Invoice[]>([]);
-  const [paymentsData, setPaymentsData] = useState<PaymentListResponse | null>(
-    null,
-  );
-  const [loadingUnpaid, setLoadingUnpaid] = useState(true);
-  const [loadingPayments, setLoadingPayments] = useState(true);
-  const [paymentPage, setPaymentPage] = useState(1);
+  const [unpaidInvoices, setUnpaidInvoices] = useState<SalesInvoice[]>([])
+  const [paymentsData, setPaymentsData] = useState<PaymentEntryListResponse | null>(null)
+  const [loadingUnpaid, setLoadingUnpaid] = useState(true)
+  const [loadingPayments, setLoadingPayments] = useState(true)
+  const [paymentPage, setPaymentPage] = useState(1)
 
-  const [modalOpen, setModalOpen] = useState(false);
-  const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
+  const [modalOpen, setModalOpen] = useState(false)
+  const [selectedInvoice, setSelectedInvoice] = useState<SalesInvoice | null>(null)
 
   const fetchData = useCallback(async () => {
-    setLoadingUnpaid(true);
-    setLoadingPayments(true);
+    setLoadingUnpaid(true)
+    setLoadingPayments(true)
     try {
       const [unpaid, paid] = await Promise.all([
         paymentService.getUnpaidInvoices(),
         paymentService.list({ page: paymentPage, pageSize: 10 }),
-      ]);
-      setUnpaidInvoices(unpaid);
-      setPaymentsData(paid);
+      ])
+      setUnpaidInvoices(unpaid)
+      setPaymentsData(paid)
 
       if (preselectedInvoiceId) {
-        const match = unpaid.find((inv) => inv.id === preselectedInvoiceId);
+        const match = unpaid.find((inv) => inv.name === preselectedInvoiceId)
         if (match) {
-          setSelectedInvoice(match);
-          setModalOpen(true);
+          setSelectedInvoice(match)
+          setModalOpen(true)
         }
       }
     } finally {
-      setLoadingUnpaid(false);
-      setLoadingPayments(false);
+      setLoadingUnpaid(false)
+      setLoadingPayments(false)
     }
-  }, [paymentPage, preselectedInvoiceId]);
+  }, [paymentPage, preselectedInvoiceId])
 
-  useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+  useEffect(() => { fetchData() }, [fetchData])
 
-  const handleRecordPayment = (inv: Invoice) => {
-    setSelectedInvoice(inv);
-    setModalOpen(true);
-  };
+  const handleRecordPayment = (inv: SalesInvoice) => {
+    setSelectedInvoice(inv)
+    setModalOpen(true)
+  }
 
   const handlePaymentSuccess = () => {
-    setModalOpen(false);
-    setSelectedInvoice(null);
-    fetchData();
-  };
+    setModalOpen(false)
+    setSelectedInvoice(null)
+    fetchData()
+  }
 
   const overdueCount = unpaidInvoices.filter(
-    (inv) => inv.status === "overdue",
-  ).length;
+    (inv) => inv.status === "Overdue",
+  ).length
 
   return (
     <>
@@ -91,13 +78,10 @@ export default function Payments() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold text-heading">Payments</h1>
-            <p className="text-sm text-muted mt-1">
-              Record payments and view payment history.
-            </p>
+            <p className="text-sm text-muted mt-1">Record payments and view payment history.</p>
           </div>
           <Button onClick={() => setModalOpen(true)}>
-            <DollarSign size={16} />
-            Record Payment
+            <DollarSign size={16} /> Record Payment
           </Button>
         </div>
 
@@ -106,14 +90,12 @@ export default function Payments() {
           loading={loadingPayments}
           page={paymentPage}
           onPageChange={setPaymentPage}
-          onRowClick={(payment) => navigate(`/payments/${payment.id}`)}
+          onRowClick={(payment) => navigate(`/payments/${payment.name}`)}
         />
 
         <section className="space-y-4">
           <div className="flex items-center gap-3">
-            <h2 className="text-base font-semibold text-heading">
-              Unpaid Invoices
-            </h2>
+            <h2 className="text-base font-semibold text-heading">Unpaid Invoices</h2>
             {unpaidInvoices.length > 0 && (
               <Badge variant="warning">{unpaidInvoices.length} pending</Badge>
             )}
@@ -134,9 +116,7 @@ export default function Payments() {
                   <BadgeCheck size={24} />
                 </div>
                 <p className="font-semibold text-heading">All caught up!</p>
-                <p className="text-sm text-muted mt-1">
-                  No unpaid invoices at this time.
-                </p>
+                <p className="text-sm text-muted mt-1">No unpaid invoices at this time.</p>
               </CardContent>
             </Card>
           ) : (
@@ -145,81 +125,53 @@ export default function Payments() {
                 <table className="min-w-full divide-y divide-border">
                   <thead>
                     <tr className="bg-gray-50/50">
-                      {["Invoice", "Date", "Due", "Amount", "Status", ""].map(
-                        (h) => (
-                          <th
-                            key={h}
-                            className={cn(
-                              "px-6 py-3.5 text-xs font-semibold text-muted uppercase tracking-wider",
-                              h === "Amount" || h === ""
-                                ? "text-right"
-                                : "text-left",
-                              h === "Date" && "hidden lg:table-cell",
-                            )}
-                          >
-                            {h}
-                          </th>
-                        ),
-                      )}
+                      {["Invoice", "Date", "Due", "Amount", "Status", ""].map((h) => (
+                        <th
+                          key={h}
+                          className={cn(
+                            "px-6 py-3.5 text-xs font-semibold text-muted uppercase tracking-wider",
+                            h === "Amount" || h === "" ? "text-right" : "text-left",
+                            h === "Date" && "hidden lg:table-cell",
+                          )}
+                        >
+                          {h}
+                        </th>
+                      ))}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border/50">
                     {unpaidInvoices.map((inv) => (
-                      <tr
-                        key={inv.id}
-                        className="hover:bg-gray-50/50 transition-colors"
-                      >
+                      <tr key={inv.name} className="hover:bg-gray-50/50 transition-colors">
                         <td className="px-6 py-4">
                           <div className="flex items-center gap-3">
                             <div className="w-9 h-9 rounded-[10px] bg-warning-50 text-warning-600 flex items-center justify-center shrink-0">
                               <FileText size={16} />
                             </div>
                             <div>
-                              <p className="font-semibold text-heading">
-                                {inv.number}
-                              </p>
-                              <p className="text-xs text-muted">
-                                {inv.customerName}
-                              </p>
+                              <p className="font-semibold text-heading">{inv.name}</p>
+                              <p className="text-xs text-muted">{inv.customer_name}</p>
                             </div>
                           </div>
                         </td>
                         <td className="px-6 py-4 text-sm text-muted hidden lg:table-cell">
-                          {formatDate(inv.issueDate)}
+                          {formatDate(inv.posting_date)}
                         </td>
                         <td className="px-6 py-4">
-                          <span
-                            className={cn(
-                              "text-sm",
-                              inv.status === "overdue"
-                                ? "text-danger-600 font-semibold"
-                                : "text-muted",
-                            )}
-                          >
-                            {formatDate(inv.dueDate)}
+                          <span className={cn("text-sm", inv.status === "Overdue" ? "text-danger-600 font-semibold" : "text-muted")}>
+                            {formatDate(inv.due_date)}
                           </span>
                         </td>
                         <td className="px-6 py-4 text-right font-semibold tabular-nums text-heading">
-                          {formatCurrency(inv.total)}
+                          {formatCurrency(inv.outstanding_amount)}
                         </td>
                         <td className="px-6 py-4">
-                          <Badge
-                            variant={
-                              inv.status === "overdue" ? "danger" : "info"
-                            }
-                          >
-                            {inv.status.charAt(0).toUpperCase() +
-                              inv.status.slice(1)}
+                          <Badge variant={inv.status === "Overdue" ? "danger" : "info"}>
+                            {inv.status}
                           </Badge>
                         </td>
                         <td className="px-6 py-4 text-right">
-                          <Button
-                            variant="success"
-                            size="sm"
-                            onClick={() => handleRecordPayment(inv)}
-                          >
-                            <DollarSign size={13} />
-                            Record Payment
+                          <Button variant="success" size="sm" onClick={() => handleRecordPayment(inv)}>
+                            <DollarSign size={13} /> Record Payment
                           </Button>
                         </td>
                       </tr>
@@ -236,13 +188,10 @@ export default function Payments() {
         <RecordPaymentModal
           open={modalOpen}
           invoice={selectedInvoice}
-          onClose={() => {
-            setModalOpen(false);
-            setSelectedInvoice(null);
-          }}
+          onClose={() => { setModalOpen(false); setSelectedInvoice(null) }}
           onRecorded={handlePaymentSuccess}
         />
       )}
     </>
-  );
+  )
 }

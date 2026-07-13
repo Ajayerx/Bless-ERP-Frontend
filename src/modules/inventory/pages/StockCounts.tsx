@@ -9,30 +9,34 @@ import DataTable, { type Column } from "@/components/ui/DataTable"
 import { Button, Badge } from "@/components/ui"
 import { inventoryService } from "@/modules/inventory/services"
 import type { StockCount } from "@/modules/inventory/types"
-import { formatDate, cn } from "@/lib/utils"
+import { formatDate } from "@/lib/utils"
 
-const statusConfig: Record<string, { label: string; variant: "success" | "warning" | "default" | "danger" | "info" }> = {
-  draft: { label: "Draft", variant: "default" },
-  in_progress: { label: "In Progress", variant: "warning" },
-  completed: { label: "Completed", variant: "success" },
-  cancelled: { label: "Cancelled", variant: "danger" },
+const statusConfig: Record<number, { label: string; variant: "success" | "warning" | "default" | "danger" | "info" }> = {
+  0: { label: "Draft", variant: "default" },
+  1: { label: "Completed", variant: "success" },
+  2: { label: "Cancelled", variant: "danger" },
 }
 
 const columns: Column<StockCount>[] = [
   {
-    key: "reference",
+    key: "name",
     header: "Reference",
     render: (c) => (
       <div>
-        <p className="font-semibold text-heading">{c.reference}</p>
-        <p className="text-xs text-muted">{formatDate(c.createdAt)}</p>
+        <p className="font-semibold text-heading">{c.name}</p>
+        <p className="text-xs text-muted">{formatDate(c.creation)}</p>
       </div>
     ),
   },
   {
-    key: "warehouse",
+    key: "set_warehouse",
     header: "Warehouse",
-    render: (c) => <span className="text-sm text-body">{c.warehouse}</span>,
+    render: (c) => <span className="text-sm text-body">{c.set_warehouse ?? "—"}</span>,
+  },
+  {
+    key: "purpose",
+    header: "Purpose",
+    render: (c) => <span className="text-sm text-muted">{c.purpose}</span>,
   },
   {
     key: "items",
@@ -43,26 +47,10 @@ const columns: Column<StockCount>[] = [
     ),
   },
   {
-    key: "discrepancies",
-    header: "Discrepancies",
-    className: "text-right",
-    render: (c) => {
-      const diffs = c.items.filter((i) => i.difference !== 0).length
-      return (
-        <span className={cn(
-          "text-sm font-semibold tabular-nums",
-          diffs > 0 ? "text-danger-600" : "text-success-600"
-        )}>
-          {diffs}
-        </span>
-      )
-    },
-  },
-  {
-    key: "status",
+    key: "docstatus",
     header: "Status",
     render: (c) => {
-      const cfg = statusConfig[c.status] ?? { label: c.status, variant: "default" as const }
+      const cfg = statusConfig[c.docstatus] ?? { label: `Unknown (${c.docstatus})`, variant: "default" as const }
       return <Badge variant={cfg.variant}>{cfg.label}</Badge>
     },
   },
@@ -103,7 +91,7 @@ export default function StockCounts() {
             </div>
             <div>
               <h1 className="text-2xl font-bold text-heading">Stock Counts</h1>
-              <p className="text-sm text-muted mt-1">Track physical inventory counts and discrepancies.</p>
+              <p className="text-sm text-muted mt-1">Track physical inventory counts.</p>
             </div>
           </div>
           <Button onClick={() => navigate("/inventory/counts/new")}>
@@ -121,7 +109,7 @@ export default function StockCounts() {
         <DataTable
           columns={columns}
           data={data?.items ?? []}
-          keyExtractor={(c) => c.id}
+          keyExtractor={(c) => c.name}
           searchable
           searchPlaceholder="Search stock counts..."
           searchQuery={search}
@@ -131,11 +119,9 @@ export default function StockCounts() {
           total={data?.total}
           pageSize={10}
           onPageChange={setPage}
-          onRowClick={(c) => navigate(`/inventory/counts/${c.id}`)}
+          onRowClick={(c) => navigate(`/inventory/counts/${encodeURIComponent(c.name)}`)}
         />
       </motion.div>
     </>
   )
 }
-
-

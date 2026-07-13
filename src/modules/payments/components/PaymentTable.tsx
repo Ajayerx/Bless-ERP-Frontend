@@ -3,24 +3,14 @@
 import { CheckCircle2, Clock, FileText, DollarSign } from "lucide-react"
 import DataTable, { type Column } from "@/components/ui/DataTable"
 import { Card, CardContent } from "@/components/ui"
-import { type Payment, type PaymentListResponse } from "@/services"
+import { type PaymentEntry, type PaymentEntryListResponse } from "@/services"
 import { formatCurrency, formatDate, cn } from "@/lib/utils"
-import { methodConfig } from "./PaymentMethodSelect"
 
 function SummaryCard({
-  label,
-  value,
-  sub,
-  icon: Icon,
-  iconClass,
-  iconBg,
+  label, value, sub, icon: Icon, iconClass, iconBg,
 }: {
-  label: string
-  value: string | number
-  sub: string
-  icon: React.ElementType
-  iconClass: string
-  iconBg: string
+  label: string; value: string | number; sub: string
+  icon: React.ElementType; iconClass: string; iconBg: string
 }) {
   return (
     <div className="bg-surface rounded-[16px] border border-border shadow-card p-5 flex items-start gap-4">
@@ -36,9 +26,9 @@ function SummaryCard({
   )
 }
 
-const paymentColumns: Column<Payment>[] = [
+const paymentColumns: Column<PaymentEntry>[] = [
   {
-    key: "customerName",
+    key: "party_name",
     header: "Customer",
     render: (p) => (
       <div className="flex items-center gap-3">
@@ -46,65 +36,59 @@ const paymentColumns: Column<Payment>[] = [
           <CheckCircle2 size={15} />
         </div>
         <div>
-          <p className="font-semibold text-heading">{p.customerName}</p>
-          <p className="text-xs text-muted">{p.invoiceNumber}</p>
+          <p className="font-semibold text-heading">{p.party_name || p.party}</p>
+          <p className="text-xs text-muted">{p.name}</p>
         </div>
       </div>
     ),
   },
   {
-    key: "amount",
+    key: "paid_amount",
     header: "Amount",
-    className: "text-right",
+    align: "right",
     render: (p) => (
       <span className="font-semibold tabular-nums text-success-600">
-        {formatCurrency(p.amount)}
+        {formatCurrency(p.paid_amount)}
       </span>
     ),
   },
   {
-    key: "paymentMethod",
+    key: "mode_of_payment",
     header: "Method",
     hideOnMobile: true,
-    render: (p) => {
-      const cfg = methodConfig[p.paymentMethod]
-      return (
-        <span className="inline-flex items-center gap-1.5 text-sm text-muted">
-          {cfg?.icon}
-          {cfg?.label ?? p.paymentMethod}
-        </span>
-      )
-    },
+    render: (p) => (
+      <span className="text-sm text-muted">{p.mode_of_payment ?? "—"}</span>
+    ),
   },
   {
-    key: "referenceNumber",
+    key: "reference_no",
     header: "Reference",
     hideOnMobile: true,
     render: (p) => (
       <span className="font-mono text-xs text-muted">
-        {p.referenceNumber ?? "—"}
+        {p.reference_no ?? "—"}
       </span>
     ),
   },
   {
-    key: "paymentDate",
+    key: "posting_date",
     header: "Date",
     render: (p) => (
-      <span className="text-sm text-muted">{formatDate(p.paymentDate)}</span>
+      <span className="text-sm text-muted">{formatDate(p.posting_date)}</span>
     ),
   },
 ]
 
 interface PaymentTableProps {
-  paymentsData: PaymentListResponse | null
+  paymentsData: PaymentEntryListResponse | null
   loading: boolean
   page: number
   onPageChange: (page: number) => void
-  onRowClick?: (payment: Payment) => void
+  onRowClick?: (payment: PaymentEntry) => void
 }
 
 export default function PaymentTable({ paymentsData, loading, page, onPageChange, onRowClick }: PaymentTableProps) {
-  const totalCollected = paymentsData?.items?.reduce((s, p) => s + p.amount, 0) ?? 0
+  const totalCollected = paymentsData?.items?.reduce((s, p) => s + p.paid_amount, 0) ?? 0
 
   return (
     <div className="space-y-6">
@@ -140,7 +124,7 @@ export default function PaymentTable({ paymentsData, loading, page, onPageChange
         <DataTable
           columns={paymentColumns}
           data={paymentsData?.items ?? []}
-          keyExtractor={(p) => p.id}
+          keyExtractor={(p) => p.name}
           loading={loading}
           page={page}
           total={paymentsData?.total}
@@ -151,9 +135,7 @@ export default function PaymentTable({ paymentsData, loading, page, onPageChange
             <div className="flex flex-col items-center gap-2 py-4">
               <DollarSign size={32} className="text-muted opacity-40" />
               <p className="font-semibold text-body">No payments recorded yet</p>
-              <p className="text-xs text-muted">
-                Record a payment against an unpaid invoice above.
-              </p>
+              <p className="text-xs text-muted">Record a payment against an unpaid invoice above.</p>
             </div>
           }
         />

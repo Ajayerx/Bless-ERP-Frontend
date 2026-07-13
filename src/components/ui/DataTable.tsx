@@ -10,6 +10,8 @@ export interface Column<T> {
   sortable?: boolean
   className?: string
   hideOnMobile?: boolean
+  align?: 'left' | 'right' | 'center'
+  width?: string
 }
 
 interface DataTableProps<T> {
@@ -109,12 +111,14 @@ export default function DataTable<T>({
                 <th
                   key={col.key}
                   className={cn(
-                    "px-6 py-3.5 text-left text-xs font-semibold text-muted uppercase tracking-wider",
+                    "px-6 py-3.5 text-xs font-semibold text-muted uppercase tracking-wider",
+                    col.align === "right" ? "text-right" : col.align === "center" ? "text-center" : "text-left",
                     col.hideOnMobile && "hidden lg:table-cell",
+                    col.width,
                     col.className
                   )}
                 >
-                  <div className="flex items-center gap-1.5">
+                    <div className="inline-flex items-center gap-1.5">
                     {col.header}
                     {col.sortable && <ChevronDown size={12} className="text-muted/50" />}
                   </div>
@@ -165,7 +169,9 @@ export default function DataTable<T>({
                       key={col.key}
                       className={cn(
                         "px-6 py-4 text-sm text-body whitespace-nowrap",
+                        col.align === "right" ? "text-right" : col.align === "center" ? "text-center" : "text-left",
                         col.hideOnMobile && "hidden lg:table-cell",
+                        col.width,
                         col.className
                       )}
                     >

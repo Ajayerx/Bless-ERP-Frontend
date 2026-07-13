@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react"
 import { useParams, useNavigate } from "react-router-dom"
 import { motion } from "framer-motion"
-import { ArrowLeft, ClipboardCheck, Warehouse as WarehouseIcon, AlertTriangle, CheckCircle2 } from "lucide-react"
+import { ArrowLeft, ClipboardCheck, Warehouse as WarehouseIcon, DollarSign, AlertTriangle, CheckCircle2, XCircle } from "lucide-react"
 import Topbar from "@/components/layout/Topbar"
 import { Card, CardContent, CardHeader, CardTitle, Button, Badge } from "@/components/ui"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -11,11 +11,10 @@ import { inventoryService } from "@/modules/inventory/services"
 import type { StockCount } from "@/modules/inventory/types"
 import { formatDate, cn } from "@/lib/utils"
 
-const statusConfig: Record<string, { label: string; variant: "success" | "warning" | "default" | "danger" | "info" }> = {
-  draft: { label: "Draft", variant: "default" },
-  in_progress: { label: "In Progress", variant: "warning" },
-  completed: { label: "Completed", variant: "success" },
-  cancelled: { label: "Cancelled", variant: "danger" },
+const statusConfig: Record<number, { label: string; variant: "success" | "warning" | "default" | "danger" | "info" }> = {
+  0: { label: "Draft", variant: "default" },
+  1: { label: "Completed", variant: "success" },
+  2: { label: "Cancelled", variant: "danger" },
 }
 
 export default function StockCountDetail() {
@@ -23,18 +22,38 @@ export default function StockCountDetail() {
   const navigate = useNavigate()
   const [count, setCount] = useState<StockCount | null>(null)
   const [loading, setLoading] = useState(true)
+  const [actionLoading, setActionLoading] = useState(false)
 
   useEffect(() => {
     if (!id) return
-    inventoryService.getCount(id)
+    const name = decodeURIComponent(id)
+    inventoryService.getCount(name)
       .then(setCount)
       .finally(() => setLoading(false))
   }, [id])
 
-  const handleUpdateStatus = async (status: StockCount["status"]) => {
-    if (!id) return
-    const updated = await inventoryService.updateCountStatus(id, status)
-    setCount(updated)
+  const handleSubmit = async () => {
+    if (!count) return
+    setActionLoading(true)
+    try {
+      await inventoryService.submitCount(count.name)
+      const updated = await inventoryService.getCount(count.name)
+      setCount(updated)
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
+  const handleCancel = async () => {
+    if (!count) return
+    setActionLoading(true)
+    try {
+      await inventoryService.cancelCount(count.name)
+      const updated = await inventoryService.getCount(count.name)
+      setCount(updated)
+    } finally {
+      setActionLoading(false)
+    }
   }
 
   if (loading) {
@@ -62,9 +81,9 @@ export default function StockCountDetail() {
     )
   }
 
-  const discrepancies = count.items.filter((i) => i.difference !== 0)
-  const totalExpected = count.items.reduce((s, i) => s + i.expectedQuantity, 0)
-  const totalActual = count.items.reduce((s, i) => s + i.actualQuantity, 0)
+  const totalExpected = count.items.reduce((s, i) => s + (i.current_qty ?? 0), 0)
+  const totalActual = count.items.reduce((s, i) => s + i.qty, 0)
+  const discrepancies = count.items.filter((i) => (i.quantity_difference ?? 0) !== 0)
 
   return (
     <>
@@ -83,23 +102,28 @@ export default function StockCountDetail() {
             </button>
             <div>
               <div className="flex items-center gap-3">
-                <h1 className="text-2xl font-bold text-heading">{count.reference}</h1>
-                <Badge variant={statusConfig[count.status]?.variant ?? "default"}>
-                  {statusConfig[count.status]?.label ?? count.status}
+                <h1 className="text-2xl font-bold text-heading">{count.name}</h1>
+                <Badge variant={statusConfig[count.docstatus]?.variant ?? "default"}>
+                  {statusConfig[count.docstatus]?.label ?? `Unknown (${count.docstatus})`}
                 </Badge>
               </div>
-              <p className="text-sm text-muted mt-0.5">{count.warehouse} &middot; Created {formatDate(count.createdAt)}</p>
+              <p className="text-sm text-muted mt-0.5">
+                {count.set_warehouse ?? "All"} · {count.purpose} · Created {formatDate(count.creation)}
+              </p>
             </div>
           </div>
           <div className="flex items-center gap-2">
-            {count.status === "draft" && (
-              <>
-                <Button variant="secondary" onClick={() => handleUpdateStatus("cancelled")}>Cancel</Button>
-                <Button onClick={() => handleUpdateStatus("in_progress")}>Start Count</Button>
-              </>
+            {count.docstatus === 0 && (
+              <Button onClick={handleSubmit} disabled={actionLoading}>
+                <CheckCircle2 size={16} />
+                {actionLoading ? "Submitting..." : "Complete Count"}
+              </Button>
             )}
-            {count.status === "in_progress" && (
-              <Button onClick={() => handleUpdateStatus("completed")}>Complete Count</Button>
+            {count.docstatus === 1 && (
+              <Button variant="secondary" onClick={handleCancel} disabled={actionLoading}>
+                <XCircle size={16} />
+                {actionLoading ? "Cancelling..." : "Cancel"}
+              </Button>
             )}
           </div>
         </div>
@@ -130,7 +154,7 @@ export default function StockCountDetail() {
           <Card>
             <CardContent className="flex items-start gap-4 pt-6">
               <div className="p-3 rounded-[10px] text-success-600 bg-success-50">
-                <CheckCircle2 size={20} />
+                <DollarSign size={20} />
               </div>
               <div>
                 <p className="text-sm text-muted">Actual Total</p>
@@ -154,13 +178,16 @@ export default function StockCountDetail() {
           </Card>
         </div>
 
-        {count.notes && (
+        {count.difference_amount !== undefined && count.difference_amount !== 0 && (
           <Card>
             <CardHeader>
-              <CardTitle>Notes</CardTitle>
+              <CardTitle>Value Impact</CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-sm text-body">{count.notes}</p>
+              <p className={cn("text-lg font-bold", count.difference_amount > 0 ? "text-success-600" : "text-danger-600")}>
+                {formatCurrency(count.difference_amount)}
+              </p>
+              <p className="text-sm text-muted mt-0.5">Stock value difference</p>
             </CardContent>
           </Card>
         )}
@@ -173,8 +200,8 @@ export default function StockCountDetail() {
             <table className="min-w-full">
               <thead>
                 <tr className="bg-gray-50/80">
-                  <th className="px-5 py-3 text-left text-xs font-medium text-muted/80">Product</th>
-                  <th className="px-5 py-3 text-left text-xs font-medium text-muted/80">SKU</th>
+                  <th className="px-5 py-3 text-left text-xs font-medium text-muted/80">Item</th>
+                  <th className="px-5 py-3 text-left text-xs font-medium text-muted/80">Warehouse</th>
                   <th className="px-5 py-3 text-right text-xs font-medium text-muted/80">Expected</th>
                   <th className="px-5 py-3 text-right text-xs font-medium text-muted/80">Actual</th>
                   <th className="px-5 py-3 text-right text-xs font-medium text-muted/80">Diff</th>
@@ -183,16 +210,16 @@ export default function StockCountDetail() {
               <tbody className="divide-y divide-border/40">
                 {count.items.map((item, idx) => (
                   <tr key={idx} className="hover:bg-gray-50/60 transition-colors">
-                    <td className="px-5 py-3 text-sm font-medium text-heading">{item.productName}</td>
-                    <td className="px-5 py-3 text-sm text-muted">{item.sku}</td>
-                    <td className="px-5 py-3 text-sm font-semibold tabular-nums text-right">{item.expectedQuantity}</td>
-                    <td className="px-5 py-3 text-sm font-semibold tabular-nums text-right">{item.actualQuantity}</td>
+                    <td className="px-5 py-3 text-sm font-medium text-heading">{item.item_code}</td>
+                    <td className="px-5 py-3 text-sm text-muted">{item.warehouse}</td>
+                    <td className="px-5 py-3 text-sm font-semibold tabular-nums text-right">{item.current_qty ?? "—"}</td>
+                    <td className="px-5 py-3 text-sm font-semibold tabular-nums text-right">{item.qty}</td>
                     <td className="px-5 py-3 text-right">
                       <span className={cn(
                         "text-sm font-semibold tabular-nums",
-                        item.difference === 0 ? "text-success-600" : "text-danger-600"
+                        (item.quantity_difference ?? 0) === 0 ? "text-success-600" : "text-danger-600"
                       )}>
-                        {item.difference > 0 ? "+" : ""}{item.difference}
+                        {(item.quantity_difference ?? 0) > 0 ? "+" : ""}{item.quantity_difference ?? "0"}
                       </span>
                     </td>
                   </tr>
@@ -204,4 +231,8 @@ export default function StockCountDetail() {
       </motion.div>
     </>
   )
+}
+
+function formatCurrency(amount: number): string {
+  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2 }).format(amount)
 }

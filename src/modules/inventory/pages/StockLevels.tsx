@@ -29,7 +29,7 @@ export default function StockLevels() {
 
   useEffect(() => { fetchData() }, [fetchData])
 
-  const inventoryValue = data?.items.reduce((sum, p) => sum + p.price * p.stock, 0)
+  const inventoryValue = data?.items.reduce((sum, p) => sum + p.standard_rate * p.stock, 0) ?? 0
 
   return (
     <>
@@ -50,7 +50,7 @@ export default function StockLevels() {
           onPageChange={setPage}
           activeFilter={activeFilter}
           onFilterChange={(f) => { setActiveFilter(f); setPage(1) }}
-          onRowClick={(p) => navigate(`/products/${p.id}`)}
+          onRowClick={(p) => navigate(`/products/${encodeURIComponent(p.name)}`)}
           inventoryValue={inventoryValue}
         />
       </motion.div>

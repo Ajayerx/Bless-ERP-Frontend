@@ -35,7 +35,10 @@ export default function NewStockTransfer() {
           <Button variant="secondary" onClick={() => navigate("/inventory/transfers")}>Cancel</Button>
         </div>
 
-        <StockTransferForm onSaved={() => navigate("/inventory/transfers")} onCancel={() => navigate("/inventory/transfers")} />
+        <StockTransferForm
+          onSaved={(name) => navigate(`/inventory/transfers/${encodeURIComponent(name)}`)}
+          onCancel={() => navigate("/inventory/transfers")}
+        />
       </motion.div>
     </>
   )

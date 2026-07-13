@@ -19,6 +19,7 @@ import ChildTableGrid, {
 
 interface CustomerFormProps {
   customer?: CustomerDetail | null;
+  initialValues?: Partial<CustomerFormData>;
   onSaved: () => void;
   onCancel: () => void;
 }
@@ -31,6 +32,7 @@ const TABS = [
   "Sales Team",
   "Settings",
   "Portal Users",
+  "More Info",
 ] as const;
 type TabName = (typeof TABS)[number];
 
@@ -50,7 +52,9 @@ const emptyForm: CustomerFormData = {
   customer_group: "",
   territory: "",
   gender: "",
+  lead_name: "",
   account_manager: "",
+  image: "",
   default_currency: "",
   default_bank_account: "",
   default_price_list: "",
@@ -58,6 +62,7 @@ const emptyForm: CustomerFormData = {
   represents_company: "",
   market_segment: "",
   industry: "",
+  customer_pos_id: "",
   website: "",
   language: "",
   customer_details: "",
@@ -92,6 +97,7 @@ function isBlankAddress(addr?: AddressInput): boolean {
 
 export default function CustomerForm({
   customer,
+  initialValues,
   onSaved,
   onCancel,
 }: CustomerFormProps) {
@@ -207,7 +213,7 @@ export default function CustomerForm({
 
   useEffect(() => {
     if (!customer) {
-      setForm(emptyForm);
+      setForm(initialValues ? { ...emptyForm, ...initialValues } : emptyForm);
       return;
     }
     const billing = customer.addresses.find(
@@ -224,7 +230,9 @@ export default function CustomerForm({
       customer_group: customer.customer_group,
       territory: customer.territory,
       gender: customer.gender ?? "",
+      lead_name: customer.lead_name ?? "",
       account_manager: customer.account_manager ?? "",
+      image: customer.image ?? "",
       default_currency: customer.default_currency ?? "",
       default_bank_account: customer.default_bank_account ?? "",
       default_price_list: customer.default_price_list ?? "",
@@ -232,6 +240,7 @@ export default function CustomerForm({
       represents_company: customer.represents_company ?? "",
       market_segment: customer.market_segment ?? "",
       industry: customer.industry ?? "",
+      customer_pos_id: customer.customer_pos_id ?? "",
       website: customer.website ?? "",
       language: customer.language ?? "",
       customer_details: customer.customer_details ?? "",
@@ -277,7 +286,7 @@ export default function CustomerForm({
       sales_team: customer.sales_team ?? [],
       portal_users: customer.portal_users ?? [],
     });
-  }, [customer]);
+  }, [customer, initialValues]);
 
   const handleChange = (
     e: React.ChangeEvent<
@@ -317,19 +326,10 @@ export default function CustomerForm({
       setActiveTab("Basic Info");
       return;
     }
-    if (!form.customer_group) {
-      setError("Customer group is required.");
-      setActiveTab("Basic Info");
-      return;
-    }
-    if (!form.territory) {
-      setError("Territory is required.");
-      setActiveTab("Basic Info");
-      return;
-    }
 
     const payload: CustomerFormData = {
       ...form,
+      customer_name: form.customer_name.trim(),
       billingAddress: isBlankAddress(form.billingAddress)
         ? undefined
         : form.billingAddress,
@@ -434,16 +434,8 @@ export default function CustomerForm({
             />
           </div>
           <div>
-            <label className={labelClass}>Salutation</label>
-            <LinkSelect
-              name="salutation"
-              value={form.salutation}
-              options={salutations}
-            />
-          </div>
-          <div>
             <label htmlFor="customer_type" className={labelClass}>
-              Customer Type
+              Customer Type *
             </label>
             <select
               id="customer_type"
@@ -458,7 +450,7 @@ export default function CustomerForm({
             </select>
           </div>
           <div>
-            <label className={labelClass}>Customer Group *</label>
+            <label className={labelClass}>Customer Group</label>
             <LinkSelect
               name="customer_group"
               value={form.customer_group}
@@ -467,7 +459,7 @@ export default function CustomerForm({
             />
           </div>
           <div>
-            <label className={labelClass}>Territory *</label>
+            <label className={labelClass}>Territory</label>
             <LinkSelect
               name="territory"
               value={form.territory}
@@ -476,8 +468,25 @@ export default function CustomerForm({
             />
           </div>
           <div>
+            <label className={labelClass}>Salutation</label>
+            <LinkSelect
+              name="salutation"
+              value={form.salutation}
+              options={salutations}
+            />
+          </div>
+          <div>
             <label className={labelClass}>Gender</label>
             <LinkSelect name="gender" value={form.gender} options={genders} />
+          </div>
+          <div>
+            <label className={labelClass}>Lead</label>
+            <LinkSelect
+              name="lead_name"
+              value={form.lead_name}
+              options={[]}
+              placeholder="No leads available"
+            />
           </div>
           <div>
             <label className={labelClass}>Account Manager</label>
@@ -487,137 +496,15 @@ export default function CustomerForm({
               options={users}
             />
           </div>
-
-          <div className="col-span-2 pt-3 mt-1 border-t border-border">
-            <p className="text-sm font-semibold text-heading mb-3">Defaults</p>
-          </div>
-          <div>
-            <label className={labelClass}>Billing Currency</label>
-            <LinkSelect
-              name="default_currency"
-              value={form.default_currency}
-              options={currencies}
-            />
-          </div>
-          <div>
-            <label className={labelClass}>Default Bank Account</label>
-            <LinkSelect
-              name="default_bank_account"
-              value={form.default_bank_account}
-              options={bankAccounts}
-            />
-          </div>
-          <div>
-            <label className={labelClass}>Default Price List</label>
-            <LinkSelect
-              name="default_price_list"
-              value={form.default_price_list}
-              options={priceLists}
-            />
-          </div>
-
-          <div className="col-span-2 pt-3 mt-1 border-t border-border">
-            <p className="text-sm font-semibold text-heading mb-3">
-              Internal Customer
-            </p>
-          </div>
-          <div className="col-span-2 flex items-center gap-2">
-            <input
-              id="is_internal_customer"
-              name="is_internal_customer"
-              type="checkbox"
-              checked={!!form.is_internal_customer}
-              onChange={handleChange}
-              className="h-4 w-4 rounded border-border"
-            />
-            <label htmlFor="is_internal_customer" className="text-sm text-body">
-              Is Internal Customer
-            </label>
-          </div>
-          {form.is_internal_customer && (
-            <>
-              <div>
-                <label className={labelClass}>Represents Company</label>
-                <LinkSelect
-                  name="represents_company"
-                  value={form.represents_company}
-                  options={companiesOptions}
-                />
-              </div>
-              <ChildTableGrid<AllowedCompanyRow>
-                title="Allowed To Transact With"
-                rows={form.companies ?? []}
-                onChange={(rows) =>
-                  setForm((prev) => ({ ...prev, companies: rows }))
-                }
-                emptyRow={{ company: "" }}
-                columns={
-                  [
-                    {
-                      key: "company",
-                      label: "Company",
-                      type: "link",
-                      options: companiesOptions,
-                    },
-                  ] as GridColumn<AllowedCompanyRow>[]
-                }
-              />
-            </>
-          )}
-
-          <div className="col-span-2 pt-3 mt-1 border-t border-border">
-            <p className="text-sm font-semibold text-heading mb-3">
-              More Information
-            </p>
-          </div>
-          <div>
-            <label className={labelClass}>Market Segment</label>
-            <LinkSelect
-              name="market_segment"
-              value={form.market_segment}
-              options={marketSegments}
-            />
-          </div>
-          <div>
-            <label className={labelClass}>Industry</label>
-            <LinkSelect
-              name="industry"
-              value={form.industry}
-              options={industries}
-            />
-          </div>
-          <div>
-            <label htmlFor="website" className={labelClass}>
-              Website
-            </label>
-            <input
-              id="website"
-              name="website"
-              value={form.website}
-              onChange={handleChange}
-              className={inputClass}
-              placeholder="https://acmecorp.com"
-            />
-          </div>
-          <div>
-            <label className={labelClass}>Print Language</label>
-            <LinkSelect
-              name="language"
-              value={form.language}
-              options={languages}
-            />
-          </div>
           <div className="col-span-2">
-            <label htmlFor="customer_details" className={labelClass}>
-              Customer Details
-            </label>
-            <textarea
-              id="customer_details"
-              name="customer_details"
-              value={form.customer_details}
+            <label htmlFor="image" className={labelClass}>Image URL</label>
+            <input
+              id="image"
+              name="image"
+              value={form.image}
               onChange={handleChange}
-              rows={2}
               className={inputClass}
+              placeholder="https://example.com/photo.jpg"
             />
           </div>
         </div>
@@ -652,6 +539,8 @@ export default function CustomerForm({
                 <input
                   id="contactPhone"
                   name="contactPhone"
+                  type="tel"
+                  maxLength={15}
                   value={form.contactPhone}
                   onChange={handleChange}
                   className={inputClass}
@@ -781,14 +670,76 @@ export default function CustomerForm({
       {/* ---------------- Accounting ---------------- */}
       {activeTab === "Accounting" && (
         <div className="space-y-6 pt-2">
-          <div>
-            <label className={labelClass}>Default Payment Terms Template</label>
-            <LinkSelect
-              name="payment_terms"
-              value={form.payment_terms}
-              options={paymentTermsTemplates}
-            />
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className={labelClass}>Default Currency</label>
+              <LinkSelect
+                name="default_currency"
+                value={form.default_currency}
+                options={currencies}
+              />
+            </div>
+            <div>
+              <label className={labelClass}>Default Price List</label>
+              <LinkSelect
+                name="default_price_list"
+                value={form.default_price_list}
+                options={priceLists}
+              />
+            </div>
+            <div>
+              <label className={labelClass}>Default Payment Terms Template</label>
+              <LinkSelect
+                name="payment_terms"
+                value={form.payment_terms}
+                options={paymentTermsTemplates}
+              />
+            </div>
+            <div>
+              <label className={labelClass}>Default Sales Partner</label>
+              <LinkSelect
+                name="default_sales_partner"
+                value={form.default_sales_partner}
+                options={salesPartners}
+              />
+            </div>
+            <div>
+              <label htmlFor="default_commission_rate" className={labelClass}>
+                Default Commission Rate (%)
+              </label>
+              <input
+                id="default_commission_rate"
+                name="default_commission_rate"
+                type="number"
+                value={form.default_commission_rate ?? 0}
+                onChange={handleChange}
+                className={inputClass}
+              />
+            </div>
           </div>
+
+          <div className="flex flex-wrap gap-4 pt-2 border-t border-border">
+            {[
+              { name: "so_required", label: "Sales Order Required" },
+              { name: "dn_required", label: "Delivery Note Required" },
+              { name: "is_frozen", label: "Is Frozen" },
+            ].map((f) => (
+              <div key={f.name} className="flex items-center gap-2">
+                <input
+                  id={f.name}
+                  name={f.name}
+                  type="checkbox"
+                  checked={!!form[f.name as keyof CustomerFormData]}
+                  onChange={handleChange}
+                  className="h-4 w-4 rounded border-border"
+                />
+                <label htmlFor={f.name} className="text-sm text-body whitespace-nowrap">
+                  {f.label}
+                </label>
+              </div>
+            ))}
+          </div>
+
           <ChildTableGrid<CreditLimitRow>
             title="Credit Limits"
             rows={form.credit_limits ?? []}
@@ -868,29 +819,6 @@ export default function CustomerForm({
       {/* ---------------- Sales Team ---------------- */}
       {activeTab === "Sales Team" && (
         <div className="space-y-6 pt-2">
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className={labelClass}>Sales Partner</label>
-              <LinkSelect
-                name="default_sales_partner"
-                value={form.default_sales_partner}
-                options={salesPartners}
-              />
-            </div>
-            <div>
-              <label htmlFor="default_commission_rate" className={labelClass}>
-                Commission Rate
-              </label>
-              <input
-                id="default_commission_rate"
-                name="default_commission_rate"
-                type="number"
-                value={form.default_commission_rate ?? 0}
-                onChange={handleChange}
-                className={inputClass}
-              />
-            </div>
-          </div>
           <ChildTableGrid<SalesTeamRow>
             title="Sales Team"
             rows={form.sales_team ?? []}
@@ -936,33 +864,149 @@ export default function CustomerForm({
 
       {/* ---------------- Settings ---------------- */}
       {activeTab === "Settings" && (
-        <div className="space-y-3 pt-2">
-          {[
-            {
-              name: "so_required",
-              label: "Allow Sales Invoice Creation Without Sales Order",
-            },
-            {
-              name: "dn_required",
-              label: "Allow Sales Invoice Creation Without Delivery Note",
-            },
-            { name: "is_frozen", label: "Is Frozen" },
-            { name: "disabled", label: "Disabled (customer is inactive)" },
-          ].map((f) => (
-            <div key={f.name} className="flex items-center gap-2">
-              <input
-                id={f.name}
-                name={f.name}
-                type="checkbox"
-                checked={!!form[f.name as keyof CustomerFormData]}
-                onChange={handleChange}
-                className="h-4 w-4 rounded border-border"
-              />
-              <label htmlFor={f.name} className="text-sm text-body">
-                {f.label}
-              </label>
+        <div className="space-y-6 pt-2">
+          <div className="flex items-center gap-2">
+            <input
+              id="is_internal_customer"
+              name="is_internal_customer"
+              type="checkbox"
+              checked={!!form.is_internal_customer}
+              onChange={handleChange}
+              className="h-4 w-4 rounded border-border"
+            />
+            <label htmlFor="is_internal_customer" className="text-sm text-body">
+              Is Internal Customer
+            </label>
+          </div>
+          {form.is_internal_customer && (
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className={labelClass}>Represents Company</label>
+                <LinkSelect
+                  name="represents_company"
+                  value={form.represents_company}
+                  options={companiesOptions}
+                />
+              </div>
+              <div className="col-span-2">
+                <ChildTableGrid<AllowedCompanyRow>
+                  title="Allowed To Transact With"
+                  rows={form.companies ?? []}
+                  onChange={(rows) =>
+                    setForm((prev) => ({ ...prev, companies: rows }))
+                  }
+                  emptyRow={{ company: "" }}
+                  columns={
+                    [
+                      {
+                        key: "company",
+                        label: "Company",
+                        type: "link",
+                        options: companiesOptions,
+                      },
+                    ] as GridColumn<AllowedCompanyRow>[]
+                  }
+                />
+              </div>
             </div>
-          ))}
+          )}
+
+          <div className="grid grid-cols-2 gap-4 pt-4 border-t border-border">
+            <div>
+              <label className={labelClass}>Market Segment</label>
+              <LinkSelect
+                name="market_segment"
+                value={form.market_segment}
+                options={marketSegments}
+              />
+            </div>
+            <div>
+              <label className={labelClass}>Industry</label>
+              <LinkSelect
+                name="industry"
+                value={form.industry}
+                options={industries}
+              />
+            </div>
+            <div>
+              <label htmlFor="website" className={labelClass}>Website</label>
+              <input
+                id="website"
+                name="website"
+                value={form.website}
+                onChange={handleChange}
+                className={inputClass}
+                placeholder="https://acmecorp.com"
+              />
+            </div>
+            <div>
+              <label className={labelClass}>Print Language</label>
+              <LinkSelect
+                name="language"
+                value={form.language}
+                options={languages}
+              />
+            </div>
+            <div>
+              <label htmlFor="customer_pos_id" className={labelClass}>Customer POS ID</label>
+              <input
+                id="customer_pos_id"
+                name="customer_pos_id"
+                value={form.customer_pos_id}
+                onChange={handleChange}
+                className={inputClass}
+                placeholder="POS-001"
+              />
+            </div>
+            <div>
+              <label className={labelClass}>Default Bank Account</label>
+              <LinkSelect
+                name="default_bank_account"
+                value={form.default_bank_account}
+                options={bankAccounts}
+              />
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 pt-4 border-t border-border">
+            <input
+              id="disabled"
+              name="disabled"
+              type="checkbox"
+              checked={!!form.disabled}
+              onChange={handleChange}
+              className="h-4 w-4 rounded border-border"
+            />
+            <label htmlFor="disabled" className="text-sm text-body">
+              Disabled (customer is inactive)
+            </label>
+          </div>
+        </div>
+      )}
+
+      {/* ---------------- More Info ---------------- */}
+      {activeTab === "More Info" && (
+        <div className="space-y-6 pt-2">
+          <div>
+            <label htmlFor="customer_details" className={labelClass}>
+              Customer Details
+            </label>
+            <textarea
+              id="customer_details"
+              name="customer_details"
+              value={form.customer_details}
+              onChange={handleChange}
+              rows={4}
+              className={inputClass + " resize-y"}
+              placeholder="Internal notes about this customer..."
+            />
+          </div>
+          {customer?.loyalty_program_tier && (
+            <div>
+              <label className={labelClass}>Loyalty Program Tier</label>
+              <p className="text-sm font-semibold text-heading bg-gray-50 px-3 py-2.5 rounded-[12px]">{customer.loyalty_program_tier}</p>
+            </div>
+          )}
         </div>
       )}
 

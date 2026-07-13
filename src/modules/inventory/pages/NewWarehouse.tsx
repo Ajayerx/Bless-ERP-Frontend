@@ -35,7 +35,7 @@ export default function NewWarehouse() {
           <Button variant="secondary" onClick={() => navigate("/inventory/warehouses")}>Cancel</Button>
         </div>
 
-        <WarehouseForm onSaved={() => navigate("/inventory/warehouses")} onCancel={() => navigate("/inventory/warehouses")} />
+        <WarehouseForm onSaved={(name) => navigate(`/inventory/warehouses/${encodeURIComponent(name)}`)} onCancel={() => navigate("/inventory/warehouses")} />
       </motion.div>
     </>
   )

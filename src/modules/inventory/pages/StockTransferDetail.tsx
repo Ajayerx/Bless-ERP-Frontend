@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react"
 import { useParams, useNavigate } from "react-router-dom"
 import { motion } from "framer-motion"
-import { ArrowLeft, MapPin } from "lucide-react"
+import { ArrowLeft, MapPin, CheckCircle2, XCircle } from "lucide-react"
 import Topbar from "@/components/layout/Topbar"
 import { Card, CardContent, CardHeader, CardTitle, Button, Badge } from "@/components/ui"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -11,11 +11,10 @@ import { inventoryService } from "@/modules/inventory/services"
 import type { StockTransfer } from "@/modules/inventory/types"
 import { formatDate } from "@/lib/utils"
 
-const statusConfig: Record<string, { label: string; variant: "success" | "warning" | "default" | "danger" | "info" }> = {
-  draft: { label: "Draft", variant: "default" },
-  in_transit: { label: "In Transit", variant: "warning" },
-  completed: { label: "Completed", variant: "success" },
-  cancelled: { label: "Cancelled", variant: "danger" },
+const statusConfig: Record<number, { label: string; variant: "success" | "warning" | "default" | "danger" | "info" }> = {
+  0: { label: "Draft", variant: "default" },
+  1: { label: "Submitted", variant: "success" },
+  2: { label: "Cancelled", variant: "danger" },
 }
 
 export default function StockTransferDetail() {
@@ -23,18 +22,40 @@ export default function StockTransferDetail() {
   const navigate = useNavigate()
   const [transfer, setTransfer] = useState<StockTransfer | null>(null)
   const [loading, setLoading] = useState(true)
+  const [actionLoading, setActionLoading] = useState(false)
 
   useEffect(() => {
     if (!id) return
-    inventoryService.getTransfer(id)
+    const name = decodeURIComponent(id)
+    inventoryService.getTransfer(name)
       .then(setTransfer)
       .finally(() => setLoading(false))
   }, [id])
 
-  const handleUpdateStatus = async (status: StockTransfer["status"]) => {
-    if (!id) return
-    const updated = await inventoryService.updateTransferStatus(id, status)
-    setTransfer(updated)
+  const handleSubmit = async () => {
+    if (!transfer) return
+    setActionLoading(true)
+    try {
+      await inventoryService.submitTransfer(transfer.name)
+      const updated = await inventoryService.getTransfer(transfer.name)
+      setTransfer(updated)
+    } catch {
+      // error handled via toast in future
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
+  const handleCancel = async () => {
+    if (!transfer) return
+    setActionLoading(true)
+    try {
+      await inventoryService.cancelTransfer(transfer.name)
+      const updated = await inventoryService.getTransfer(transfer.name)
+      setTransfer(updated)
+    } finally {
+      setActionLoading(false)
+    }
   }
 
   if (loading) {
@@ -79,23 +100,26 @@ export default function StockTransferDetail() {
             </button>
             <div>
               <div className="flex items-center gap-3">
-                <h1 className="text-2xl font-bold text-heading">{transfer.reference}</h1>
-                <Badge variant={statusConfig[transfer.status]?.variant ?? "default"}>
-                  {statusConfig[transfer.status]?.label ?? transfer.status}
+                <h1 className="text-2xl font-bold text-heading">{transfer.name}</h1>
+                <Badge variant={statusConfig[transfer.docstatus]?.variant ?? "default"}>
+                  {statusConfig[transfer.docstatus]?.label ?? `Unknown (${transfer.docstatus})`}
                 </Badge>
               </div>
-              <p className="text-sm text-muted mt-0.5">Created {formatDate(transfer.createdAt)}</p>
+              <p className="text-sm text-muted mt-0.5">{transfer.company} · Created {formatDate(transfer.creation)}</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
-            {transfer.status === "draft" && (
-              <>
-                <Button variant="secondary" onClick={() => handleUpdateStatus("cancelled")}>Cancel</Button>
-                <Button onClick={() => handleUpdateStatus("in_transit")}>Submit Transfer</Button>
-              </>
+            {transfer.docstatus === 0 && (
+              <Button onClick={handleSubmit} disabled={actionLoading}>
+                <CheckCircle2 size={16} />
+                {actionLoading ? "Submitting..." : "Submit"}
+              </Button>
             )}
-            {transfer.status === "in_transit" && (
-              <Button onClick={() => handleUpdateStatus("completed")}>Mark Completed</Button>
+            {transfer.docstatus === 1 && (
+              <Button variant="secondary" onClick={handleCancel} disabled={actionLoading}>
+                <XCircle size={16} />
+                {actionLoading ? "Cancelling..." : "Cancel"}
+              </Button>
             )}
           </div>
         </div>
@@ -112,7 +136,7 @@ export default function StockTransferDetail() {
                 </div>
                 <div>
                   <p className="text-xs font-semibold text-muted uppercase tracking-wider">From</p>
-                  <p className="text-sm font-semibold text-heading mt-0.5">{transfer.fromWarehouse}</p>
+                  <p className="text-sm font-semibold text-heading mt-0.5">{transfer.from_warehouse ?? "—"}</p>
                 </div>
               </div>
               <div className="border-l-2 border-dashed border-border ml-5 h-6" />
@@ -122,7 +146,7 @@ export default function StockTransferDetail() {
                 </div>
                 <div>
                   <p className="text-xs font-semibold text-muted uppercase tracking-wider">To</p>
-                  <p className="text-sm font-semibold text-heading mt-0.5">{transfer.toWarehouse}</p>
+                  <p className="text-sm font-semibold text-heading mt-0.5">{transfer.to_warehouse ?? "—"}</p>
                 </div>
               </div>
             </CardContent>
@@ -133,12 +157,13 @@ export default function StockTransferDetail() {
               <CardTitle>Details</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              <Row label="Reference" value={transfer.reference} />
-              <Row label="Status" value={statusConfig[transfer.status]?.label ?? transfer.status} />
+              <Row label="Reference" value={transfer.name} />
+              <Row label="Status" value={statusConfig[transfer.docstatus]?.label ?? String(transfer.docstatus)} />
               <Row label="Items" value={String(transfer.items.length)} />
-              <Row label="Created" value={formatDate(transfer.createdAt)} />
-              {transfer.completedAt && <Row label="Completed" value={formatDate(transfer.completedAt)} />}
-              {transfer.notes && <Row label="Notes" value={transfer.notes} />}
+              <Row label="Company" value={transfer.company} />
+              <Row label="Posting Date" value={transfer.posting_date} />
+              <Row label="Created" value={formatDate(transfer.creation)} />
+              {transfer.remarks && <Row label="Remarks" value={transfer.remarks} />}
             </CardContent>
           </Card>
         </div>
@@ -151,19 +176,21 @@ export default function StockTransferDetail() {
             <table className="min-w-full">
               <thead>
                 <tr className="bg-gray-50/80">
-                  <th className="px-5 py-3 text-left text-xs font-medium text-muted/80">Product</th>
-                  <th className="px-5 py-3 text-left text-xs font-medium text-muted/80">SKU</th>
+                  <th className="px-5 py-3 text-left text-xs font-medium text-muted/80">Item Code</th>
                   <th className="px-5 py-3 text-right text-xs font-medium text-muted/80">Quantity</th>
-                  <th className="px-5 py-3 text-right text-xs font-medium text-muted/80">Unit</th>
+                  <th className="px-5 py-3 text-right text-xs font-medium text-muted/80">UOM</th>
+                  <th className="px-5 py-3 text-right text-xs font-medium text-muted/80">Source</th>
+                  <th className="px-5 py-3 text-right text-xs font-medium text-muted/80">Target</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border/40">
                 {transfer.items.map((item, idx) => (
                   <tr key={idx} className="hover:bg-gray-50/60 transition-colors">
-                    <td className="px-5 py-3 text-sm font-medium text-heading">{item.productName}</td>
-                    <td className="px-5 py-3 text-sm text-muted">{item.sku}</td>
-                    <td className="px-5 py-3 text-sm font-semibold tabular-nums text-right">{item.quantity}</td>
-                    <td className="px-5 py-3 text-sm text-muted text-right">{item.unit}</td>
+                    <td className="px-5 py-3 text-sm font-medium text-heading">{item.item_code}</td>
+                    <td className="px-5 py-3 text-sm font-semibold tabular-nums text-right">{item.qty}</td>
+                    <td className="px-5 py-3 text-sm text-muted text-right">{item.uom}</td>
+                    <td className="px-5 py-3 text-sm text-muted text-right">{item.s_warehouse ?? "—"}</td>
+                    <td className="px-5 py-3 text-sm text-muted text-right">{item.t_warehouse ?? "—"}</td>
                   </tr>
                 ))}
               </tbody>

@@ -3,11 +3,11 @@
 import { useEffect, useState } from "react"
 import { motion } from "framer-motion"
 import Topbar from "@/components/layout/Topbar"
-import { invoiceService, type InvoiceListResponse } from "@/services"
+import { invoiceService, type SalesInvoiceListResponse } from "@/services"
 import TaxSummary from "../components/TaxSummary"
 
 export default function Taxes() {
-  const [invoices, setInvoices] = useState<InvoiceListResponse | null>(null)
+  const [invoices, setInvoices] = useState<SalesInvoiceListResponse | null>(null)
 
   useEffect(() => {
     invoiceService.list({ pageSize: 100 }).then(setInvoices).catch(() => null)

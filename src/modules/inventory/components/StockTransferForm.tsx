@@ -2,39 +2,48 @@
 
 import { useState, useEffect } from "react"
 import { Save, Loader2, Plus, X } from "lucide-react"
-import { inventoryService } from "@/modules/inventory/services"
+import { inventoryService, inventoryLookups } from "@/modules/inventory/services"
 import type { StockTransfer, StockTransferItem } from "@/modules/inventory/types"
 
 interface StockTransferFormProps {
   transfer?: StockTransfer | null
-  onSaved: () => void
+  onSaved: (name: string) => void
   onCancel: () => void
 }
 
 export default function StockTransferForm({ transfer, onSaved, onCancel }: StockTransferFormProps) {
-  const [warehouses, setWarehouses] = useState<{ id: string; name: string }[]>([])
+  const [warehouses, setWarehouses] = useState<string[]>([])
+  const [companies, setCompanies] = useState<string[]>([])
   const [form, setForm] = useState({
-    fromWarehouseId: "",
-    toWarehouseId: "",
-    notes: "",
-    items: [] as Omit<StockTransferItem, "productId" | "sku">[],
+    company: "",
+    from_warehouse: "",
+    to_warehouse: "",
+    posting_date: new Date().toISOString().slice(0, 10),
+    remarks: "",
+    items: [] as StockTransferItem[],
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState("")
 
   useEffect(() => {
-    inventoryService.listWarehouses({ pageSize: 100 }).then((res) => {
-      setWarehouses(res.items.map((w) => ({ id: w.id, name: w.name })))
+    Promise.all([
+      inventoryLookups.companies(),
+      inventoryService.listWarehouses({ pageSize: 100 }).then((r) => r.items.map((w) => w.name)),
+    ]).then(([cos, whs]) => {
+      setCompanies(cos)
+      setWarehouses(whs)
     })
   }, [])
 
   useEffect(() => {
     if (transfer) {
       setForm({
-        fromWarehouseId: transfer.fromWarehouseId,
-        toWarehouseId: transfer.toWarehouseId,
-        notes: transfer.notes,
-        items: transfer.items.map((i) => ({ productName: i.productName, quantity: i.quantity, unit: i.unit })),
+        company: transfer.company,
+        from_warehouse: transfer.from_warehouse ?? "",
+        to_warehouse: transfer.to_warehouse ?? "",
+        posting_date: transfer.posting_date,
+        remarks: transfer.remarks ?? "",
+        items: transfer.items.map((i) => ({ ...i })),
       })
     }
   }, [transfer])
@@ -47,7 +56,7 @@ export default function StockTransferForm({ transfer, onSaved, onCancel }: Stock
   const addItem = () => {
     setForm((prev) => ({
       ...prev,
-      items: [...prev.items, { productName: "", quantity: 1, unit: "ea" }],
+      items: [...prev.items, { item_code: "", qty: 1, uom: "Nos" }],
     }))
   }
 
@@ -68,28 +77,32 @@ export default function StockTransferForm({ transfer, onSaved, onCancel }: Stock
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError("")
-    if (!form.fromWarehouseId || !form.toWarehouseId) {
-      setError("Please select both source and destination warehouses.")
-      return
-    }
-    if (form.fromWarehouseId === form.toWarehouseId) {
-      setError("Source and destination warehouses must be different.")
-      return
-    }
-    if (form.items.length === 0) {
-      setError("Add at least one item to transfer.")
-      return
+    if (!form.company) { setError("Company is required."); return }
+    if (!form.from_warehouse) { setError("Source warehouse is required."); return }
+    if (!form.to_warehouse) { setError("Destination warehouse is required."); return }
+    if (form.from_warehouse === form.to_warehouse) { setError("Source and destination must be different."); return }
+    if (form.items.length === 0) { setError("Add at least one item."); return }
+    for (const item of form.items) {
+      if (!item.item_code.trim()) { setError("All items need an item code."); return }
+      if (item.qty <= 0) { setError("Quantities must be greater than zero."); return }
     }
     setSaving(true)
     try {
       if (transfer) {
-        await inventoryService.updateWarehouse(transfer.id, form)
+        const updated = await inventoryService.createTransfer({
+          ...form,
+          items: form.items.map((i) => ({ ...i, s_warehouse: form.from_warehouse, t_warehouse: form.to_warehouse })),
+        })
+        onSaved(updated.name)
       } else {
-        await inventoryService.createTransfer(form)
+        const created = await inventoryService.createTransfer({
+          ...form,
+          items: form.items.map((i) => ({ ...i, s_warehouse: form.from_warehouse, t_warehouse: form.to_warehouse })),
+        })
+        onSaved(created.name)
       }
-      onSaved()
-    } catch {
-      setError("Failed to save stock transfer. Please try again.")
+    } catch (err: any) {
+      setError(err?.message ?? "Failed to save stock transfer.")
     } finally {
       setSaving(false)
     }
@@ -107,26 +120,37 @@ export default function StockTransferForm({ transfer, onSaved, onCancel }: Stock
 
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <label htmlFor="fromWarehouseId" className={labelClass}>From Warehouse *</label>
-          <select id="fromWarehouseId" name="fromWarehouseId" value={form.fromWarehouseId} onChange={handleChange} className={inputClass}>
+          <label htmlFor="company" className={labelClass}>Company *</label>
+          <select id="company" name="company" value={form.company} onChange={handleChange} className={inputClass} disabled={!!transfer}>
+            <option value="">Select company...</option>
+            {companies.map((c) => <option key={c} value={c}>{c}</option>)}
+          </select>
+        </div>
+        <div>
+          <label htmlFor="posting_date" className={labelClass}>Posting Date</label>
+          <input id="posting_date" name="posting_date" type="date" value={form.posting_date} onChange={handleChange} className={inputClass} />
+        </div>
+        <div>
+          <label htmlFor="from_warehouse" className={labelClass}>From Warehouse *</label>
+          <select id="from_warehouse" name="from_warehouse" value={form.from_warehouse} onChange={handleChange} className={inputClass}>
             <option value="">Select warehouse...</option>
             {warehouses.map((w) => (
-              <option key={w.id} value={w.id}>{w.name}</option>
+              <option key={w} value={w}>{w}</option>
             ))}
           </select>
         </div>
         <div>
-          <label htmlFor="toWarehouseId" className={labelClass}>To Warehouse *</label>
-          <select id="toWarehouseId" name="toWarehouseId" value={form.toWarehouseId} onChange={handleChange} className={inputClass}>
+          <label htmlFor="to_warehouse" className={labelClass}>To Warehouse *</label>
+          <select id="to_warehouse" name="to_warehouse" value={form.to_warehouse} onChange={handleChange} className={inputClass}>
             <option value="">Select warehouse...</option>
             {warehouses.map((w) => (
-              <option key={w.id} value={w.id}>{w.name}</option>
+              <option key={w} value={w}>{w}</option>
             ))}
           </select>
         </div>
         <div className="col-span-2">
-          <label htmlFor="notes" className={labelClass}>Notes</label>
-          <textarea id="notes" name="notes" value={form.notes} onChange={handleChange} rows={2} className={inputClass} placeholder="Optional notes about this transfer..." />
+          <label htmlFor="remarks" className={labelClass}>Remarks</label>
+          <textarea id="remarks" name="remarks" value={form.remarks} onChange={handleChange} rows={2} className={inputClass} placeholder="Optional notes..." />
         </div>
       </div>
 
@@ -141,30 +165,30 @@ export default function StockTransferForm({ transfer, onSaved, onCancel }: Stock
 
         {form.items.length === 0 ? (
           <p className="text-sm text-muted py-4 text-center border border-dashed border-border rounded-[12px]">
-            No items added yet. Click "Add Item" to add products to transfer.
+            No items added yet.
           </p>
         ) : (
           <div className="space-y-2">
             {form.items.map((item, idx) => (
               <div key={idx} className="flex items-center gap-3 p-3 bg-gray-50 rounded-[12px]">
                 <input
-                  placeholder="Product name"
-                  value={item.productName}
-                  onChange={(e) => updateItem(idx, "productName", e.target.value)}
-                  className="flex-1 px-3 py-2 bg-white border border-border rounded-[10px] text-sm text-body focus:outline-none focus:ring-2 focus:ring-primary-500/20"
+                  placeholder="Item Code"
+                  value={item.item_code}
+                  onChange={(e) => updateItem(idx, "item_code", e.target.value)}
+                  className="flex-[2] px-3 py-2 bg-white border border-border rounded-[10px] text-sm text-body focus:outline-none focus:ring-2 focus:ring-primary-500/20"
                 />
                 <input
                   type="number"
                   min={1}
                   placeholder="Qty"
-                  value={item.quantity}
-                  onChange={(e) => updateItem(idx, "quantity", parseInt(e.target.value) || 0)}
-                  className="w-20 px-3 py-2 bg-white border border-border rounded-[10px] text-sm text-body text-right focus:outline-none focus:ring-2 focus:ring-primary-500/20"
+                  value={item.qty}
+                  onChange={(e) => updateItem(idx, "qty", parseFloat(e.target.value) || 0)}
+                  className="w-24 px-3 py-2 bg-white border border-border rounded-[10px] text-sm text-body text-right focus:outline-none focus:ring-2 focus:ring-primary-500/20"
                 />
                 <input
-                  placeholder="Unit"
-                  value={item.unit}
-                  onChange={(e) => updateItem(idx, "unit", e.target.value)}
+                  placeholder="UOM"
+                  value={item.uom}
+                  onChange={(e) => updateItem(idx, "uom", e.target.value)}
                   className="w-20 px-3 py-2 bg-white border border-border rounded-[10px] text-sm text-body focus:outline-none focus:ring-2 focus:ring-primary-500/20"
                 />
                 <button type="button" onClick={() => removeItem(idx)}

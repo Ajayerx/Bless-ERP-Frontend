@@ -6,21 +6,23 @@ import { motion } from "framer-motion"
 import { Plus } from "lucide-react"
 import Topbar from "@/components/layout/Topbar"
 import { Button } from "@/components/ui"
-import { invoiceService, type Invoice, type InvoiceListResponse } from "@/services"
+import { invoiceService, type SalesInvoice, type SalesInvoiceListResponse } from "@/services"
 import InvoiceTable from "../components/InvoiceTable"
 
-type StatusFilter = "All" | "Paid" | "Sent" | "Overdue" | "Draft" | "Cancelled"
+type StatusFilter = "All" | "Paid" | "Unpaid" | "Overdue" | "Draft" | "Cancelled"
 
 export default function Invoices() {
   const navigate = useNavigate()
-  const [data, setData] = useState<InvoiceListResponse | null>(null)
+  const [data, setData] = useState<SalesInvoiceListResponse | null>(null)
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState("")
   const [search, setSearch] = useState("")
   const [page, setPage] = useState(1)
   const [activeFilter, setActiveFilter] = useState<StatusFilter>("All")
 
   const fetchData = useCallback(async () => {
     setLoading(true)
+    setError("")
     try {
       const result = await invoiceService.list({
         search,
@@ -29,6 +31,8 @@ export default function Invoices() {
         status: activeFilter === "All" ? undefined : activeFilter.toLowerCase(),
       })
       setData(result)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to load invoices")
     } finally {
       setLoading(false)
     }
@@ -38,8 +42,8 @@ export default function Invoices() {
     fetchData()
   }, [fetchData])
 
-  const handleRecordPayment = (inv: Invoice) => {
-    navigate(`/payments?invoice=${inv.id}`)
+  const handleRecordPayment = (inv: SalesInvoice) => {
+    navigate(`/payments?invoice=${inv.name}`)
   }
 
   return (
@@ -51,7 +55,6 @@ export default function Invoices() {
         animate={{ opacity: 1 }}
         transition={{ duration: 0.3 }}
       >
-        {/* Header */}
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold text-heading">Invoices</h1>
@@ -65,27 +68,25 @@ export default function Invoices() {
           </Button>
         </div>
 
+        {error && (
+          <div className="p-4 bg-red-50 border border-red-200 rounded-[14px] text-sm text-red-700">
+            {error}
+          </div>
+        )}
+
         <InvoiceTable
           data={data}
           loading={loading}
           search={search}
-          onSearch={(q) => {
-            setSearch(q)
-            setPage(1)
-          }}
+          onSearch={(q) => { setSearch(q); setPage(1) }}
           page={page}
           onPageChange={setPage}
           activeFilter={activeFilter}
-          onFilterChange={(f) => {
-            setActiveFilter(f)
-            setPage(1)
-          }}
-          onRowClick={(inv) => navigate(`/invoices/${inv.id}`)}
+          onFilterChange={(f) => { setActiveFilter(f); setPage(1) }}
+          onRowClick={(inv) => navigate(`/invoices/${inv.name}`)}
           onRecordPayment={handleRecordPayment}
           toolbarActions={
-            <Button variant="secondary" size="sm">
-              Export
-            </Button>
+            <Button variant="secondary" size="sm">Export</Button>
           }
         />
       </motion.div>

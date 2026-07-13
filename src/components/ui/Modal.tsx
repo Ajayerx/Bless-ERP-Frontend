@@ -113,7 +113,7 @@ export default function Modal({
             )}
 
             {/* Body */}
-            <div className="px-6 py-5">{children}</div>
+            <div className="px-6 py-5 max-h-[85vh] overflow-y-auto overscroll-contain">{children}</div>
           </motion.div>
         </div>
       )}

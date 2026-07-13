@@ -40,7 +40,7 @@ const columns: Column<Customer>[] = [
   {
     key: "outstanding",
     header: "Outstanding",
-    className: "text-right",
+    align: "right",
     render: (c) => (
       <span
         className={cn(

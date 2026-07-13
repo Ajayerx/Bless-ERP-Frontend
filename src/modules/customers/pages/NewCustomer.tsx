@@ -1,14 +1,25 @@
 "use client"
 
-import { useNavigate } from "react-router-dom"
+import { useNavigate, useLocation } from "react-router-dom"
 import { motion } from "framer-motion"
 import { ArrowLeft } from "lucide-react"
 import Topbar from "@/components/layout/Topbar"
 import { Button } from "@/components/ui"
 import CustomerForm from "../components/CustomerForm"
+import type { CustomerFormData } from "@/services"
 
 export default function NewCustomer() {
   const navigate = useNavigate()
+  const location = useLocation()
+  const state = location.state as Record<string, unknown> | null
+
+  const initialValues: Partial<CustomerFormData> | undefined =
+    state?.customer_name
+      ? {
+          customer_name: state.customer_name as string,
+          customer_type: (state.customer_type as CustomerFormData["customer_type"]) || "Company",
+        }
+      : undefined
 
   return (
     <>
@@ -39,6 +50,7 @@ export default function NewCustomer() {
 
         <div className="bg-surface rounded-[16px] border border-border shadow-card p-6">
           <CustomerForm
+            initialValues={initialValues}
             onSaved={() => navigate("/customers")}
             onCancel={() => navigate("/customers")}
           />

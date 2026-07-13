@@ -35,7 +35,10 @@ export default function NewStockCount() {
           <Button variant="secondary" onClick={() => navigate("/inventory/counts")}>Cancel</Button>
         </div>
 
-        <StockCountForm onSaved={() => navigate("/inventory/counts")} onCancel={() => navigate("/inventory/counts")} />
+        <StockCountForm
+          onSaved={(name) => navigate(`/inventory/counts/${encodeURIComponent(name)}`)}
+          onCancel={() => navigate("/inventory/counts")}
+        />
       </motion.div>
     </>
   )

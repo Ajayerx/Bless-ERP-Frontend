@@ -13,23 +13,36 @@ interface Props {
   onRowClick?: (item: Contact) => void
 }
 
-const statusMap: Record<string, { label: string; variant: "success" | "info" | "muted" }> = {
-  true: { label: "Primary", variant: "success" },
-  false: { label: "Secondary", variant: "muted" },
-}
-
 const columns: Column<Contact>[] = [
-  { key: "name", header: "Name", sortable: true },
-  { key: "email", header: "Email", sortable: true },
-  { key: "phone", header: "Phone" },
-  { key: "role", header: "Role" },
   {
-    key: "isPrimary",
+    key: "first_name",
+    header: "Name",
+    sortable: true,
+    render: (c) => `${c.first_name}${c.last_name ? ` ${c.last_name}` : ""}`,
+  },
+  {
+    key: "email_id",
+    header: "Email",
+    sortable: true,
+    render: (c) => c.email_id || "—",
+  },
+  {
+    key: "mobile_no",
+    header: "Phone",
+    render: (c) => c.mobile_no || c.phone || "—",
+  },
+  {
+    key: "company_name",
+    header: "Company",
+  },
+  {
+    key: "is_primary_contact",
     header: "Status",
-    render: (c) => {
-      const s = statusMap[String(c.isPrimary)]
-      return <Badge variant={s.variant}>{s.label}</Badge>
-    },
+    render: (c) => (
+      <Badge variant={c.is_primary_contact ? "success" : "muted"}>
+        {c.is_primary_contact ? "Primary" : "Secondary"}
+      </Badge>
+    ),
   },
 ]
 
@@ -38,7 +51,7 @@ export default function ContactTable({ data, loading, search, onSearch, page, on
     <DataTable<Contact>
       columns={columns}
       data={data?.items ?? []}
-      keyExtractor={(c) => c.id}
+      keyExtractor={(c) => c.name}
       total={data?.total ?? 0}
       loading={loading}
       search={search}

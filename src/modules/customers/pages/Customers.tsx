@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Plus } from "lucide-react";
@@ -7,15 +8,21 @@ import Topbar from "@/components/layout/Topbar";
 import { Button } from "@/components/ui";
 import { useCustomers } from "../hooks/useCustomers";
 import CustomerTable from "../components/CustomerTable";
+import QuickAddCustomerModal from "../components/QuickAddCustomerModal";
 
 export default function Customers() {
   const navigate = useNavigate();
+  const [showQuickAdd, setShowQuickAdd] = useState(false);
   const { data, loading, error, search, setSearch, page, setPage } =
     useCustomers({ pageSize: 10 });
 
   return (
     <>
       <Topbar />
+      <QuickAddCustomerModal
+        open={showQuickAdd}
+        onClose={() => setShowQuickAdd(false)}
+      />
       <motion.div
         className="p-6 space-y-6"
         initial={{ opacity: 0 }}
@@ -29,7 +36,7 @@ export default function Customers() {
               Manage your customer directory.
             </p>
           </div>
-          <Button onClick={() => navigate("/customers/new")}>
+          <Button onClick={() => setShowQuickAdd(true)}>
             <Plus size={16} />
             Add Customer
           </Button>

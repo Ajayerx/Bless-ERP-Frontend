@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from "react"
 import { useNavigate } from "react-router-dom"
 import { motion } from "framer-motion"
-import { Warehouse as WarehouseIcon, MapPin, Plus } from "lucide-react"
+import { Warehouse as WarehouseIcon, Building2, Plus } from "lucide-react"
 import Topbar from "@/components/layout/Topbar"
 import DataTable, { type Column } from "@/components/ui/DataTable"
 import { Button, Badge } from "@/components/ui"
@@ -13,7 +13,7 @@ import { cn } from "@/lib/utils"
 
 const columns: Column<Warehouse>[] = [
   {
-    key: "name",
+    key: "warehouse_name",
     header: "Warehouse",
     render: (w) => (
       <div className="flex items-center gap-3">
@@ -21,52 +21,56 @@ const columns: Column<Warehouse>[] = [
           <WarehouseIcon size={16} />
         </div>
         <div>
-          <p className="font-semibold text-heading">{w.name}</p>
-          <p className="text-xs text-muted flex items-center gap-1 mt-0.5">
-            <MapPin size={10} />
-            {w.location}
-          </p>
+          <p className="font-semibold text-heading">{w.warehouse_name}</p>
+          <p className="text-xs text-muted mt-0.5">{w.name}</p>
         </div>
       </div>
     ),
   },
   {
-    key: "capacity",
-    header: "Capacity",
-    className: "text-right",
-    render: (w) => {
-      const pct = Math.round((w.usedCapacity / w.capacity) * 100)
-      return (
-        <div className="flex items-center gap-3 justify-end">
-          <div className="text-right">
-            <p className="font-semibold text-heading text-sm tabular-nums">{pct}%</p>
-            <p className="text-xs text-muted">{w.usedCapacity.toLocaleString()} / {w.capacity.toLocaleString()}</p>
-          </div>
-          <div className="w-16 h-1.5 rounded-full bg-gray-100 overflow-hidden">
-            <div
-              className={cn(
-                "h-full rounded-full transition-all",
-                pct > 90 ? "bg-danger-500" : pct > 70 ? "bg-warning-500" : "bg-success-500"
-              )}
-              style={{ width: `${pct}%` }}
-            />
-          </div>
-        </div>
-      )
-    },
+    key: "company",
+    header: "Company",
+    render: (w) => (
+      <span className="text-sm text-body flex items-center gap-1.5">
+        <Building2 size={13} className="text-muted/60" />
+        {w.company}
+      </span>
+    ),
   },
   {
-    key: "status",
+    key: "warehouse_type",
+    header: "Type",
+    hideOnMobile: true,
+    render: (w) => (
+      <span className="text-sm text-muted">{w.warehouse_type ?? "—"}</span>
+    ),
+  },
+  {
+    key: "parent_warehouse",
+    header: "Parent",
+    hideOnMobile: true,
+    render: (w) => (
+      <span className="text-sm text-muted">{w.parent_warehouse ?? "—"}</span>
+    ),
+  },
+  {
+    key: "is_group",
+    header: "Group",
+    align: "center",
+    render: (w) => (
+      <span className={cn("text-sm", w.is_group ? "text-primary-600 font-semibold" : "text-muted")}>
+        {w.is_group ? "Yes" : "No"}
+      </span>
+    ),
+  },
+  {
+    key: "disabled",
     header: "Status",
-    render: (w) => {
-      const map: Record<string, { label: string; variant: "success" | "warning" | "default" }> = {
-        active: { label: "Active", variant: "success" },
-        maintenance: { label: "Maintenance", variant: "warning" },
-        inactive: { label: "Inactive", variant: "default" },
-      }
-      const s = map[w.status] ?? { label: w.status, variant: "default" }
-      return <Badge variant={s.variant}>{s.label}</Badge>
-    },
+    render: (w) => (
+      w.disabled
+        ? <Badge variant="default">Disabled</Badge>
+        : <Badge variant="success">Active</Badge>
+    ),
   },
 ]
 
@@ -101,7 +105,7 @@ export default function Warehouses() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold text-heading">Warehouses</h1>
-            <p className="text-sm text-muted mt-1">Manage storage locations and capacity.</p>
+            <p className="text-sm text-muted mt-1">Manage storage locations.</p>
           </div>
           <Button onClick={() => navigate("/inventory/warehouses/new")}>
             <Plus size={16} />
@@ -118,7 +122,7 @@ export default function Warehouses() {
         <DataTable
           columns={columns}
           data={data?.items ?? []}
-          keyExtractor={(w) => w.id}
+          keyExtractor={(w) => w.name}
           searchable
           searchPlaceholder="Search warehouses..."
           searchQuery={search}
@@ -128,7 +132,7 @@ export default function Warehouses() {
           total={data?.total}
           pageSize={10}
           onPageChange={setPage}
-          onRowClick={(w) => navigate(`/inventory/warehouses/${w.id}`)}
+          onRowClick={(w) => navigate(`/inventory/warehouses/${encodeURIComponent(w.name)}`)}
         />
       </motion.div>
     </>

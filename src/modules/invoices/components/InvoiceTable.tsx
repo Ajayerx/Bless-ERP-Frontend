@@ -3,26 +3,27 @@
 import { FileText, DollarSign, AlertTriangle, CheckCircle2, Users } from "lucide-react"
 import { Button, Badge } from "@/components/ui"
 import DataTable, { type Column } from "@/components/ui/DataTable"
-import { type Invoice, type InvoiceListResponse } from "@/services"
-import { formatCurrency, cn } from "@/lib/utils"
+import { type SalesInvoice, type SalesInvoiceListResponse } from "@/services"
+import { formatCurrency, cn, formatDate } from "@/lib/utils"
 
-type StatusFilter = "All" | "Paid" | "Sent" | "Overdue" | "Draft" | "Cancelled"
+type StatusFilter = "All" | "Paid" | "Unpaid" | "Overdue" | "Draft" | "Cancelled"
 
 const STATUS_FILTERS: StatusFilter[] = [
   "All",
   "Paid",
-  "Sent",
+  "Unpaid",
   "Overdue",
   "Draft",
   "Cancelled",
 ]
 
 const statusVariant: Record<string, "success" | "info" | "warning" | "danger" | "default"> = {
-  paid: "success",
-  sent: "info",
-  draft: "warning",
-  overdue: "danger",
-  cancelled: "default",
+  Paid: "success",
+  Unpaid: "warning",
+  Draft: "default",
+  Overdue: "danger",
+  Cancelled: "default",
+  Submitted: "info",
 }
 
 function SummaryCard({
@@ -55,11 +56,11 @@ function SummaryCard({
 }
 
 function buildColumns(
-  onRecordPayment: (inv: Invoice) => void,
-): Column<Invoice>[] {
+  onRecordPayment: (inv: SalesInvoice) => void,
+): Column<SalesInvoice>[] {
   return [
     {
-      key: "number",
+      key: "name",
       header: "Invoice",
       render: (inv) => (
         <div className="flex items-center gap-3">
@@ -67,29 +68,23 @@ function buildColumns(
             <FileText size={16} />
           </div>
           <div>
-            <p className="font-semibold text-heading">{inv.number}</p>
-            <p className="text-xs text-muted">
-              {new Date(inv.issueDate).toLocaleDateString("en-US", {
-                month: "short",
-                day: "numeric",
-                year: "numeric",
-              })}
-            </p>
+            <p className="font-semibold text-heading">{inv.name}</p>
+            <p className="text-xs text-muted">{formatDate(inv.posting_date)}</p>
           </div>
         </div>
       ),
     },
     {
-      key: "customerName",
+      key: "customer_name",
       header: "Customer",
-      render: (inv) => <span className="text-sm text-body">{inv.customerName}</span>,
+      render: (inv) => <span className="text-sm text-body">{inv.customer_name}</span>,
     },
     {
-      key: "total",
+      key: "grand_total",
       header: "Amount",
-      className: "text-right",
+      align: "right",
       render: (inv) => (
-        <span className="font-semibold tabular-nums text-heading">{formatCurrency(inv.total)}</span>
+        <span className="font-semibold tabular-nums text-heading">{formatCurrency(inv.grand_total)}</span>
       ),
     },
     {
@@ -97,28 +92,19 @@ function buildColumns(
       header: "Status",
       render: (inv) => (
         <Badge variant={statusVariant[inv.status] ?? "default"}>
-          {inv.status.charAt(0).toUpperCase() + inv.status.slice(1)}
+          {inv.status}
         </Badge>
       ),
     },
     {
-      key: "dueDate",
+      key: "due_date",
       header: "Due Date",
       hideOnMobile: true,
       render: (inv) => {
-        const isOverdue = inv.status === "overdue"
+        const isOverdue = inv.status === "Overdue"
         return (
-          <span
-            className={cn(
-              "text-xs",
-              isOverdue ? "text-danger-600 font-semibold" : "text-muted",
-            )}
-          >
-            {new Date(inv.dueDate).toLocaleDateString("en-US", {
-              month: "short",
-              day: "numeric",
-              year: "numeric",
-            })}
+          <span className={cn("text-xs", isOverdue ? "text-danger-600 font-semibold" : "text-muted")}>
+            {formatDate(inv.due_date)}
           </span>
         )
       },
@@ -128,7 +114,7 @@ function buildColumns(
       header: "",
       render: (inv) => (
         <div className="flex items-center justify-end gap-2">
-          {(inv.status === "sent" || inv.status === "overdue") && (
+          {(inv.status === "Unpaid" || inv.status === "Overdue") && inv.docstatus === 1 && (
             <Button
               variant="success"
               size="sm"
@@ -148,7 +134,7 @@ function buildColumns(
 }
 
 interface InvoiceTableProps {
-  data: InvoiceListResponse | null
+  data: SalesInvoiceListResponse | null
   loading: boolean
   search: string
   onSearch: (q: string) => void
@@ -156,8 +142,8 @@ interface InvoiceTableProps {
   onPageChange: (page: number) => void
   activeFilter: StatusFilter
   onFilterChange: (filter: StatusFilter) => void
-  onRowClick: (inv: Invoice) => void
-  onRecordPayment: (inv: Invoice) => void
+  onRowClick: (inv: SalesInvoice) => void
+  onRecordPayment: (inv: SalesInvoice) => void
   toolbarActions?: React.ReactNode
 }
 
@@ -175,10 +161,10 @@ export default function InvoiceTable({
   toolbarActions,
 }: InvoiceTableProps) {
   const allItems = data?.items ?? []
-  const totalAmount = allItems.reduce((s, i) => s + i.total, 0)
-  const paidAmount = allItems.filter((i) => i.status === "paid").reduce((s, i) => s + i.total, 0)
-  const overdueCount = allItems.filter((i) => i.status === "overdue").length
-  const customerCount = new Set(allItems.map((i) => i.customerId)).size
+  const totalAmount = allItems.reduce((s, i) => s + i.grand_total, 0)
+  const paidAmount = allItems.filter((i) => i.status === "Paid").reduce((s, i) => s + i.grand_total, 0)
+  const overdueCount = allItems.filter((i) => i.status === "Overdue").length
+  const customerCount = new Set(allItems.map((i) => i.customer)).size
 
   const columns = buildColumns(onRecordPayment)
 
@@ -242,7 +228,7 @@ export default function InvoiceTable({
       <DataTable
         columns={columns}
         data={data?.items ?? []}
-        keyExtractor={(inv) => inv.id}
+        keyExtractor={(inv) => inv.name}
         searchable
         searchPlaceholder="Search invoices or customers..."
         searchQuery={search}

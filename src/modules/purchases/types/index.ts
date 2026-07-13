@@ -1,4 +1,14 @@
-import type { LineItem } from "@/modules/invoices/services"
+export interface LineItem {
+  id: string
+  productId?: string
+  productName: string
+  sku?: string
+  quantity: number
+  price: number
+  taxRate?: number
+  taxLabel?: string
+  total: number
+}
 
 export type PurchaseOrderStatus =
   | "draft"

@@ -1,60 +1,45 @@
-import { Package, AlertTriangle, DollarSign, BarChart2, Warehouse } from "lucide-react"
+import { Package, AlertTriangle, DollarSign, BarChart2 } from "lucide-react"
 import DataTable, { type Column } from "@/components/ui/DataTable"
 import { Badge } from "@/components/ui"
 import type { Product } from "@/services"
 import { formatCurrency, cn } from "@/lib/utils"
 
+const LOW_STOCK_THRESHOLD = 20
+
 const columns: Column<Product>[] = [
   {
-    key: "name",
+    key: "item_name",
     header: "Product",
+    className: "max-w-[320px]",
     render: (p) => (
       <div>
-        <p className="font-semibold text-heading">{p.name}</p>
-        <p className="text-xs text-muted mt-0.5">{p.category ?? "General"}</p>
+        <p className="font-semibold text-heading">{p.item_name}</p>
+        <p className="text-xs text-muted mt-0.5">{p.item_group ?? "General"}</p>
       </div>
     ),
   },
   {
-    key: "sku",
-    header: "SKU",
+    key: "item_code",
+    header: "Item Code",
+    width: "w-[1%]",
     render: (p) => (
       <span className="font-mono text-xs bg-gray-100 text-muted px-2 py-1 rounded-[6px]">
-        {p.sku}
-      </span>
-    ),
-  },
-  {
-    key: "warehouse",
-    header: "Warehouse",
-    hideOnMobile: true,
-    render: (p) => (
-      <span className="text-sm text-muted flex items-center gap-1.5">
-        <Warehouse size={13} className="text-muted/60" />
-        {p.warehouse ?? "Main"}
+        {p.item_code}
       </span>
     ),
   },
   {
     key: "stock",
     header: "On Hand",
-    className: "text-right",
+    align: "right",
+    width: "w-[1%]",
     render: (p) => (
       <span className={cn(
         "font-semibold tabular-nums",
-        p.stock === 0 ? "text-danger-600" : p.stock <= (p.reorderLevel ?? 5) ? "text-warning-600" : "text-heading",
+        p.stock === 0 ? "text-danger-600" : p.stock <= (p.reorder_level ?? LOW_STOCK_THRESHOLD) ? "text-warning-600" : "text-heading",
       )}>
-        {p.stock} {p.unit ?? "ea"}
+        {p.stock} {p.stock_uom}
       </span>
-    ),
-  },
-  {
-    key: "reorderLevel",
-    header: "Reorder At",
-    className: "text-right",
-    hideOnMobile: true,
-    render: (p) => (
-      <span className="text-sm text-muted tabular-nums">{p.reorderLevel ?? 5}</span>
     ),
   },
   {
@@ -62,7 +47,7 @@ const columns: Column<Product>[] = [
     header: "Status",
     render: (p) => {
       if (p.stock === 0) return <Badge variant="danger">Out of Stock</Badge>
-      if (p.stock <= (p.reorderLevel ?? 5)) return <Badge variant="warning">Low Stock</Badge>
+      if (p.stock <= (p.reorder_level ?? LOW_STOCK_THRESHOLD)) return <Badge variant="warning">Low Stock</Badge>
       return <Badge variant="success">In Stock</Badge>
     },
   },
@@ -127,7 +112,7 @@ export default function StockLevelTable({
   onRowClick,
   inventoryValue,
 }: StockLevelTableProps) {
-  const lowStockCount = items.filter((p) => p.stock > 0 && p.stock <= (p.reorderLevel ?? 5)).length
+  const lowStockCount = items.filter((p) => p.stock > 0 && p.stock <= (p.reorder_level ?? LOW_STOCK_THRESHOLD)).length
   const outOfStockCount = items.filter((p) => p.stock === 0).length
 
   return (
@@ -166,9 +151,9 @@ export default function StockLevelTable({
       <DataTable
         columns={columns}
         data={items}
-        keyExtractor={(p) => p.id}
+        keyExtractor={(p) => p.name}
         searchable
-        searchPlaceholder="Search products or SKU..."
+        searchPlaceholder="Search products or item code..."
         searchQuery={search}
         onSearch={onSearch}
         loading={loading}

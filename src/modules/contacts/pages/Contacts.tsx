@@ -40,7 +40,7 @@ export default function Contacts() {
           data={data} loading={loading} search={search}
           onSearch={(q) => { setSearch(q); setPage(1) }}
           page={page} onPageChange={setPage}
-          onRowClick={(item) => navigate(`/contacts/${item.id}`)}
+          onRowClick={(item) => navigate(`/contacts/${item.name}`)}
         />
       </motion.div>
     </>

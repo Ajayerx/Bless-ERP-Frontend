@@ -3,22 +3,18 @@
 import { Printer, Download, Send } from "lucide-react"
 import { Button } from "@/components/ui"
 
-interface InvoicePDFButtonProps {
-  onPrint?: () => void
-  onDownload?: () => void
-  onSend?: () => void
-}
+const STUB_TOOLTIP = "Available in Week 5"
 
-export default function InvoicePDFButton({ onPrint, onDownload, onSend }: InvoicePDFButtonProps) {
+export default function InvoicePDFButton() {
   return (
     <div className="flex items-center gap-2">
-      <Button variant="outline" size="sm" onClick={onPrint}>
+      <Button variant="outline" size="sm" disabled title={STUB_TOOLTIP}>
         <Printer size={14} /> Print
       </Button>
-      <Button variant="outline" size="sm" onClick={onDownload}>
+      <Button variant="outline" size="sm" disabled title={STUB_TOOLTIP}>
         <Download size={14} /> PDF
       </Button>
-      <Button size="sm" onClick={onSend}>
+      <Button size="sm" disabled title={STUB_TOOLTIP}>
         <Send size={14} /> Send
       </Button>
     </div>

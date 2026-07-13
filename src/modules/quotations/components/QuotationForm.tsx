@@ -5,10 +5,12 @@ import { useNavigate } from "react-router-dom"
 import { ArrowLeft, Plus, Trash2, Save, Search, ChevronDown, Loader2 } from "lucide-react"
 import { Button, Card, CardContent, CardHeader, CardTitle } from "@/components/ui"
 import { quotationService, customerService, type Customer, productService } from "@/services"
+import { getDefaultTaxTemplate } from "@/services/tax-template"
 import type { Product } from "@/services"
 import type { Quotation, QuotationFormData } from "@/services"
 import { formatCurrency } from "@/lib/utils"
-import { GST_RATE, QST_RATE } from "@/config/tax.config"
+
+const SALES_DOCTYPE = "Sales Taxes and Charges Template"
 
 interface LineItemForm {
   id: string
@@ -54,10 +56,21 @@ export default function QuotationForm({ quotation: initialData, onSubmit: extern
   const [customerDropdownOpen, setCustomerDropdownOpen] = useState(false)
   const [products, setProducts] = useState<Product[]>([])
   const [productDropdowns, setProductDropdowns] = useState<Record<string, { open: boolean; search: string }>>({})
+  const [gstRate, setGstRate] = useState(0.05)
+  const [qstRate, setQstRate] = useState(0.09975)
+  const [templateLoading, setTemplateLoading] = useState(true)
 
   useEffect(() => {
     customerService.list({ pageSize: 100 }).then((res) => setCustomers(res.items))
     productService.list({ pageSize: 100 }).then((res) => setProducts(res.items))
+    getDefaultTaxTemplate(SALES_DOCTYPE).then((template) => {
+      if (template) {
+        const gst = template.rows.find((r) => r.accountHead?.toLowerCase().includes("gst"))
+        const qst = template.rows.find((r) => r.accountHead?.toLowerCase().includes("qst"))
+        if (gst) setGstRate(gst.rate)
+        if (qst) setQstRate(qst.rate)
+      }
+    }).finally(() => setTemplateLoading(false))
   }, [])
 
   useEffect(() => {
@@ -110,13 +123,13 @@ export default function QuotationForm({ quotation: initialData, onSubmit: extern
     )
 
   const selectProduct = (lineId: string, product: Product) => {
-    updateLine(lineId, { productId: product.id, productName: product.name, rate: product.price })
+    updateLine(lineId, { productId: product.item_code, productName: product.item_name, rate: product.standard_rate })
     setProductDropdowns((prev) => ({ ...prev, [lineId]: { open: false, search: "" } }))
   }
 
   const subtotal = lineItems.reduce((sum, l) => sum + l.amount, 0)
-  const gstAmount = Math.round(subtotal * GST_RATE * 100) / 100
-  const qstAmount = Math.round(subtotal * QST_RATE * 100) / 100
+  const gstAmount = Math.round(subtotal * gstRate * 100) / 100
+  const qstAmount = Math.round(subtotal * qstRate * 100) / 100
   const grandTotal = Math.round((subtotal + gstAmount + qstAmount) * 100) / 100
 
   const isSaving = externalLoading ?? saving
@@ -169,7 +182,7 @@ export default function QuotationForm({ quotation: initialData, onSubmit: extern
         </div>
         <div className="flex items-center gap-3">
           <Button variant="secondary" onClick={() => navigate("/quotations")}>Cancel</Button>
-          <Button onClick={handleSave} disabled={isSaving || !customerId}>
+          <Button onClick={handleSave} disabled={isSaving || !customerId || templateLoading}>
             {isSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
             {isSaving ? "Saving..." : mode === "create" ? "Save Quotation" : "Update Quotation"}
           </Button>
@@ -256,13 +269,13 @@ export default function QuotationForm({ quotation: initialData, onSubmit: extern
                       {productDropdowns[line.id]?.open && (
                         <div className="absolute z-10 mt-1 w-full bg-surface border border-border rounded-[12px] shadow-xl max-h-40 overflow-y-auto">
                           {products.filter((p) =>
-                            p.name.toLowerCase().includes((productDropdowns[line.id]?.search ?? "").toLowerCase()) ||
-                            p.sku.toLowerCase().includes((productDropdowns[line.id]?.search ?? "").toLowerCase())
+                            p.item_name?.toLowerCase().includes((productDropdowns[line.id]?.search ?? "").toLowerCase()) ||
+                            p.item_code?.toLowerCase().includes((productDropdowns[line.id]?.search ?? "").toLowerCase())
                           ).map((p) => (
-                            <button key={p.id} type="button" onClick={() => selectProduct(line.id, p)}
+                            <button key={p.name} type="button" onClick={() => selectProduct(line.id, p)}
                               className="w-full text-left px-3 py-2 text-sm hover:bg-primary-50 text-body transition-colors">
-                              <span className="font-medium">{p.name}</span>
-                              <span className="text-xs text-muted ml-2">{p.sku}</span>
+                              <span className="font-medium">{p.item_name}</span>
+                              <span className="text-xs text-muted ml-2">{p.item_code}</span>
                             </button>
                           ))}
                         </div>
@@ -308,11 +321,11 @@ export default function QuotationForm({ quotation: initialData, onSubmit: extern
               <span className="font-semibold text-heading tabular-nums">{formatCurrency(subtotal)}</span>
             </div>
             <div className="flex justify-between text-sm">
-              <span className="text-muted">GST (5%)</span>
+              <span className="text-muted">GST ({(gstRate * 100).toFixed(1)}%)</span>
               <span className="text-body tabular-nums">{formatCurrency(gstAmount)}</span>
             </div>
             <div className="flex justify-between text-sm">
-              <span className="text-muted">QST (9.975%)</span>
+              <span className="text-muted">QST ({(qstRate * 100).toFixed(3)}%)</span>
               <span className="text-body tabular-nums">{formatCurrency(qstAmount)}</span>
             </div>
             <div className="border-t border-border pt-2 flex justify-between text-base">

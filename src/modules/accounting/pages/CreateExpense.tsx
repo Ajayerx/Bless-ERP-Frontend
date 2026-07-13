@@ -1,12 +1,14 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useNavigate } from "react-router-dom"
 import { motion } from "framer-motion"
 import { ArrowLeft, Save } from "lucide-react"
 import Topbar from "@/components/layout/Topbar"
 import { Button, Card, CardContent, CardHeader, CardTitle } from "@/components/ui"
 import { accountingService } from "@/services"
+import { getDefaultTaxTemplate } from "@/services/tax-template"
+import type { TaxRow } from "@/services/tax-template"
 import { formatCurrency } from "@/lib/utils"
 
 const categories = [
@@ -17,24 +19,32 @@ const categories = [
 
 const paymentMethods = ["Bank Transfer", "Credit Card", "Cash", "Cheque", "Debit Card"]
 
-const GST_RATE = 0.05
-const QST_RATE = 0.09975
+const PURCHASE_DOCTYPE = "Purchase Taxes and Charges Template"
 
 export default function CreateExpense() {
   const navigate = useNavigate()
   const [vendorName, setVendorName] = useState("")
   const [category, setCategory] = useState(categories[0])
   const [amount, setAmount] = useState("")
-  const [taxType, setTaxType] = useState("gst")
+  const [taxType, setTaxType] = useState("none")
   const [description, setDescription] = useState("")
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10))
   const [paymentMethod, setPaymentMethod] = useState(paymentMethods[0])
   const [notes, setNotes] = useState("")
   const [saving, setSaving] = useState(false)
+  const [taxRows, setTaxRows] = useState<TaxRow[]>([])
+  const [templateLoading, setTemplateLoading] = useState(true)
+
+  useEffect(() => {
+    getDefaultTaxTemplate(PURCHASE_DOCTYPE).then((template) => {
+      if (template) setTaxRows(template.rows)
+    }).finally(() => setTemplateLoading(false))
+  }, [])
 
   const parsedAmount = parseFloat(amount) || 0
-  const taxRate = taxType === "gst" ? GST_RATE : QST_RATE
-  const taxAmount = Math.round(parsedAmount * taxRate * 100) / 100
+  const selectedTaxRow = taxRows.find((r) => r.accountHead === taxType)
+  const taxRate = selectedTaxRow?.rate ?? 0
+  const taxAmount = taxRate > 0 ? Math.round(parsedAmount * taxRate * 100) / 100 : 0
   const total = Math.round((parsedAmount + taxAmount) * 100) / 100
 
   const handleSave = async () => {
@@ -71,7 +81,7 @@ export default function CreateExpense() {
           </div>
           <div className="flex items-center gap-3">
             <Button variant="secondary" onClick={() => navigate("/accounting/expenses")}>Cancel</Button>
-            <Button onClick={handleSave} disabled={saving || !vendorName || !amount} loading={saving}>
+            <Button onClick={handleSave} disabled={saving || !vendorName || !amount || templateLoading} loading={saving}>
               <Save size={16} /> {saving ? "Saving..." : "Save Expense"}
             </Button>
           </div>
@@ -116,8 +126,10 @@ export default function CreateExpense() {
               <div>
                 <label className={labelClass}>Tax</label>
                 <select value={taxType} onChange={(e) => setTaxType(e.target.value)} className={inputClass}>
-                  <option value="gst">GST (5%)</option>
-                  <option value="qst">QST (9.975%)</option>
+                  {taxRows.map((r) => {
+                    const label = r.description ?? r.accountHead
+                    return <option key={r.accountHead} value={r.accountHead}>{label}</option>
+                  })}
                   <option value="none">No Tax</option>
                 </select>
               </div>

@@ -1,35 +1,27 @@
-"use client"
-
 import { useEffect, useState } from "react"
 import { useParams, useNavigate } from "react-router-dom"
 import { motion } from "framer-motion"
 import { ArrowLeft } from "lucide-react"
 import Topbar from "@/components/layout/Topbar"
 import { Button, Skeleton } from "@/components/ui"
-import { productService } from "@/services"
-import type { Product } from "@/services"
+import { productService, type ProductDetail } from "@/services"
 import ProductForm from "../components/ProductForm"
 
 export default function EditProduct() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
-  const [product, setProduct] = useState<Product | null>(null)
+  const [product, setProduct] = useState<ProductDetail | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     if (!id) return
-    productService.get(id).then(setProduct).catch(() => null).finally(() => setLoading(false))
+    productService.getById(id).then(setProduct).catch(() => null).finally(() => setLoading(false))
   }, [id])
 
   return (
     <>
       <Topbar />
-      <motion.div
-        className="p-6 space-y-6"
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ duration: 0.3 }}
-      >
+      <motion.div className="p-6 space-y-6" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.3 }}>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
             <button onClick={() => navigate(`/products/${id}`)} className="p-2 rounded-[10px] text-muted hover:text-body hover:bg-gray-100 transition-colors">
@@ -37,7 +29,7 @@ export default function EditProduct() {
             </button>
             <div>
               <h1 className="text-2xl font-bold text-heading">Edit Product</h1>
-              <p className="text-sm text-muted mt-0.5">{product?.name ?? "Loading..."}</p>
+              <p className="text-sm text-muted mt-0.5">{product?.item_name ?? "Loading..."}</p>
             </div>
           </div>
           <Button variant="secondary" onClick={() => navigate(`/products/${id}`)}>Cancel</Button>

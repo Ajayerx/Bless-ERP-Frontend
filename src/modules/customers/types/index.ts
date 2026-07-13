@@ -107,7 +107,9 @@ export interface CustomerFormData {
   customer_group: string
   territory: string
   gender?: string
+  lead_name?: string
   account_manager?: string
+  image?: string
   default_currency?: string
   default_bank_account?: string
   default_price_list?: string
@@ -115,6 +117,7 @@ export interface CustomerFormData {
   represents_company?: string
   market_segment?: string
   industry?: string
+  customer_pos_id?: string
   website?: string
   language?: string
   customer_details?: string
@@ -143,7 +146,15 @@ export interface CustomerFormData {
   portal_users?: PortalUserRow[]
 }
 
+export interface TransactionCounts {
+  sales_orders: number
+  sales_invoices: number
+  opportunities: number
+  issues: number
+}
+
 export interface CustomerDetail extends Customer {
+  transaction_counts?: TransactionCounts
   addresses: Array<{
     name: string
     address_type: string

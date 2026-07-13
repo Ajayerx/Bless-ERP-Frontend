@@ -1,43 +1,103 @@
-// ERPNext field mapping types for future API integration
-// These map ERPNext doctype fields to the frontend interface fields
-
 export interface ERPNextFieldMap {
-  [frontendField: string]: string  // ERPNext API field path
+  [frontendField: string]: string
 }
 
-// Mapping from frontend Customer → ERPNext Customer doctype
 export const CUSTOMER_FIELD_MAP: ERPNextFieldMap = {
-  name: "customer_name",
-  contactName: "contact_display",
-  email: "email_id",
-  phone: "mobile_no",
-  billingAddress: "primary_address",
-  shippingAddress: "shipping_address",
-  taxId: "tax_id",
-  creditLimit: "credit_limit",
-}
-
-// Mapping from frontend Product → ERPNext Item doctype
-export const PRODUCT_FIELD_MAP: ERPNextFieldMap = {
-  name: "item_name",
-  sku: "item_code",
-  description: "description",
-  price: "standard_rate",
-  cost: "valuation_rate",
-  stock: "actual_qty",
-  unit: "stock_uom",
-}
-
-// Mapping from frontend Invoice → ERPNext Sales Invoice
-export const INVOICE_FIELD_MAP: ERPNextFieldMap = {
-  number: "name",
-  customerId: "customer",
+  name: "name",
   customerName: "customer_name",
-  issueDate: "posting_date",
+  customerType: "customer_type",
+  customerGroup: "customer_group",
+  territory: "territory",
+  salutation: "salutation",
+  gender: "gender",
+  leadName: "lead_name",
+  accountManager: "account_manager",
+  image: "image",
+  defaultCurrency: "default_currency",
+  defaultBankAccount: "default_bank_account",
+  defaultPriceList: "default_price_list",
+  isInternalCustomer: "is_internal_customer",
+  representsCompany: "represents_company",
+  marketSegment: "market_segment",
+  industry: "industry",
+  customerPosId: "customer_pos_id",
+  website: "website",
+  language: "language",
+  taxId: "tax_id",
+  taxCategory: "tax_category",
+  taxWithholdingCategory: "tax_withholding_category",
+  paymentTerms: "payment_terms",
+  loyaltyProgram: "loyalty_program",
+  defaultSalesPartner: "default_sales_partner",
+  defaultCommissionRate: "default_commission_rate",
+  soRequired: "so_required",
+  dnRequired: "dn_required",
+  isFrozen: "is_frozen",
+  disabled: "disabled",
+  emailId: "email_id",
+  mobileNo: "mobile_no",
+  primaryAddress: "primary_address",
+  customerPrimaryContact: "customer_primary_contact",
+  customerPrimaryAddress: "customer_primary_address",
+  creation: "creation",
+  modified: "modified",
+}
+
+export const PRODUCT_FIELD_MAP: ERPNextFieldMap = {
+  itemCode: "item_code",
+  itemName: "item_name",
+  itemGroup: "item_group",
+  stockUom: "stock_uom",
+  description: "description",
+  image: "image",
+  brand: "brand",
+  standardRate: "standard_rate",
+  valuationRate: "valuation_rate",
+  isPurchaseItem: "is_purchase_item",
+  isSalesItem: "is_sales_item",
+  disabled: "disabled",
+}
+
+export const INVOICE_FIELD_MAP: ERPNextFieldMap = {
+  name: "name",
+  customer: "customer",
+  customerName: "customer_name",
+  postingDate: "posting_date",
   dueDate: "due_date",
+  company: "company",
+  currency: "currency",
+  sellingPriceList: "selling_price_list",
+  setWarehouse: "set_warehouse",
+  updateStock: "update_stock",
+  netTotal: "net_total",
+  totalTaxesAndCharges: "total_taxes_and_charges",
+  grandTotal: "grand_total",
+  roundedTotal: "rounded_total",
+  outstandingAmount: "outstanding_amount",
   status: "status",
-  total: "grand_total",
-  subtotal: "total",
-  gst: "gst",
-  qst: "qst",
+  docstatus: "docstatus",
+  taxesAndCharges: "taxes_and_charges",
+  items: "items",
+  taxes: "taxes",
+  payments: "payments",
+  paymentSchedule: "payment_schedule",
+}
+
+export const PAYMENT_FIELD_MAP: ERPNextFieldMap = {
+  name: "name",
+  paymentType: "payment_type",
+  postingDate: "posting_date",
+  company: "company",
+  partyType: "party_type",
+  party: "party",
+  paidFromAccount: "paid_from_account",
+  paidAmount: "paid_amount",
+  paidToAccount: "paid_to_account",
+  receivedAmount: "received_amount",
+  referenceNo: "reference_no",
+  referenceDate: "reference_date",
+  remarks: "remarks",
+  status: "status",
+  modeOfPayment: "mode_of_payment",
+  references: "references",
 }

@@ -5,38 +5,95 @@ import { formatCurrency, cn } from "@/lib/utils"
 
 interface InvoiceTotalsProps {
   subtotal: number
-  gst: number
-  qst: number
-  total: number
+  totalTaxesAndCharges?: number
+  discountAmount?: number
+  grandTotal: number
+  roundingAdjustment?: number
+  roundedTotal?: number
+  totalAdvance?: number
+  outstandingAmount?: number
+  gst?: number
+  qst?: number
+  gstLabel?: string
+  qstLabel?: string
   variant?: "card" | "inline"
   className?: string
 }
 
 export default function InvoiceTotals({
   subtotal,
+  totalTaxesAndCharges,
+  discountAmount = 0,
+  grandTotal,
+  roundingAdjustment = 0,
+  roundedTotal,
+  totalAdvance = 0,
+  outstandingAmount,
   gst,
   qst,
-  total,
+  gstLabel,
+  qstLabel,
   variant = "card",
   className,
 }: InvoiceTotalsProps) {
+  const effectiveRoundedTotal = roundedTotal ?? grandTotal + roundingAdjustment
+  const effectiveOutstanding = outstandingAmount ?? effectiveRoundedTotal - totalAdvance
+
   const content = (
     <>
       <div className="flex justify-between text-sm">
-        <span className="text-muted">Subtotal</span>
+        <span className="text-muted">Net Total</span>
         <span className="font-semibold text-heading tabular-nums">{formatCurrency(subtotal)}</span>
       </div>
-      <div className="flex justify-between text-sm">
-        <span className="text-muted">GST (5%)</span>
-        <span className="text-body tabular-nums">{formatCurrency(gst)}</span>
+      {gst !== undefined && (
+        <div className="flex justify-between text-sm">
+          <span className="text-muted">{gstLabel ?? "GST"}</span>
+          <span className="text-body tabular-nums">{formatCurrency(gst)}</span>
+        </div>
+      )}
+      {qst !== undefined && (
+        <div className="flex justify-between text-sm">
+          <span className="text-muted">{qstLabel ?? "QST"}</span>
+          <span className="text-body tabular-nums">{formatCurrency(qst)}</span>
+        </div>
+      )}
+      {totalTaxesAndCharges !== undefined && (
+        <div className="flex justify-between text-sm">
+          <span className="text-muted">Total Taxes & Charges</span>
+          <span className="text-body tabular-nums">{formatCurrency(totalTaxesAndCharges)}</span>
+        </div>
+      )}
+      {discountAmount > 0 && (
+        <div className="flex justify-between text-sm">
+          <span className="text-muted">Additional Discount</span>
+          <span className="text-danger-600 tabular-nums">-{formatCurrency(discountAmount)}</span>
+        </div>
+      )}
+      <div className="border-t border-border pt-2 mt-1">
+        <div className="flex justify-between text-sm">
+          <span className="font-bold text-heading">Grand Total</span>
+          <span className="font-bold text-heading tabular-nums">{formatCurrency(grandTotal)}</span>
+        </div>
       </div>
       <div className="flex justify-between text-sm">
-        <span className="text-muted">QST (9.975%)</span>
-        <span className="text-body tabular-nums">{formatCurrency(qst)}</span>
+        <span className="text-muted">Rounding Adjustment</span>
+        <span className="text-body tabular-nums">{formatCurrency(roundingAdjustment)}</span>
       </div>
-      <div className="border-t border-border pt-2 flex justify-between text-base">
-        <span className="font-bold text-heading">Total</span>
-        <span className="font-bold text-heading tabular-nums">{formatCurrency(total)}</span>
+      <div className="flex justify-between text-sm">
+        <span className="font-semibold text-heading">Rounded Total (to pay)</span>
+        <span className="font-semibold text-heading tabular-nums">{formatCurrency(effectiveRoundedTotal)}</span>
+      </div>
+      {totalAdvance > 0 && (
+        <div className="flex justify-between text-sm">
+          <span className="text-muted">Total Advance</span>
+          <span className="text-body tabular-nums">{formatCurrency(totalAdvance)}</span>
+        </div>
+      )}
+      <div className="border-t border-border pt-2 mt-1">
+        <div className="flex justify-between text-base">
+          <span className="font-bold text-heading">Outstanding Amount</span>
+          <span className="font-bold text-heading tabular-nums">{formatCurrency(effectiveOutstanding)}</span>
+        </div>
       </div>
     </>
   )
@@ -50,7 +107,7 @@ export default function InvoiceTotals({
   }
 
   return (
-    <div className={cn("border-t border-border pt-4 space-y-1.5 text-sm ml-auto w-64", className)}>
+    <div className={cn("space-y-1.5 text-sm", className)}>
       {content}
     </div>
   )

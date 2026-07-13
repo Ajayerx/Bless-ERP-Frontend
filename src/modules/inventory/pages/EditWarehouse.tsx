@@ -18,7 +18,8 @@ export default function EditWarehouse() {
 
   useEffect(() => {
     if (!id) return
-    inventoryService.getWarehouse(id).then(setWarehouse).catch(() => null).finally(() => setLoading(false))
+    const name = decodeURIComponent(id)
+    inventoryService.getWarehouse(name).then(setWarehouse).catch(() => null).finally(() => setLoading(false))
   }, [id])
 
   return (
@@ -37,7 +38,7 @@ export default function EditWarehouse() {
             </button>
             <div>
               <h1 className="text-2xl font-bold text-heading">Edit Warehouse</h1>
-              <p className="text-sm text-muted mt-0.5">{warehouse?.name ?? "Loading..."}</p>
+              <p className="text-sm text-muted mt-0.5">{warehouse?.warehouse_name ?? "Loading..."}</p>
             </div>
           </div>
           <Button variant="secondary" onClick={() => navigate(`/inventory/warehouses/${id}`)}>Cancel</Button>

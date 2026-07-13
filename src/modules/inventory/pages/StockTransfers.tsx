@@ -9,34 +9,34 @@ import DataTable, { type Column } from "@/components/ui/DataTable"
 import { Button, Badge } from "@/components/ui"
 import { inventoryService } from "@/modules/inventory/services"
 import type { StockTransfer } from "@/modules/inventory/types"
+import { formatDate } from "@/lib/utils"
 
-const statusConfig: Record<string, { label: string; variant: "success" | "warning" | "default" | "danger" | "info" }> = {
-  draft: { label: "Draft", variant: "default" },
-  in_transit: { label: "In Transit", variant: "warning" },
-  completed: { label: "Completed", variant: "success" },
-  cancelled: { label: "Cancelled", variant: "danger" },
+const statusConfig: Record<number, { label: string; variant: "success" | "warning" | "default" | "danger" | "info" }> = {
+  0: { label: "Draft", variant: "default" },
+  1: { label: "Submitted", variant: "success" },
+  2: { label: "Cancelled", variant: "danger" },
 }
 
 const columns: Column<StockTransfer>[] = [
   {
-    key: "reference",
+    key: "name",
     header: "Reference",
     render: (t) => (
       <div>
-        <p className="font-semibold text-heading">{t.reference}</p>
-        <p className="text-xs text-muted">{new Date(t.createdAt).toLocaleDateString()}</p>
+        <p className="font-semibold text-heading">{t.name}</p>
+        <p className="text-xs text-muted">{formatDate(t.creation)}</p>
       </div>
     ),
   },
   {
-    key: "fromWarehouse",
+    key: "from_warehouse",
     header: "From",
-    render: (t) => <span className="text-sm text-body">{t.fromWarehouse}</span>,
+    render: (t) => <span className="text-sm text-body">{t.from_warehouse ?? "—"}</span>,
   },
   {
-    key: "toWarehouse",
+    key: "to_warehouse",
     header: "To",
-    render: (t) => <span className="text-sm text-body">{t.toWarehouse}</span>,
+    render: (t) => <span className="text-sm text-body">{t.to_warehouse ?? "—"}</span>,
   },
   {
     key: "items",
@@ -47,10 +47,10 @@ const columns: Column<StockTransfer>[] = [
     ),
   },
   {
-    key: "status",
+    key: "docstatus",
     header: "Status",
     render: (t) => {
-      const cfg = statusConfig[t.status] ?? { label: t.status, variant: "default" as const }
+      const cfg = statusConfig[t.docstatus] ?? { label: `Unknown (${t.docstatus})`, variant: "default" as const }
       return <Badge variant={cfg.variant}>{cfg.label}</Badge>
     },
   },
@@ -109,7 +109,7 @@ export default function StockTransfers() {
         <DataTable
           columns={columns}
           data={data?.items ?? []}
-          keyExtractor={(t) => t.id}
+          keyExtractor={(t) => t.name}
           searchable
           searchPlaceholder="Search transfers..."
           searchQuery={search}
@@ -119,7 +119,7 @@ export default function StockTransfers() {
           total={data?.total}
           pageSize={10}
           onPageChange={setPage}
-          onRowClick={(t) => navigate(`/inventory/transfers/${t.id}`)}
+          onRowClick={(t) => navigate(`/inventory/transfers/${encodeURIComponent(t.name)}`)}
         />
       </motion.div>
     </>
