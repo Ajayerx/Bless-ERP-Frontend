@@ -14,8 +14,12 @@ async function fetchOptions(doctype: string, filters?: unknown[]): Promise<strin
   qp.set("fields", JSON.stringify(["name"]))
   qp.set("limit_page_length", "500")
   if (filters) qp.set("filters", JSON.stringify(filters))
-  const items = await apiClient<DocTypeOption[]>(`/resource/${encodeURIComponent(doctype)}?${qp.toString()}`)
-  return items.map((i) => i.name)
+  try {
+    const items = await apiClient<DocTypeOption[]>(`/resource/${encodeURIComponent(doctype)}?${qp.toString()}`)
+    return items.map((i) => i.name)
+  } catch {
+    return []
+  }
 }
 
 const SALES_DOCTYPE = "Sales Taxes and Charges Template"
@@ -65,14 +69,16 @@ const LIST_FIELDS = [
 
 const DETAIL_FIELDS = [
   ...LIST_FIELDS,
-  "posting_time", "conversion_rate", "price_list_currency", "plc_conversion_rate",
-  "set_warehouse", "update_stock", "net_total", "total_taxes_and_charges",
+  "posting_time", "conversion_rate", "selling_price_list", "price_list_currency", "plc_conversion_rate",
+  "ignore_pricing_rule", "set_warehouse", "set_target_warehouse", "update_stock", "net_total", "total_taxes_and_charges",
   "rounded_total", "in_words", "taxes_and_charges", "tax_category",
   "customer_address", "shipping_address_name", "contact_person",
   "contact_email", "contact_mobile", "po_no", "po_date",
   "payment_terms_template", "apply_discount_on", "discount_amount",
   "additional_discount_percentage", "coupon_code", "additional_discount_account",
+  "is_cash_or_non_trade_discount", "disable_rounded_total", "use_company_roundoff_cost_center",
   "write_off_amount", "write_off_account", "write_off_cost_center",
+  "write_off_outstanding_amount_automatically",
   "cost_center", "project", "debit_to",
   // Phase D
   "sales_partner", "commission_rate", "total_commission",
@@ -82,10 +88,26 @@ const DETAIL_FIELDS = [
   "tc_name", "terms",
   // Phase E
   "is_return", "return_against", "is_debit_note",
+  "update_billed_amount_in_sales_order", "update_billed_amount_in_delivery_note",
+  "update_outstanding_for_self",
   "allocate_advances_automatically", "only_include_allocated_payments",
   "is_pos", "pos_profile", "account_for_change_amount",
   "subscription", "from_date", "to_date", "auto_repeat",
   "is_opening", "customer_group", "remarks",
+  // Phase F: fetch_from / round-trip fields
+  "title", "naming_series", "set_posting_time",
+  "tax_id", "company_tax_id", "is_internal_customer", "represents_company",
+  "dispatch_address_name", "contact_display",
+  "company_address", "company_address_display",
+  "tax_withholding_category",
+  // Base currency (ERPNext-computed)
+  "base_grand_total", "base_net_total", "base_total_taxes_and_charges",
+  "base_rounding_adjustment", "base_rounded_total", "base_in_words",
+  "total_net_weight", "rounding_adjustment",
+  "base_paid_amount", "paid_amount", "base_change_amount", "change_amount",
+  "base_write_off_amount", "total_advance",
+  // Accounting
+  "unrealized_profit_loss_account", "against_income_account",
 ]
 
 export interface PartyDetailsResponse {
@@ -153,10 +175,45 @@ export const invoiceService = {
     itemTaxTemplates: (): Promise<string[]> => fetchOptions("Item Tax Template"),
     shippingRules: (): Promise<string[]> => fetchOptions("Shipping Rule"),
     incoterms: (): Promise<string[]> => fetchOptions("Incoterm"),
+    taxWithholdingGroups: (): Promise<string[]> => fetchOptions("Tax Withholding Category"),
+    modeOfPayments: (): Promise<string[]> => fetchOptions("Mode of Payment"),
     warehouses: async (): Promise<string[]> => {
       const company = await getCompany()
       return fetchOptions("Warehouse", [["is_group", "=", 0], ["company", "=", company]])
     },
+    companies: (): Promise<string[]> => fetchOptions("Company"),
+    territories: (): Promise<string[]> => fetchOptions("Territory"),
+    campaigns: (): Promise<string[]> => fetchOptions("Campaign"),
+    sources: (): Promise<string[]> => fetchOptions("Lead Source"),
+    projects: (): Promise<string[]> => fetchOptions("Project"),
+  },
+
+  async searchItems(query: string, start = 0, pageLength = 10): Promise<{
+    items: Array<{ value: string; label: string; description: string }>
+  }> {
+    const qp = new URLSearchParams()
+    qp.set("txt", query || "")
+    qp.set("doctype", "Item")
+    qp.set("reference_doctype", "Sales Invoice")
+    qp.set("link_fieldname", "item_code")
+    qp.set("start", String(start))
+    qp.set("page_length", String(pageLength))
+    try {
+      const result = await apiClient<Array<{ value: string; label: string; description: string }>>(
+        `/method/frappe.desk.search.search_link?${qp.toString()}`
+      )
+      return { items: Array.isArray(result) ? result : [] }
+    } catch {
+      return { items: [] }
+    }
+  },
+
+  async getItemDetails(itemCode: string): Promise<Record<string, unknown> | null> {
+    try {
+      return await apiClient<Record<string, unknown>>(`/resource/Item/${encodeURIComponent(itemCode)}`)
+    } catch {
+      return null
+    }
   },
 
   async getDefaultTaxTemplate(): Promise<{ name: string; gstRate: number; qstRate: number } | null> {

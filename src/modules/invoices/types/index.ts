@@ -85,7 +85,9 @@ export interface SalesInvoice {
   selling_price_list?: string
   price_list_currency?: string
   plc_conversion_rate?: number
+  ignore_pricing_rule?: boolean
   set_warehouse?: string
+  set_target_warehouse?: string
   update_stock?: number
   net_total: number
   total_taxes_and_charges: number
@@ -110,9 +112,13 @@ export interface SalesInvoice {
   additional_discount_percentage?: number
   coupon_code?: string
   additional_discount_account?: string
+  is_cash_or_non_trade_discount?: boolean
+  disable_rounded_total?: boolean
+  use_company_roundoff_cost_center?: boolean
   write_off_amount?: number
   write_off_account?: string
   write_off_cost_center?: string
+  write_off_outstanding_amount_automatically?: boolean
   cost_center?: string
   project?: string
   debit_to?: string
@@ -140,11 +146,45 @@ export interface SalesInvoice {
   is_return?: boolean
   return_against?: string
   is_debit_note?: boolean
+  update_billed_amount_in_sales_order?: boolean
+  update_billed_amount_in_delivery_note?: boolean
+  update_outstanding_for_self?: boolean
   is_opening?: string
   customer_group?: string
   remarks?: string
   // Amendment
   amended_from?: string
+  // Additional fetch_from / round-trip fields
+  tax_id?: string
+  company_tax_id?: string
+  is_internal_customer?: 0 | 1
+  represents_company?: string
+  dispatch_address_name?: string
+  naming_series?: string
+  set_posting_time?: boolean
+  contact_display?: string
+  company_address?: string
+  company_address_display?: string
+  // Base currency (ERPNext-computed)
+  base_grand_total?: number
+  base_net_total?: number
+  base_total_taxes_and_charges?: number
+  base_rounding_adjustment?: number
+  base_rounded_total?: number
+  base_in_words?: string
+  total_net_weight?: number
+  rounding_adjustment?: number
+  base_paid_amount?: number
+  paid_amount?: number
+  base_change_amount?: number
+  change_amount?: number
+  base_write_off_amount?: number
+  total_advance?: number
+  // Accounting Details
+  unrealized_profit_loss_account?: string
+  against_income_account?: string
+  // Additional
+  tax_withholding_category?: string
   // Advances
   advances?: SalesInvoiceAdvance[]
   allocate_advances_automatically?: boolean
@@ -181,7 +221,9 @@ export interface SalesInvoiceFormData {
   selling_price_list?: string
   price_list_currency?: string
   plc_conversion_rate?: number
+  ignore_pricing_rule?: boolean
   set_warehouse?: string
+  set_target_warehouse?: string
   update_stock?: boolean
   debit_to?: string
   taxes_and_charges?: string
@@ -197,9 +239,13 @@ export interface SalesInvoiceFormData {
   additional_discount_percentage?: number
   coupon_code?: string
   additional_discount_account?: string
+  is_cash_or_non_trade_discount?: boolean
+  disable_rounded_total?: boolean
+  use_company_roundoff_cost_center?: boolean
   write_off_amount?: number
   write_off_account?: string
   write_off_cost_center?: string
+  write_off_outstanding_amount_automatically?: boolean
   cost_center?: string
   project?: string
   // Sales Team
@@ -226,6 +272,9 @@ export interface SalesInvoiceFormData {
   is_return?: boolean
   return_against?: string
   is_debit_note?: boolean
+  update_billed_amount_in_sales_order?: boolean
+  update_billed_amount_in_delivery_note?: boolean
+  update_outstanding_for_self?: boolean
   // Advances
   advances?: SalesInvoiceAdvance[]
   allocate_advances_automatically?: boolean
@@ -242,6 +291,33 @@ export interface SalesInvoiceFormData {
   isOpening?: string
   customerGroup?: string
   remarks?: string
+  // Address & Contact (new fields)
+  dispatch_address_name?: string
+  company_address?: string
+  company_contact_person?: string
+  territory?: string
+  // Accounting Details (new fields)
+  unrealized_profit_loss_account?: string
+  against_income_account?: string
+  // Additional Info
+  title?: string
+  status?: string
+  taxWithholdingCategory?: string
+  is_internal_customer?: boolean
+  represents_company?: string
+  inter_company_invoice_reference?: string
+  is_discounted?: boolean
+  // UTM Analytics
+  utm_source?: string
+  utm_medium?: string
+  utm_campaign?: string
+  utm_content?: string
+  // Payments (computed display)
+  base_paid_amount?: number
+  paid_amount?: number
+  base_change_amount?: number
+  change_amount?: number
+  base_write_off_amount?: number
   items: Omit<SalesInvoiceItem, "name" | "amount">[]
 }
 

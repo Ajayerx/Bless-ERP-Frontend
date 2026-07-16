@@ -7,6 +7,7 @@ export interface CompanyDefaults {
   defaultReceivableAccount: string
   defaultIncomeAccount: string
   defaultCostCenter: string
+  companyTaxId: string
 }
 
 let cachedDefaults: CompanyDefaults | null = null
@@ -21,7 +22,7 @@ export async function getCompanyDefaults(): Promise<CompanyDefaults> {
       const company = await resolveCompany()
       const [companyDoc, sellingSettings] = await Promise.all([
         apiClient<Record<string, unknown>>(
-          `/resource/Company/${encodeURIComponent(company)}?fields=${encodeURIComponent(JSON.stringify(["default_currency", "default_receivable_account", "default_income_account", "default_cost_center"]))}`
+          `/resource/Company/${encodeURIComponent(company)}?fields=${encodeURIComponent(JSON.stringify(["default_currency", "default_receivable_account", "default_income_account", "default_cost_center", "tax_id"]))}`
         ),
         apiClient<Record<string, unknown>>(
           "/resource/Selling Settings/Selling Settings?fields=" +
@@ -36,6 +37,7 @@ export async function getCompanyDefaults(): Promise<CompanyDefaults> {
         defaultReceivableAccount: (companyDoc.default_receivable_account as string) || "Debtors - BE",
         defaultIncomeAccount: (companyDoc.default_income_account as string) || "",
         defaultCostCenter: (companyDoc.default_cost_center as string) || "",
+        companyTaxId: (companyDoc.tax_id as string) || "",
       }
 
       cachedDefaults = defaults

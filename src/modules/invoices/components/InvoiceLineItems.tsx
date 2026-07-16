@@ -1,9 +1,10 @@
 "use client"
 
-import { Fragment, useState } from "react"
-import { Plus, Trash2, ChevronDown, ChevronRight, ScanBarcode } from "lucide-react"
+import { Fragment, useState, useEffect, useRef, useCallback } from "react"
+import { Plus, Trash2, ChevronDown, ChevronRight, ScanBarcode, Search, X } from "lucide-react"
 import { type Product } from "@/services"
 import { formatCurrency } from "@/lib/utils"
+import { invoiceService } from "../services"
 
 export interface LineItemForm {
   id: string
@@ -46,6 +47,7 @@ interface InvoiceLineItemsProps {
   onUpdate?: (id: string, updates: Partial<LineItemForm>) => void
   onRemove?: (id: string) => void
   onAdd?: () => void
+  onAddItemWithQty?: (product: Product, qty: number) => void
   onProductDropdownChange?: (id: string, dropdown: { open: boolean; search: string }) => void
   onSelectProduct?: (lineId: string, product: Product) => void
   taxRate?: number
@@ -66,6 +68,7 @@ export default function InvoiceLineItems({
   onUpdate,
   onRemove,
   onAdd,
+  onAddItemWithQty,
   onProductDropdownChange,
   onSelectProduct,
   taxRate = 0,
@@ -106,7 +109,7 @@ export default function InvoiceLineItems({
   }
 
   return (
-    <div className="overflow-hidden">
+    <div className="relative overflow-x-auto">
       <div className="px-4 py-3 border-b border-border">
         <div className="relative max-w-sm">
           <ScanBarcode size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
@@ -197,63 +200,197 @@ export default function InvoiceLineItems({
         >
           <Plus size={14} /> Add Row
         </button>
-        <AddMultipleButton onAdd={onAdd} />
+        <AddMultipleModal items={items} onAddItemWithQty={onAddItemWithQty} />
       </div>
     </div>
   )
 }
 
-function AddMultipleButton({ onAdd }: { onAdd?: () => void }) {
-  const [open, setOpen] = useState(false)
-  const [count, setCount] = useState(1)
+type SearchResultItem = { value: string; label: string; description: string }
 
-  const handleAdd = () => {
-    const n = Math.max(1, Math.min(50, count))
-    for (let i = 0; i < n; i++) onAdd?.()
-    setCount(1)
-    setOpen(false)
+function AddMultipleModal({
+  items,
+  onAddItemWithQty,
+}: {
+  items: LineItemForm[]
+  onAddItemWithQty?: (product: Product, qty: number) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState("")
+  const [results, setResults] = useState<SearchResultItem[]>([])
+  const [loading, setLoading] = useState(false)
+  const [toast, setToast] = useState<string | null>(null)
+  const [qtyPrompt, setQtyPrompt] = useState<{ item: SearchResultItem; qty: number } | null>(null)
+  const searchInputRef = useRef<HTMLInputElement>(null)
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>()
+  const PAGE = 20
+
+  const doSearch = useCallback(async (q: string) => {
+    setLoading(true)
+    try {
+      const res = await invoiceService.searchItems(q, 0, PAGE)
+      setResults(res.items)
+    } catch {
+      setResults([])
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (open) {
+      setQuery("")
+      setResults([])
+      setToast(null)
+      setQtyPrompt(null)
+      doSearch("")
+      setTimeout(() => searchInputRef.current?.focus(), 100)
+    }
+  }, [open, doSearch])
+
+  const handleSearch = (val: string) => {
+    setQuery(val)
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    debounceRef.current = setTimeout(() => doSearch(val), 300)
+  }
+
+  const handleSelectItem = (item: SearchResultItem) => {
+    setQtyPrompt({ item, qty: 1 })
+  }
+
+  const handleSetQty = async () => {
+    if (!qtyPrompt || !onAddItemWithQty) return
+    const { item, qty } = qtyPrompt
+    const details = await invoiceService.getItemDetails(item.value)
+    const product: Product = {
+      name: item.value,
+      item_code: item.value,
+      item_name: (details?.item_name as string) || item.label,
+      item_group: (details?.item_group as string) || "",
+      stock_uom: (details?.stock_uom as string) || "Nos",
+      standard_rate: (details?.standard_rate as number) || 0,
+      effective_cost: null,
+      stock: 0,
+      stock_value: 0,
+      default_warehouse: details?.default_warehouse as string | undefined,
+      income_account: details?.income_account as string | undefined,
+      cost_center: details?.cost_center as string | undefined,
+      description: (details?.description as string) || "",
+    }
+    onAddItemWithQty(product, qty)
+    const existing = items.find((i) => i.productId === item.value)
+    setToast(existing ? `Updated ${item.value} qty to ${existing.quantity + qty}` : `Added ${item.value} (${qty})`)
+    setTimeout(() => setToast(null), 3000)
+    setQtyPrompt(null)
   }
 
   return (
-    <div className="relative">
+    <>
       <button
         type="button"
-        onClick={() => setOpen(!open)}
+        onClick={() => setOpen(true)}
         className="flex items-center gap-1.5 text-sm font-semibold text-muted hover:text-body transition-colors"
       >
         <Plus size={14} /> Add Multiple
-        <ChevronDown size={12} />
       </button>
+
       {open && (
-        <div className="absolute z-10 mt-1.5 left-0 bg-surface border border-border rounded-[12px] shadow-xl p-3 w-48">
-          <label className="block text-xs font-semibold text-muted mb-1.5">Number of rows</label>
-          <div className="flex gap-2">
-            <input
-              type="number"
-              min={1}
-              max={50}
-              value={count}
-              onChange={(e) => setCount(parseInt(e.target.value) || 1)}
-              className="flex-1 px-2 py-1.5 text-sm border border-border rounded-[8px] focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500"
-            />
-            <button
-              type="button"
-              onClick={handleAdd}
-              className="px-3 py-1.5 text-sm font-semibold bg-primary-600 text-white rounded-[8px] hover:bg-primary-700 transition-colors"
-            >
-              Add
-            </button>
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setOpen(false)} />
+          <div className="relative bg-surface border border-border rounded-[14px] shadow-2xl w-full max-w-[520px] max-h-[80vh] flex flex-col mx-4">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-border">
+              <h3 className="text-base font-semibold text-heading">Select Item</h3>
+              <button onClick={() => setOpen(false)} className="text-muted hover:text-heading transition-colors">
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="px-5 pt-4 pb-2">
+              <div className="relative">
+                <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
+                <input
+                  ref={searchInputRef}
+                  type="text"
+                  placeholder="Beginning with"
+                  value={query}
+                  onChange={(e) => handleSearch(e.target.value)}
+                  className="w-full pl-9 pr-3 py-2 text-sm border border-border rounded-[10px] focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 transition-all bg-white"
+                />
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto px-5 pb-2" style={{ maxHeight: "50vh" }}>
+              {loading && results.length === 0 ? (
+                <div className="py-8 text-center text-sm text-muted">Searching…</div>
+              ) : results.length === 0 ? (
+                <div className="py-8 text-center text-sm text-muted">No items found</div>
+              ) : (
+                <div className="divide-y divide-border/50">
+                  {results.map((item) => (
+                    <button
+                      key={item.value}
+                      type="button"
+                      onClick={() => handleSelectItem(item)}
+                      className="w-full text-left px-3 py-2.5 hover:bg-primary-50/50 rounded-[8px] transition-colors"
+                    >
+                      <div className="text-sm font-semibold text-heading">{item.value}</div>
+                      <div className="text-xs text-muted mt-0.5">
+                        {item.label}{item.description ? `, ${item.description}` : ""}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="px-5 py-3 border-t border-border flex items-center justify-end">
+              <button
+                type="button"
+                onClick={() => setOpen(false)}
+                className="px-4 py-2 text-sm font-semibold bg-gray-100 text-heading rounded-[10px] hover:bg-gray-200 transition-colors"
+              >
+                Close
+              </button>
+            </div>
           </div>
-          <button
-            type="button"
-            onClick={() => setOpen(false)}
-            className="mt-2 text-xs text-muted hover:text-body transition-colors"
-          >
-            Cancel
-          </button>
+
+          {toast && (
+            <div className="fixed top-5 right-5 z-[60] px-4 py-2.5 bg-green-600 text-white text-sm font-semibold rounded-[10px] shadow-lg">
+              {toast}
+            </div>
+          )}
         </div>
       )}
-    </div>
+
+      {qtyPrompt && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/30" onClick={() => setQtyPrompt(null)} />
+          <div className="relative bg-surface border border-border rounded-[14px] shadow-2xl w-[340px] p-5">
+            <h4 className="text-sm font-semibold text-heading mb-1">Set Quantity</h4>
+            <p className="text-xs text-muted mb-3">{qtyPrompt.item.value} — {qtyPrompt.item.label}</p>
+            <input
+              type="number"
+              min={0.01}
+              step="any"
+              value={qtyPrompt.qty}
+              onChange={(e) => setQtyPrompt((p) => p ? { ...p, qty: parseFloat(e.target.value) || 1 } : p)}
+              className="w-full px-3 py-2 text-sm border border-border rounded-[10px] focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 mb-4"
+              autoFocus
+              onKeyDown={(e) => { if (e.key === "Enter") handleSetQty() }}
+            />
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={handleSetQty}
+                className="px-4 py-2 text-sm font-semibold bg-primary-600 text-white rounded-[10px] hover:bg-primary-700 transition-colors"
+              >
+                Set Quantity
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   )
 }
 
