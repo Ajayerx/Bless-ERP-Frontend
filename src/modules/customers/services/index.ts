@@ -1,12 +1,16 @@
 import { apiClient } from "@/services/api-client"
+import type {
+  Customer, CustomerListResponse, AddressInput, AllowedCompanyRow,
+  CreditLimitRow, PartyAccountRow, SalesTeamRow, PortalUserRow,
+  SupplierNumberRow, CustomerFormData, CustomerDetail,
+} from "../types"
 export type {
   Customer, CustomerListResponse, AddressInput, AllowedCompanyRow,
   CreditLimitRow, PartyAccountRow, SalesTeamRow, PortalUserRow,
-  CustomerFormData, CustomerDetail, TransactionCounts,
+  SupplierNumberRow, CustomerFormData, CustomerDetail, TransactionCounts,
 } from "../types"
-export type { AddressDoc }
 
-function buildListUrl(
+export function buildListUrl(
   doctype: string,
   params: {
     fields: string[]
@@ -36,15 +40,19 @@ async function getCount(doctype: string, filters?: unknown[]): Promise<number> {
 }
 
 async function fetchLinkOptions(doctype: string, orderByField = "name", filters?: unknown[]): Promise<string[]> {
-  const rows = await apiClient<Array<{ name: string }>>(
-    buildListUrl(doctype, {
-      fields: ["name"],
-      order_by: `${orderByField} asc`,
-      limit_page_length: 0,
-      filters,
-    })
-  )
-  return rows.map((r) => r.name)
+  try {
+    const rows = await apiClient<Array<{ name: string }>>(
+      buildListUrl(doctype, {
+        fields: ["name"],
+        order_by: `${orderByField} asc`,
+        limit_page_length: 0,
+        filters,
+      })
+    )
+    return rows.map((r) => r.name)
+  } catch {
+    return []
+  }
 }
 
 export const customerLookups = {
@@ -53,40 +61,35 @@ export const customerLookups = {
   salutations: () => fetchLinkOptions("Salutation"),
   genders: () => fetchLinkOptions("Gender"),
   currencies: () => fetchLinkOptions("Currency"),
-  bankAccounts: () => fetchLinkOptions("Bank Account"),
-  priceLists: () => fetchLinkOptions("Price List"),
+  bankAccounts: () => fetchLinkOptions("Bank Account", "name", [["is_company_account", "=", 1]]),
+  priceLists: () => fetchLinkOptions("Price List", "name", [["selling", "=", 1]]),
   companies: () => fetchLinkOptions("Company"),
   marketSegments: () => fetchLinkOptions("Market Segment"),
   industries: () => fetchLinkOptions("Industry Type"),
   languages: () => fetchLinkOptions("Language"),
   taxCategories: () => fetchLinkOptions("Tax Category"),
+  taxWithholdingGroups: () => fetchLinkOptions("Tax Withholding Group"),
   taxWithholdingCategories: () => fetchLinkOptions("Tax Withholding Category"),
   paymentTermsTemplates: () => fetchLinkOptions("Payment Terms Template"),
   loyaltyPrograms: () => fetchLinkOptions("Loyalty Program"),
   salesPartners: () => fetchLinkOptions("Sales Partner"),
-  accounts: () => fetchLinkOptions("Account"),
+  accounts: () => fetchLinkOptions("Account", "name", [["account_type", "=", "Receivable"], ["root_type", "=", "Asset"], ["is_group", "=", 0]]),
+  advanceAccounts: () => fetchLinkOptions("Account", "name", [["account_type", "=", "Receivable"], ["root_type", "=", "Liability"], ["is_group", "=", 0]]),
   salesPersons: () => fetchLinkOptions("Sales Person"),
   users: () => fetchLinkOptions("User", "full_name"),
+  leads: () => fetchLinkOptions("Lead", "name"),
+  opportunities: () => fetchLinkOptions("Opportunity", "name"),
+  prospects: () => fetchLinkOptions("Prospect", "name"),
 }
 
 interface CustomerRow extends Omit<Customer, "outstanding" | "status"> { }
 
 const CUSTOMER_FIELDS: (keyof CustomerRow)[] = [
-  "name", "naming_series", "salutation", "customer_name",
-  "customer_type",
-  "customer_group", "territory", "gender", "lead_name", "opportunity_name",
-  "prospect_name", "crm_deal", "account_manager", "image",
-  "default_currency", "default_bank_account", "default_price_list",
+  "name", "customer_name", "customer_type", "customer_group", "territory",
+  "gender", "lead_name", "opportunity_name", "prospect_name",
   "is_internal_customer", "represents_company",
-  "market_segment", "industry", "customer_pos_id", "website", "language",
-  "customer_details", "customer_primary_address", "primary_address",
-  "customer_primary_contact", "mobile_no", "email_id", "first_name", "last_name",
-  "tax_id", "tax_category", "tax_withholding_category",
-  "payment_terms",
-  "loyalty_program", "loyalty_program_tier",
-  "default_sales_partner", "default_commission_rate",
-  "so_required", "dn_required", "is_frozen", "disabled",
-  "creation", "modified",
+  "mobile_no", "email_id", "default_currency", "default_price_list",
+  "disabled", "is_frozen", "creation", "modified",
 ]
 
 function toCustomer(row: CustomerRow, outstanding: number): Customer {
@@ -168,6 +171,12 @@ async function updateContact(
   })
 }
 
+async function deleteContact(contactName: string): Promise<void> {
+  await apiClient<void>(`/resource/Contact/${encodeURIComponent(contactName)}`, {
+    method: "DELETE",
+  })
+}
+
 export async function createAddress(
   customerName: string,
   type: "Billing" | "Shipping",
@@ -202,6 +211,12 @@ async function updateAddress(addressName: string, input: AddressInput): Promise<
       country: input.country,
       pincode: input.pincode,
     }),
+  })
+}
+
+async function deleteAddress(addressName: string): Promise<void> {
+  await apiClient<void>(`/resource/Address/${encodeURIComponent(addressName)}`, {
+    method: "DELETE",
   })
 }
 
@@ -240,12 +255,15 @@ async function fetchTransactionCounts(customerName: string): Promise<{
 function toCustomerDocPayload(data: CustomerFormData): Record<string, unknown> {
   return {
     salutation: data.salutation,
+    alias: data.alias,
     customer_name: data.customer_name.trim(),
     customer_type: data.customer_type,
     customer_group: data.customer_group,
     territory: data.territory,
     gender: data.gender,
     lead_name: data.lead_name,
+    opportunity_name: data.opportunity_name,
+    crm_deal: data.crm_deal,
     account_manager: data.account_manager,
     image: data.image,
     default_currency: data.default_currency,
@@ -261,6 +279,7 @@ function toCustomerDocPayload(data: CustomerFormData): Record<string, unknown> {
     customer_details: data.customer_details,
     tax_id: data.tax_id,
     tax_category: data.tax_category,
+    tax_withholding_group: data.tax_withholding_group,
     tax_withholding_category: data.tax_withholding_category,
     payment_terms: data.payment_terms,
     loyalty_program: data.loyalty_program,
@@ -275,6 +294,7 @@ function toCustomerDocPayload(data: CustomerFormData): Record<string, unknown> {
     ...(data.accounts ? { accounts: data.accounts } : {}),
     ...(data.sales_team ? { sales_team: data.sales_team } : {}),
     ...(data.portal_users ? { portal_users: data.portal_users } : {}),
+    ...(data.supplier_numbers ? { supplier_numbers: data.supplier_numbers } : {}),
   }
 }
 
@@ -326,6 +346,7 @@ export const customerService = {
         accounts?: PartyAccountRow[]
         sales_team?: SalesTeamRow[]
         portal_users?: PortalUserRow[]
+        supplier_numbers?: SupplierNumberRow[]
       }>(`/resource/Customer/${encodeURIComponent(name)}`),
       fetchAddressesForCustomer(name),
       fetchOutstandingByCustomer([name]),
@@ -349,6 +370,7 @@ export const customerService = {
       accounts: fullDoc.accounts ?? [],
       sales_team: fullDoc.sales_team ?? [],
       portal_users: fullDoc.portal_users ?? [],
+      supplier_numbers: fullDoc.supplier_numbers ?? [],
     }
   },
 
@@ -434,6 +456,148 @@ export const customerService = {
 
   async delete(name: string): Promise<void> {
     return apiClient<void>(`/resource/Customer/${encodeURIComponent(name)}`, {
+      method: "DELETE",
+    })
+  },
+
+  async deleteContact(contactName: string): Promise<void> {
+    return deleteContact(contactName)
+  },
+
+  async deleteAddress(addressName: string): Promise<void> {
+    return deleteAddress(addressName)
+  },
+
+  async exportToCsv(params?: { search?: string }): Promise<void> {
+    const result = await customerService.list({ search: params?.search, page: 1, pageSize: 9999 })
+    const headers = ["name", "customer_name", "customer_type", "customer_group", "territory", "email_id", "mobile_no", "outstanding", "status", "creation"]
+    const rows = result.items.map((c) =>
+      headers.map((h) => {
+        const val = String((c as Record<string, unknown>)[h] ?? "")
+        return val.includes(",") || val.includes('"') || val.includes("\n")
+          ? `"${val.replace(/"/g, '""')}"`
+          : val
+      }).join(",")
+    )
+    const csv = [headers.join(","), ...rows].join("\n")
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement("a")
+    link.href = url
+    link.download = `customers_export_${new Date().toISOString().slice(0, 10)}.csv`
+    link.click()
+    URL.revokeObjectURL(url)
+  },
+
+  async importFromCsv(file: File): Promise<{ success: number; failed: number; errors: string[] }> {
+    const text = await file.text()
+    const lines = text.split("\n").filter((l) => l.trim())
+    if (lines.length < 2) {
+      return { success: 0, failed: 0, errors: ["CSV file is empty or has no data rows"] }
+    }
+    const headers = lines[0].split(",").map((h) => h.trim().toLowerCase())
+    const nameIdx = headers.indexOf("customer_name")
+    const typeIdx = headers.indexOf("customer_type")
+    const groupIdx = headers.indexOf("customer_group")
+    const territoryIdx = headers.indexOf("territory")
+    if (nameIdx === -1) {
+      return { success: 0, failed: 0, errors: ["CSV must have a 'customer_name' column"] }
+    }
+    let success = 0
+    let failed = 0
+    const errors: string[] = []
+    for (let i = 1; i < lines.length; i++) {
+      const cols = lines[i].split(",").map((c) => c.trim())
+      const customerName = cols[nameIdx]
+      if (!customerName) continue
+      try {
+        await customerService.create({
+          customer_name: customerName,
+          customer_type: (cols[typeIdx] as "Company" | "Individual" | "Partnership") || "Company",
+          customer_group: cols[groupIdx] || "",
+          territory: cols[territoryIdx] || "",
+          so_required: false,
+          dn_required: false,
+          is_frozen: false,
+          disabled: false,
+          is_internal_customer: false,
+        })
+        success++
+      } catch (e) {
+        failed++
+        errors.push(`Row ${i + 1} (${customerName}): ${e instanceof Error ? e.message : "Unknown error"}`)
+      }
+    }
+    return { success, failed, errors }
+  },
+}
+
+// --- Notes (ERPNext Communication doctype with comment_type="Comment") ---
+
+export interface CustomerNote {
+  id: string
+  content: string
+  author: string
+  createdAt: string
+}
+
+export const noteService = {
+  async list(customerName: string): Promise<CustomerNote[]> {
+    try {
+      const rows = await apiClient<{
+        name: string
+        content: string
+        owner: string
+        creation: string
+      }[]>(
+        buildListUrl("Communication", {
+          fields: ["name", "content", "owner", "creation"],
+          filters: [
+            ["communication_type", "=", "Comment"],
+            ["reference_doctype", "=", "Customer"],
+            ["reference_name", "=", customerName],
+          ],
+          limit_page_length: 100,
+          order_by: "creation desc",
+        })
+      )
+      return (rows ?? []).map((r) => ({
+        id: r.name,
+        content: r.content,
+        author: r.owner,
+        createdAt: r.creation,
+      }))
+    } catch {
+      return []
+    }
+  },
+
+  async create(customerName: string, content: string): Promise<CustomerNote> {
+    const row = await apiClient<{
+      name: string
+      content: string
+      owner: string
+      creation: string
+    }>("/resource/Communication", {
+      method: "POST",
+      body: JSON.stringify({
+        communication_type: "Comment",
+        comment_type: "Comment",
+        reference_doctype: "Customer",
+        reference_name: customerName,
+        content,
+      }),
+    })
+    return {
+      id: row.name,
+      content: row.content,
+      author: row.owner,
+      createdAt: row.creation,
+    }
+  },
+
+  async delete(noteId: string): Promise<void> {
+    await apiClient<void>(`/resource/Communication/${encodeURIComponent(noteId)}`, {
       method: "DELETE",
     })
   },

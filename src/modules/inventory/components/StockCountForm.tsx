@@ -25,15 +25,20 @@ export default function StockCountForm({ count, onSaved, onCancel }: StockCountF
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState("")
   const [systemItems, setSystemItems] = useState<Map<string, { actual_qty: number; valuation_rate: number }>>(new Map())
+  const [binLoadError, setBinLoadError] = useState(false)
 
   useEffect(() => {
+    let cancelled = false
     Promise.all([
       inventoryLookups.companies(),
       inventoryService.listWarehouses({ pageSize: 100 }).then((r) => r.items.map((w) => w.name)),
     ]).then(([cos, whs]) => {
-      setCompanies(cos)
-      setWarehouses(whs)
-    })
+      if (!cancelled) {
+        setCompanies(cos)
+        setWarehouses(whs)
+      }
+    }).catch((e) => { if (!cancelled) setError(e instanceof Error ? e.message : "Failed to load dropdown options.") })
+    return () => { cancelled = true }
   }, [])
 
   useEffect(() => {
@@ -64,8 +69,8 @@ export default function StockCountForm({ count, onSaved, onCancel }: StockCountF
     qp.set("filters", JSON.stringify([["warehouse", "=", form.warehouse]]))
     qp.set("limit_page_length", "0")
     apiClient<Array<{ item_code: string; actual_qty: number; valuation_rate: number }>>(`/resource/Bin?${qp.toString()}`)
-      .then((rows) => setSystemItems(new Map(rows.map((r) => [r.item_code, { actual_qty: r.actual_qty, valuation_rate: r.valuation_rate }]))))
-      .catch(() => setSystemItems(new Map()))
+      .then((rows) => { setSystemItems(new Map(rows.map((r) => [r.item_code, { actual_qty: r.actual_qty, valuation_rate: r.valuation_rate }]))); setBinLoadError(false) })
+      .catch(() => { setSystemItems(new Map()); setBinLoadError(true) })
   }, [form.warehouse, count])
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
@@ -141,6 +146,9 @@ export default function StockCountForm({ count, onSaved, onCancel }: StockCountF
     <form onSubmit={handleSubmit} className="bg-surface rounded-[16px] border border-border shadow-card p-6 space-y-4">
       {error && (
         <p className="text-sm text-danger-600 bg-danger-50 border border-danger-100 px-3 py-2.5 rounded-[10px]">{error}</p>
+      )}
+      {binLoadError && (
+        <p className="text-sm text-warning-600 bg-warning-50 border border-warning-100 px-3 py-2.5 rounded-[10px]">Could not load system stock data for the selected warehouse. Expected quantities may not be available.</p>
       )}
 
       <div className="grid grid-cols-2 gap-4">

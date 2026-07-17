@@ -104,11 +104,21 @@ export default function InvoiceDetail() {
   }))
 
   const netTotal = invoice.net_total ?? readOnlyItems.reduce((s: number, i: { total: number }) => s + i.total, 0)
-  const gstTax = (invoice.taxes ?? []).find((t: SalesInvoiceTax) => t.account_head?.toLowerCase().includes("gst"))
-  const qstTax = (invoice.taxes ?? []).find((t: SalesInvoiceTax) => t.account_head?.toLowerCase().includes("qst"))
-  const gstAmount = gstTax?.tax_amount ?? 0
-  const qstAmount = qstTax?.tax_amount ?? 0
-  const grandTotal = invoice.grand_total ?? netTotal + gstAmount + qstAmount
+
+  // Dynamic tax extraction — iterate over all taxes, not just GST/QST
+  const allTaxes = (invoice.taxes ?? []) as SalesInvoiceTax[]
+  const totalTaxes = allTaxes.reduce((sum: number, t: SalesInvoiceTax) => sum + (t.tax_amount ?? 0), 0)
+  const grandTotal = invoice.grand_total ?? netTotal + totalTaxes
+
+  // Rounding from ERPNext (server-computed)
+  const effectiveRoundedTotal = invoice.rounded_total ?? grandTotal
+  const roundingAdjustment = effectiveRoundedTotal - grandTotal
+
+  // Build tax lines for InvoiceTotals
+  const taxLinesForDisplay = allTaxes.map((t: SalesInvoiceTax) => ({
+    label: t.description || t.account_head || "Tax",
+    amount: t.tax_amount ?? 0,
+  }))
 
   return (
     <>
@@ -158,7 +168,7 @@ export default function InvoiceDetail() {
                 <FileEdit size={14} /> Amend
               </Button>
             )}
-            <InvoicePDFButton />
+            <InvoicePDFButton invoice={invoice} />
           </div>
         </div>
 
@@ -196,42 +206,14 @@ export default function InvoiceDetail() {
               <InvoiceLineItems items={readOnlyItems as any} readOnly />
             </div>
 
-            <InvoiceTotals subtotal={netTotal} gst={gstAmount} qst={qstAmount} grandTotal={grandTotal} variant="inline" />
+            <InvoiceTotals subtotal={netTotal} grandTotal={grandTotal} totalTaxesAndCharges={totalTaxes} taxLines={taxLinesForDisplay} roundingAdjustment={roundingAdjustment} roundedTotal={effectiveRoundedTotal} outstandingAmount={invoice.outstanding_amount} variant="inline" />
 
-            <div className="grid grid-cols-2 gap-4 mt-4 pt-4 border-t border-border/50">
-              <div className="space-y-2">
-                {invoice.rounded_total !== undefined && invoice.rounded_total !== invoice.grand_total && (
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted">Rounding Adjustment</span>
-                    <span className="text-heading tabular-nums">{formatCurrency((invoice.grand_total ?? 0) - (invoice.rounded_total ?? 0))}</span>
-                  </div>
-                )}
-                {invoice.rounded_total !== undefined && (
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted">Rounded Total</span>
-                    <span className="font-semibold text-heading tabular-nums">{formatCurrency(invoice.rounded_total)}</span>
-                  </div>
-                )}
-                {invoice.in_words && (
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted">In Words</span>
-                    <span className="text-heading italic">{invoice.in_words}</span>
-                  </div>
-                )}
+            {invoice.in_words && (
+              <div className="flex justify-between text-sm mt-3 pt-3 border-t border-border/50">
+                <span className="text-muted">In Words</span>
+                <span className="text-heading italic">{invoice.in_words}</span>
               </div>
-              <div className="space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted">Outstanding Amount</span>
-                  <span className="font-semibold text-heading tabular-nums">{formatCurrency(invoice.outstanding_amount)}</span>
-                </div>
-                {invoice.total_taxes_and_charges !== undefined && invoice.total_taxes_and_charges > 0 && (
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted">Total Taxes & Charges</span>
-                    <span className="text-heading tabular-nums">{formatCurrency(invoice.total_taxes_and_charges)}</span>
-                  </div>
-                )}
-              </div>
-            </div>
+            )}
           </CardContent>
         </Card>
       </motion.div>

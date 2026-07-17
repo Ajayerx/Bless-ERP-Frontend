@@ -19,6 +19,7 @@ export default function WarehouseDetail() {
   const [stockItems, setStockItems] = useState<{ item_code: string; actual_qty: number; stock_value: number }[]>([])
   const [movements, setMovements] = useState<InventoryMovement[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!id) return
@@ -31,7 +32,7 @@ export default function WarehouseDetail() {
       setWarehouse(wh)
       setStockItems(bins)
       setMovements(movRes.items)
-    }).finally(() => setLoading(false))
+    }).catch((e) => { setError(e instanceof Error ? e.message : "Failed to load warehouse details.") }).finally(() => setLoading(false))
   }, [id])
 
   if (loading) {
@@ -44,6 +45,18 @@ export default function WarehouseDetail() {
             {[...Array(3)].map((_, i) => <Skeleton key={i} className="h-28 rounded-[16px]" />)}
           </div>
           <Skeleton className="h-64 rounded-[16px]" />
+        </div>
+      </>
+    )
+  }
+
+  if (error) {
+    return (
+      <>
+        <Topbar />
+        <div className="p-6 text-center">
+          <p className="text-sm text-danger-600 bg-danger-50 border border-danger-100 px-3 py-2.5 rounded-[10px]">{error}</p>
+          <Button className="mt-4" onClick={() => navigate("/inventory/warehouses")}>Back to Warehouses</Button>
         </div>
       </>
     )

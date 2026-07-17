@@ -12,10 +12,15 @@ export default function EditProduct() {
   const navigate = useNavigate()
   const [product, setProduct] = useState<ProductDetail | null>(null)
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!id) return
-    productService.getById(id).then(setProduct).catch(() => null).finally(() => setLoading(false))
+    setLoading(true)
+    setLoadError(null)
+    productService.getById(id).then(setProduct).catch((e) => {
+      setLoadError(e instanceof Error ? e.message : "Failed to load product.")
+    }).finally(() => setLoading(false))
   }, [id])
 
   return (
@@ -40,6 +45,10 @@ export default function EditProduct() {
             <Skeleton className="h-10 w-full" />
             <Skeleton className="h-10 w-full" />
             <Skeleton className="h-10 w-full" />
+          </div>
+        ) : loadError && !product ? (
+          <div className="rounded-lg border border-danger-200 bg-danger-50 p-4 text-sm text-danger-700">
+            {loadError}
           </div>
         ) : !product ? (
           <p className="text-muted">Product not found.</p>

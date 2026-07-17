@@ -1,12 +1,21 @@
 import { useEffect, useState, useRef, useCallback } from "react"
 import { useNavigate } from "react-router-dom"
-import { Search, Users, Package, FileText, CreditCard, ShoppingBag, Warehouse, ArrowRight } from "lucide-react"
+import {
+  Search, Users, Package, FileText, CreditCard, ShoppingBag, Warehouse,
+  ArrowRight, Clock, Trash2, Truck, Command, LayoutDashboard, BarChart3,
+} from "lucide-react"
 import {
   Dialog,
   DialogContent,
 } from "@/components/ui"
 import { cn } from "@/lib/utils"
-import { searchService, type SearchResult } from "@/services/search.service"
+import {
+  searchService,
+  getRecentSearches,
+  addRecentSearch,
+  clearRecentSearches,
+  type SearchResult,
+} from "@/services/search.service"
 
 const typeConfig: Record<SearchResult["type"], { icon: typeof Users; label: string }> = {
   customer: { icon: Users, label: "Customer" },
@@ -15,6 +24,28 @@ const typeConfig: Record<SearchResult["type"], { icon: typeof Users; label: stri
   payment: { icon: CreditCard, label: "Payment" },
   sales_order: { icon: ShoppingBag, label: "Sales Order" },
   warehouse: { icon: Warehouse, label: "Warehouse" },
+  supplier: { icon: Truck, label: "Supplier" },
+  command: { icon: Command, label: "Commands" },
+}
+
+const commandIconMap: Record<string, typeof Users> = {
+  FileText, CreditCard, Users, Package, ShoppingBag, LayoutDashboard, BarChart3,
+}
+
+function highlightText(text: string, query: string): React.ReactNode {
+  if (!query.trim()) return text
+  const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+  const regex = new RegExp(`(${escaped})`, "gi")
+  const parts = text.split(regex)
+  return parts.map((part, i) =>
+    regex.test(part) ? (
+      <mark key={i} className="bg-yellow-200 text-heading rounded-[2px] px-0.5">
+        {part}
+      </mark>
+    ) : (
+      part
+    ),
+  )
 }
 
 export default function GlobalSearch({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
@@ -22,6 +53,7 @@ export default function GlobalSearch({ open, onOpenChange }: { open: boolean; on
   const [results, setResults] = useState<SearchResult[]>([])
   const [loading, setLoading] = useState(false)
   const [selectedIndex, setSelectedIndex] = useState(0)
+  const [recentSearches, setRecentSearches] = useState<string[]>([])
   const inputRef = useRef<HTMLInputElement>(null)
   const navigate = useNavigate()
 
@@ -30,6 +62,7 @@ export default function GlobalSearch({ open, onOpenChange }: { open: boolean; on
       setQuery("")
       setResults([])
       setSelectedIndex(0)
+      setRecentSearches(getRecentSearches())
       setTimeout(() => inputRef.current?.focus(), 50)
     }
   }, [open])
@@ -53,11 +86,27 @@ export default function GlobalSearch({ open, onOpenChange }: { open: boolean; on
 
   const handleSelect = useCallback(
     (result: SearchResult) => {
+      if (result.type !== "command") {
+        addRecentSearch(result.label)
+      }
       onOpenChange(false)
       navigate(result.route)
     },
     [navigate, onOpenChange],
   )
+
+  const handleRecentSelect = useCallback(
+    (term: string) => {
+      setQuery(term)
+      inputRef.current?.focus()
+    },
+    [],
+  )
+
+  const handleClearRecent = useCallback(() => {
+    clearRecentSearches()
+    setRecentSearches([])
+  }, [])
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "ArrowDown") {
@@ -81,6 +130,9 @@ export default function GlobalSearch({ open, onOpenChange }: { open: boolean; on
     {} as Record<string, SearchResult[]>,
   )
 
+  const showRecent = !query.trim() && recentSearches.length > 0
+  const showEmpty = !query.trim() && recentSearches.length === 0
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent hideClose className="max-w-lg top-[15vh] -translate-x-1/2 translate-y-0 p-0 gap-0 overflow-hidden rounded-[16px]">
@@ -89,7 +141,7 @@ export default function GlobalSearch({ open, onOpenChange }: { open: boolean; on
           <input
             ref={inputRef}
             type="text"
-            placeholder="Search customers, products, invoices..."
+            placeholder='Search or type "/" for commands...'
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={handleKeyDown}
@@ -119,9 +171,12 @@ export default function GlobalSearch({ open, onOpenChange }: { open: boolean; on
                 <p className="px-2 py-1.5 text-[11px] font-semibold text-muted uppercase tracking-wider">
                   {group}
                 </p>
-                {items.map((item, idx) => {
+                {items.map((item) => {
                   const globalIdx = results.indexOf(item)
-                  const Icon = typeConfig[item.type]?.icon || Search
+                  const config = typeConfig[item.type]
+                  const Icon = item.type === "command" && "icon" in item
+                    ? commandIconMap[(item as { icon: string }).icon] || Command
+                    : config?.icon || Search
                   return (
                     <button
                       key={item.id}
@@ -141,7 +196,17 @@ export default function GlobalSearch({ open, onOpenChange }: { open: boolean; on
                       >
                         <Icon size={14} className={cn(selectedIndex === globalIdx ? "text-primary-600" : "text-muted")} />
                       </div>
-                      <span className="flex-1 truncate">{item.label}</span>
+                      <div className="flex-1 min-w-0">
+                        <span className="block truncate">{highlightText(item.label, query)}</span>
+                        {"description" in item && item.description && (
+                          <span className="block text-xs text-muted truncate">{item.description}</span>
+                        )}
+                      </div>
+                      {item.type === "command" && (
+                        <span className="text-[10px] font-mono text-muted bg-gray-100 px-1.5 py-0.5 rounded shrink-0">
+                          /{item.label.toLowerCase().replace(/\s+/g, " ")}
+                        </span>
+                      )}
                       <ArrowRight size={12} className="text-muted shrink-0 opacity-0 group-hover:opacity-100" />
                     </button>
                   )
@@ -149,7 +214,35 @@ export default function GlobalSearch({ open, onOpenChange }: { open: boolean; on
               </div>
             ))}
 
-          {!query.trim() && (
+          {showRecent && (
+            <div>
+              <div className="flex items-center justify-between px-2 py-1.5">
+                <p className="text-[11px] font-semibold text-muted uppercase tracking-wider flex items-center gap-1.5">
+                  <Clock size={11} /> Recent Searches
+                </p>
+                <button
+                  onClick={handleClearRecent}
+                  className="text-[11px] text-muted hover:text-danger-600 transition-colors flex items-center gap-1"
+                >
+                  <Trash2 size={10} /> Clear
+                </button>
+              </div>
+              {recentSearches.map((term) => (
+                <button
+                  key={term}
+                  onClick={() => handleRecentSelect(term)}
+                  className="flex items-center gap-3 w-full px-2 py-2 rounded-[10px] text-left text-sm text-body hover:bg-gray-50 transition-colors"
+                >
+                  <div className="w-8 h-8 rounded-[8px] flex items-center justify-center shrink-0 bg-gray-100">
+                    <Clock size={14} className="text-muted" />
+                  </div>
+                  <span className="flex-1 truncate">{term}</span>
+                </button>
+              ))}
+            </div>
+          )}
+
+          {showEmpty && (
             <div className="py-8 text-center text-sm text-muted">
               Start typing to search across your data
             </div>

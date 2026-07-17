@@ -23,12 +23,14 @@ export default function StockCountDetail() {
   const [count, setCount] = useState<StockCount | null>(null)
   const [loading, setLoading] = useState(true)
   const [actionLoading, setActionLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!id) return
     const name = decodeURIComponent(id)
     inventoryService.getCount(name)
       .then(setCount)
+      .catch((e) => { setError(e instanceof Error ? e.message : "Failed to load stock count details.") })
       .finally(() => setLoading(false))
   }, [id])
 
@@ -39,6 +41,8 @@ export default function StockCountDetail() {
       await inventoryService.submitCount(count.name)
       const updated = await inventoryService.getCount(count.name)
       setCount(updated)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to submit count.")
     } finally {
       setActionLoading(false)
     }
@@ -51,6 +55,8 @@ export default function StockCountDetail() {
       await inventoryService.cancelCount(count.name)
       const updated = await inventoryService.getCount(count.name)
       setCount(updated)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to cancel count.")
     } finally {
       setActionLoading(false)
     }
@@ -64,6 +70,18 @@ export default function StockCountDetail() {
           <Skeleton className="h-8 w-64" />
           <Skeleton className="h-48 rounded-[16px]" />
           <Skeleton className="h-64 rounded-[16px]" />
+        </div>
+      </>
+    )
+  }
+
+  if (error) {
+    return (
+      <>
+        <Topbar />
+        <div className="p-6 text-center">
+          <p className="text-sm text-danger-600 bg-danger-50 border border-danger-100 px-3 py-2.5 rounded-[10px]">{error}</p>
+          <Button className="mt-4" onClick={() => navigate("/inventory/counts")}>Back to Stock Counts</Button>
         </div>
       </>
     )

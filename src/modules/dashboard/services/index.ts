@@ -1,5 +1,11 @@
 import { apiClient } from "@/services/api-client"
-export type { KpiMetric, SalesDay, RecentInvoice, TopCustomer, InventoryAlert, RecentPayment, DashboardData } from "../types"
+export type { KpiMetric, SalesDay, RecentInvoice, TopCustomer, InventoryAlert, RecentPayment, TodaySales, LowStockItem, CustomerActivity, DashboardData } from "../types"
+export { todoService } from "./todo.service"
+export type { TodoItem } from "./todo.service"
+export { notificationService, timeAgo } from "./notification.service"
+export type { NotificationItem } from "./notification.service"
+export { eventService } from "./event.service"
+export type { CalendarEvent } from "./event.service"
 
 interface SalesInvoiceRow {
   name: string
@@ -228,13 +234,35 @@ function buildKpis(
   const cashFlowLast7 = netCashFlow(last7Start)
   const cashFlowPrev7 = netCashFlow(prev7Start, last7Start)
 
-  const sparkline: number[] = []
+  // 7-day sparklines (oldest → newest)
+  const revenueSparkline: number[] = []
+  const arSparkline: number[] = []
+  const cashSparkline: number[] = []
   for (let i = 6; i >= 0; i--) {
     const day = isoDate(daysAgo(i))
-    const dayTotal = invoices
-      .filter((inv) => inv.posting_date === day)
-      .reduce((sum, inv) => sum + inv.grand_total, 0)
-    sparkline.push(dayTotal)
+    revenueSparkline.push(
+      invoices.filter((inv) => inv.posting_date === day).reduce((s, inv) => s + inv.grand_total, 0)
+    )
+    arSparkline.push(
+      invoices.filter((inv) => inv.posting_date === day).reduce((s, inv) => s + inv.outstanding_amount, 0)
+    )
+    cashSparkline.push(
+      payments
+        .filter((p) => p.posting_date === day)
+        .reduce((s, p) => s + (p.payment_type === "Receive" ? p.paid_amount : -p.paid_amount), 0)
+    )
+  }
+
+  const inventorySparkline: number[] = []
+  for (let i = 6; i >= 0; i--) {
+    const day = isoDate(daysAgo(i))
+    const dayInvoices = invoices.filter((inv) => inv.posting_date === day)
+    const dayPayments = payments.filter((p) => p.posting_date === day)
+    const dayRevenue = dayInvoices.reduce((s, inv) => s + inv.grand_total, 0)
+    const dayPaymentsAmt = dayPayments.reduce(
+      (s, p) => s + (p.payment_type === "Receive" ? p.paid_amount : -p.paid_amount), 0
+    )
+    inventorySparkline.push(Math.max(0, inventoryValue + dayRevenue - dayPaymentsAmt))
   }
 
   return {
@@ -243,28 +271,34 @@ function buildKpis(
       value: totalRevenue,
       trend: pctChange(revenueLast7, revenuePrev7),
       trendDirection: revenueLast7 >= revenuePrev7 ? "up" : "down",
-      sparkline,
+      sparkline: revenueSparkline,
     },
     accountsReceivable: {
       label: "Accounts Receivable",
       value: accountsReceivable,
-      trend: 0,
-      trendDirection: "neutral",
-      sparkline: [],
+      trend: pctChange(
+        arSparkline.slice(-1)[0] ?? 0,
+        arSparkline.slice(-2, -1)[0] ?? 0
+      ),
+      trendDirection: (arSparkline.slice(-1)[0] ?? 0) >= (arSparkline.slice(-2, -1)[0] ?? 0) ? "up" : "down",
+      sparkline: arSparkline,
     },
     inventoryValue: {
       label: "Inventory Value",
       value: inventoryValue,
-      trend: 0,
-      trendDirection: "neutral",
-      sparkline: [],
+      trend: pctChange(
+        inventorySparkline.slice(-1)[0] ?? 0,
+        inventorySparkline.slice(-2, -1)[0] ?? 0
+      ),
+      trendDirection: (inventorySparkline.slice(-1)[0] ?? 0) >= (inventorySparkline.slice(-2, -1)[0] ?? 0) ? "up" : "down",
+      sparkline: inventorySparkline,
     },
     cashFlow: {
       label: "Cash Flow",
       value: cashFlowLast7,
       trend: pctChange(cashFlowLast7, cashFlowPrev7),
       trendDirection: cashFlowLast7 >= cashFlowPrev7 ? "up" : "down",
-      sparkline: [],
+      sparkline: cashSparkline,
     },
   }
 }
@@ -420,7 +454,7 @@ function buildInventoryAlerts(
       }
       return (order[a.status] ?? 99) - (order[b.status] ?? 99)
     })
-    .slice(0, 10)
+    .slice(0, 5)
 }
 
 function buildRecentPayments(payments: PaymentEntryRow[]): RecentPayment[] {
@@ -431,6 +465,77 @@ function buildRecentPayments(payments: PaymentEntryRow[]): RecentPayment[] {
     customerName: p.party_name || p.party,
     amount: p.paid_amount,
   }))
+}
+
+function buildTodaySales(invoices: SalesInvoiceRow[]): { amount: number; previousDayAmount: number; percentChange: number; sparkline: number[] } {
+  const today = isoDate(new Date())
+  const yesterday = isoDate(daysAgo(1))
+
+  const todayTotal = invoices
+    .filter((inv) => inv.posting_date === today)
+    .reduce((sum, inv) => sum + inv.grand_total, 0)
+
+  const yesterdayTotal = invoices
+    .filter((inv) => inv.posting_date === yesterday)
+    .reduce((sum, inv) => sum + inv.grand_total, 0)
+
+  const pct = yesterdayTotal === 0
+    ? (todayTotal === 0 ? 0 : 100)
+    : Math.round(((todayTotal - yesterdayTotal) / yesterdayTotal) * 1000) / 10
+
+  const sparkline: number[] = []
+  for (let i = 6; i >= 0; i--) {
+    const day = isoDate(daysAgo(i))
+    sparkline.push(
+      invoices.filter((inv) => inv.posting_date === day).reduce((sum, inv) => sum + inv.grand_total, 0)
+    )
+  }
+
+  return { amount: todayTotal, previousDayAmount: yesterdayTotal, percentChange: pct, sparkline }
+}
+
+function buildLowStockItems(bins: BinRow[], items: ItemRow[]): { id: string; productName: string; stock: number; reorderLevel: number }[] {
+  const itemNames = new Map(items.map((it) => [it.item_code, it.item_name]))
+  return bins
+    .filter((b) => b.actual_qty <= LOW_STOCK_THRESHOLD && b.actual_qty >= 0)
+    .sort((a, b) => a.actual_qty - b.actual_qty)
+    .slice(0, 5)
+    .map((b) => ({
+      id: `${b.item_code}-${b.warehouse}`,
+      productName: itemNames.get(b.item_code) ?? b.item_code,
+      stock: b.actual_qty,
+      reorderLevel: LOW_STOCK_THRESHOLD,
+    }))
+}
+
+function buildActivities(invoices: SalesInvoiceRow[], payments: PaymentEntryRow[]): { id: string; customer: string; action: string; target: string; amount: number; date: string }[] {
+  const activities: { id: string; customer: string; action: string; target: string; amount: number; date: string }[] = []
+
+  for (const inv of invoices.slice(0, 3)) {
+    activities.push({
+      id: `inv-${inv.name}`,
+      customer: inv.customer_name || inv.customer,
+      action: "created invoice",
+      target: inv.name,
+      amount: inv.grand_total,
+      date: inv.posting_date,
+    })
+  }
+
+  for (const p of payments.slice(0, 3)) {
+    activities.push({
+      id: `pay-${p.name}`,
+      customer: p.party_name || p.party,
+      action: "made payment",
+      target: p.name,
+      amount: p.paid_amount,
+      date: p.posting_date,
+    })
+  }
+
+  return activities
+    .sort((a, b) => b.date.localeCompare(a.date))
+    .slice(0, 5)
 }
 
 export const dashboardService = {
@@ -451,6 +556,9 @@ export const dashboardService = {
       topCustomers: buildTopCustomers(invoices),
       inventoryAlerts: buildInventoryAlerts(bins, items, batches, pendingPOs),
       recentPayments: buildRecentPayments(payments),
+      todaySales: buildTodaySales(invoices),
+      lowStockItems: buildLowStockItems(bins, items),
+      activities: buildActivities(invoices, payments),
     }
   },
 }

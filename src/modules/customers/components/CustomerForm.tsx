@@ -12,6 +12,7 @@ import {
   type PartyAccountRow,
   type SalesTeamRow,
   type PortalUserRow,
+  type SupplierNumberRow,
 } from "@/services";
 import ChildTableGrid, {
   type GridColumn,
@@ -27,10 +28,10 @@ interface CustomerFormProps {
 const TABS = [
   "Basic Info",
   "Address & Contact",
-  "Tax",
   "Accounting",
-  "Sales Team",
+  "Tax",
   "Settings",
+  "Sales Team",
   "Portal Users",
   "More Info",
 ] as const;
@@ -47,6 +48,7 @@ const emptyAddress: AddressInput = {
 
 const emptyForm: CustomerFormData = {
   salutation: "",
+  alias: "",
   customer_name: "",
   customer_type: "Company",
   customer_group: "",
@@ -68,6 +70,7 @@ const emptyForm: CustomerFormData = {
   customer_details: "",
   tax_id: "",
   tax_category: "",
+  tax_withholding_group: "",
   tax_withholding_category: "",
   payment_terms: "",
   loyalty_program: "",
@@ -86,6 +89,7 @@ const emptyForm: CustomerFormData = {
   accounts: [],
   sales_team: [],
   portal_users: [],
+  supplier_numbers: [],
 };
 
 function isBlankAddress(addr?: AddressInput): boolean {
@@ -132,6 +136,8 @@ export default function CustomerForm({
   const [accounts, setAccounts] = useState<string[]>([]);
   const [salesPersons, setSalesPersons] = useState<string[]>([]);
   const [users, setUsers] = useState<string[]>([]);
+  const [taxWithholdingGroups, setTaxWithholdingGroups] = useState<string[]>([]);
+  const [advanceAccountsList, setAdvanceAccountsList] = useState<string[]>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -151,11 +157,13 @@ export default function CustomerForm({
           inds,
           langs,
           taxCats,
+          taxWithGroups,
           taxWithCats,
           payTerms,
           loyalty,
           partners,
           accts,
+          advAccts,
           sPersons,
           usrs,
         ] = await Promise.all([
@@ -171,11 +179,13 @@ export default function CustomerForm({
           customerService.lookups.industries(),
           customerService.lookups.languages(),
           customerService.lookups.taxCategories(),
+          customerService.lookups.taxWithholdingGroups(),
           customerService.lookups.taxWithholdingCategories(),
           customerService.lookups.paymentTermsTemplates(),
           customerService.lookups.loyaltyPrograms(),
           customerService.lookups.salesPartners(),
           customerService.lookups.accounts(),
+          customerService.lookups.advanceAccounts(),
           customerService.lookups.salesPersons(),
           customerService.lookups.users(),
         ]);
@@ -192,11 +202,13 @@ export default function CustomerForm({
         setIndustries(inds);
         setLanguages(langs);
         setTaxCategories(taxCats);
+        setTaxWithholdingGroups(taxWithGroups);
         setTaxWithholdingCategories(taxWithCats);
         setPaymentTermsTemplates(payTerms);
         setLoyaltyPrograms(loyalty);
         setSalesPartners(partners);
         setAccounts(accts);
+        setAdvanceAccountsList(advAccts);
         setSalesPersons(sPersons);
         setUsers(usrs);
       } catch {
@@ -225,6 +237,7 @@ export default function CustomerForm({
 
     setForm({
       salutation: customer.salutation ?? "",
+      alias: customer.alias ?? "",
       customer_name: customer.customer_name,
       customer_type: customer.customer_type,
       customer_group: customer.customer_group,
@@ -246,6 +259,7 @@ export default function CustomerForm({
       customer_details: customer.customer_details ?? "",
       tax_id: customer.tax_id ?? "",
       tax_category: customer.tax_category ?? "",
+      tax_withholding_group: customer.tax_withholding_group ?? "",
       tax_withholding_category: customer.tax_withholding_category ?? "",
       payment_terms: customer.payment_terms ?? "",
       loyalty_program: customer.loyalty_program ?? "",
@@ -285,6 +299,7 @@ export default function CustomerForm({
       accounts: customer.accounts ?? [],
       sales_team: customer.sales_team ?? [],
       portal_users: customer.portal_users ?? [],
+      supplier_numbers: customer.supplier_numbers ?? [],
     });
   }, [customer, initialValues]);
 
@@ -295,15 +310,25 @@ export default function CustomerForm({
   ) => {
     const { name, value, type } = e.target;
     const checked = (e.target as HTMLInputElement).checked;
-    setForm((prev) => ({
-      ...prev,
-      [name]:
-        type === "checkbox"
-          ? checked
-          : type === "number"
-            ? Number(value)
-            : value,
-    }));
+    setForm((prev) => {
+      const next = {
+        ...prev,
+        [name]:
+          type === "checkbox"
+            ? checked
+            : type === "number"
+              ? Number(value)
+              : value,
+      };
+      if (name === "loyalty_program" && prev.loyalty_program !== value) {
+        // loyalty_program_tier is server-generated, cleared on next save
+      }
+      if (name === "is_internal_customer" && !checked) {
+        next.represents_company = "";
+        next.companies = [];
+      }
+      return next;
+    });
   };
 
   const handleAddressChange = (
@@ -325,6 +350,24 @@ export default function CustomerForm({
       setError("Customer name is required.");
       setActiveTab("Basic Info");
       return;
+    }
+
+    if (form.is_internal_customer && !form.represents_company) {
+      setError("Represents Company is required when Is Internal Customer is checked.");
+      setActiveTab("Accounting");
+      return;
+    }
+
+    if (form.sales_team && form.sales_team.length > 0) {
+      const total = form.sales_team.reduce(
+        (sum, row) => sum + (row.allocated_percentage || 0),
+        0,
+      );
+      if (total !== 100) {
+        setError(`Total contribution percentage should be equal to 100 (currently ${total}%).`);
+        setActiveTab("Sales Team");
+        return;
+      }
     }
 
     const payload: CustomerFormData = {
@@ -419,93 +462,138 @@ export default function CustomerForm({
 
       {/* ---------------- Basic Info ---------------- */}
       {activeTab === "Basic Info" && (
-        <div className="grid grid-cols-2 gap-4 pt-2">
-          <div className="col-span-2">
-            <label htmlFor="customer_name" className={labelClass}>
-              Customer Name *
-            </label>
-            <input
-              id="customer_name"
-              name="customer_name"
-              value={form.customer_name}
-              onChange={handleChange}
-              className={inputClass}
-              placeholder="Acme Corp"
-            />
+        <div className="space-y-6 pt-2">
+          <div className="grid grid-cols-2 gap-4">
+            <div className="col-span-2">
+              <label htmlFor="customer_name" className={labelClass}>
+                Customer Name *
+              </label>
+              <input
+                id="customer_name"
+                name="customer_name"
+                value={form.customer_name}
+                onChange={handleChange}
+                className={inputClass + " font-bold"}
+                placeholder="Acme Corp"
+              />
+            </div>
+            <div>
+              <label htmlFor="customer_type" className={labelClass}>
+                Customer Type *
+              </label>
+              <select
+                id="customer_type"
+                name="customer_type"
+                value={form.customer_type}
+                onChange={handleChange}
+                className={inputClass}
+              >
+                <option value="Company">Company</option>
+                <option value="Individual">Individual</option>
+                <option value="Partnership">Partnership</option>
+              </select>
+            </div>
+            {form.customer_type === "Individual" && (
+              <div>
+                <label className={labelClass}>Gender</label>
+                <LinkSelect name="gender" value={form.gender} options={genders} />
+              </div>
+            )}
+            <div>
+              <label className={labelClass}>Customer Group</label>
+              <LinkSelect
+                name="customer_group"
+                value={form.customer_group}
+                options={customerGroups}
+                placeholder="Select a group"
+              />
+            </div>
+            <div>
+              <label className={labelClass}>Territory</label>
+              <LinkSelect
+                name="territory"
+                value={form.territory}
+                options={territories}
+                placeholder="Select a territory"
+              />
+            </div>
+            <div>
+              <label htmlFor="alias" className={labelClass}>Alias</label>
+              <input
+                id="alias"
+                name="alias"
+                value={form.alias}
+                onChange={handleChange}
+                className={inputClass}
+                placeholder="Optional alias"
+              />
+            </div>
+            <div>
+              <label className={labelClass}>Salutation</label>
+              <LinkSelect
+                name="salutation"
+                value={form.salutation}
+                options={salutations}
+              />
+            </div>
           </div>
-          <div>
-            <label htmlFor="customer_type" className={labelClass}>
-              Customer Type *
-            </label>
-            <select
-              id="customer_type"
-              name="customer_type"
-              value={form.customer_type}
-              onChange={handleChange}
-              className={inputClass}
-            >
-              <option value="Company">Company</option>
-              <option value="Individual">Individual</option>
-              <option value="Partnership">Partnership</option>
-            </select>
+
+          <div className="pt-4 border-t border-border">
+            <p className="text-sm font-semibold text-heading mb-3">Defaults</p>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className={labelClass}>Billing Currency</label>
+                <LinkSelect
+                  name="default_currency"
+                  value={form.default_currency}
+                  options={currencies}
+                />
+              </div>
+              <div>
+                <label className={labelClass}>Company Bank Account</label>
+                <LinkSelect
+                  name="default_bank_account"
+                  value={form.default_bank_account}
+                  options={bankAccounts}
+                />
+              </div>
+              <div>
+                <label className={labelClass}>Price List</label>
+                <LinkSelect
+                  name="default_price_list"
+                  value={form.default_price_list}
+                  options={priceLists}
+                />
+              </div>
+              <div>
+                <label className={labelClass}>Payment Terms Template</label>
+                <LinkSelect
+                  name="payment_terms"
+                  value={form.payment_terms}
+                  options={paymentTermsTemplates}
+                />
+              </div>
+            </div>
           </div>
-          <div>
-            <label className={labelClass}>Customer Group</label>
-            <LinkSelect
-              name="customer_group"
-              value={form.customer_group}
-              options={customerGroups}
-              placeholder="Select a group"
-            />
-          </div>
-          <div>
-            <label className={labelClass}>Territory</label>
-            <LinkSelect
-              name="territory"
-              value={form.territory}
-              options={territories}
-              placeholder="Select a territory"
-            />
-          </div>
-          <div>
-            <label className={labelClass}>Salutation</label>
-            <LinkSelect
-              name="salutation"
-              value={form.salutation}
-              options={salutations}
-            />
-          </div>
-          <div>
-            <label className={labelClass}>Gender</label>
-            <LinkSelect name="gender" value={form.gender} options={genders} />
-          </div>
-          <div>
-            <label className={labelClass}>Lead</label>
-            <LinkSelect
-              name="lead_name"
-              value={form.lead_name}
-              options={[]}
-              placeholder="No leads available"
-            />
-          </div>
-          <div>
-            <label className={labelClass}>Account Manager</label>
-            <LinkSelect
-              name="account_manager"
-              value={form.account_manager}
-              options={users}
-            />
-          </div>
-          <div className="col-span-2">
-            <label htmlFor="image" className={labelClass}>Image URL</label>
-            <input
-              id="image"
-              name="image"
-              value={form.image}
-              onChange={handleChange}
-              className={inputClass}
-              placeholder="https://example.com/photo.jpg"
-            />
+
+          <div className="pt-4 border-t border-border">
+            <p className="text-sm font-semibold text-heading mb-3">Loyalty Points</p>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className={labelClass}>Loyalty Program</label>
+                <LinkSelect
+                  name="loyalty_program"
+                  value={form.loyalty_program}
+                  options={loyaltyPrograms}
+                />
+              </div>
+              {isEdit && customer?.loyalty_program_tier && (
+                <div>
+                  <label className={labelClass}>Loyalty Program Tier</label>
+                  <p className="text-sm font-semibold text-heading bg-gray-50 px-3 py-2.5 rounded-[12px]">{customer.loyalty_program_tier}</p>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -515,7 +603,7 @@ export default function CustomerForm({
         <div className="space-y-6 pt-2">
           <div>
             <p className="text-sm font-semibold text-heading mb-3">
-              Primary Contact
+              {isEdit ? "Primary Contact" : "Primary Contact (for new customer)"}
             </p>
             <div className="grid grid-cols-2 gap-4">
               <div>
@@ -563,11 +651,7 @@ export default function CustomerForm({
                   <input
                     value={form[which]?.address_line1 ?? ""}
                     onChange={(e) =>
-                      handleAddressChange(
-                        which,
-                        "address_line1",
-                        e.target.value,
-                      )
+                      handleAddressChange(which, "address_line1", e.target.value)
                     }
                     className={inputClass}
                   />
@@ -577,11 +661,7 @@ export default function CustomerForm({
                   <input
                     value={form[which]?.address_line2 ?? ""}
                     onChange={(e) =>
-                      handleAddressChange(
-                        which,
-                        "address_line2",
-                        e.target.value,
-                      )
+                      handleAddressChange(which, "address_line2", e.target.value)
                     }
                     className={inputClass}
                   />
@@ -632,6 +712,120 @@ export default function CustomerForm({
         </div>
       )}
 
+      {/* ---------------- Accounting ---------------- */}
+      {activeTab === "Accounting" && (
+        <div className="space-y-6 pt-2">
+          <ChildTableGrid<PartyAccountRow>
+            title="Default Accounts"
+            rows={form.accounts ?? []}
+            onChange={(rows) =>
+              setForm((prev) => ({ ...prev, accounts: rows }))
+            }
+            emptyRow={{ company: "", account: "", advance_account: "" }}
+            columns={
+              [
+                {
+                  key: "company",
+                  label: "Company",
+                  type: "link",
+                  options: companiesOptions,
+                },
+                {
+                  key: "account",
+                  label: "Default Account (Receivable)",
+                  type: "link",
+                  options: accounts,
+                },
+                {
+                  key: "advance_account",
+                  label: "Advance Account",
+                  type: "link",
+                  options: advanceAccountsList,
+                },
+              ] as GridColumn<PartyAccountRow>[]
+            }
+          />
+
+          <ChildTableGrid<CreditLimitRow>
+            title="Credit Limit"
+            rows={form.credit_limits ?? []}
+            onChange={(rows) =>
+              setForm((prev) => ({ ...prev, credit_limits: rows }))
+            }
+            emptyRow={{
+              company: "",
+              credit_limit: 0,
+              bypass_credit_limit_check: 0,
+            }}
+            columns={
+              [
+                {
+                  key: "company",
+                  label: "Company",
+                  type: "link",
+                  options: companiesOptions,
+                },
+                { key: "credit_limit", label: "Credit Limit", type: "number" },
+                {
+                  key: "bypass_credit_limit_check",
+                  label: "Bypass Check at SO",
+                  type: "checkbox",
+                },
+              ] as GridColumn<CreditLimitRow>[]
+            }
+          />
+
+          <div className="pt-4 border-t border-border">
+            <p className="text-sm font-semibold text-heading mb-3">Internal Customer Accounting</p>
+            <div className="flex items-center gap-2 mb-4">
+              <input
+                id="is_internal_customer"
+                name="is_internal_customer"
+                type="checkbox"
+                checked={!!form.is_internal_customer}
+                onChange={handleChange}
+                className="h-4 w-4 rounded border-border"
+              />
+              <label htmlFor="is_internal_customer" className="text-sm text-body">
+                Is Internal Customer
+              </label>
+            </div>
+            {form.is_internal_customer && (
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className={labelClass}>Represents Company *</label>
+                  <LinkSelect
+                    name="represents_company"
+                    value={form.represents_company}
+                    options={companiesOptions}
+                  />
+                </div>
+                <div className="col-span-2">
+                  <ChildTableGrid<AllowedCompanyRow>
+                    title="Allowed to Transact With"
+                    rows={form.companies ?? []}
+                    onChange={(rows) =>
+                      setForm((prev) => ({ ...prev, companies: rows }))
+                    }
+                    emptyRow={{ company: "" }}
+                    columns={
+                      [
+                        {
+                          key: "company",
+                          label: "Company",
+                          type: "link",
+                          options: companiesOptions,
+                        },
+                      ] as GridColumn<AllowedCompanyRow>[]
+                    }
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* ---------------- Tax ---------------- */}
       {activeTab === "Tax" && (
         <div className="grid grid-cols-2 gap-4 pt-2">
@@ -657,6 +851,14 @@ export default function CustomerForm({
             />
           </div>
           <div>
+            <label className={labelClass}>Tax Withholding Group</label>
+            <LinkSelect
+              name="tax_withholding_group"
+              value={form.tax_withholding_group}
+              options={taxWithholdingGroups}
+            />
+          </div>
+          <div>
             <label className={labelClass}>Tax Withholding Category</label>
             <LinkSelect
               name="tax_withholding_category"
@@ -667,150 +869,64 @@ export default function CustomerForm({
         </div>
       )}
 
-      {/* ---------------- Accounting ---------------- */}
-      {activeTab === "Accounting" && (
+      {/* ---------------- Settings ---------------- */}
+      {activeTab === "Settings" && (
         <div className="space-y-6 pt-2">
           <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className={labelClass}>Default Currency</label>
-              <LinkSelect
-                name="default_currency"
-                value={form.default_currency}
-                options={currencies}
-              />
-            </div>
-            <div>
-              <label className={labelClass}>Default Price List</label>
-              <LinkSelect
-                name="default_price_list"
-                value={form.default_price_list}
-                options={priceLists}
-              />
-            </div>
-            <div>
-              <label className={labelClass}>Default Payment Terms Template</label>
-              <LinkSelect
-                name="payment_terms"
-                value={form.payment_terms}
-                options={paymentTermsTemplates}
-              />
-            </div>
-            <div>
-              <label className={labelClass}>Default Sales Partner</label>
-              <LinkSelect
-                name="default_sales_partner"
-                value={form.default_sales_partner}
-                options={salesPartners}
-              />
-            </div>
-            <div>
-              <label htmlFor="default_commission_rate" className={labelClass}>
-                Default Commission Rate (%)
-              </label>
+            <div className="flex items-center gap-2">
               <input
-                id="default_commission_rate"
-                name="default_commission_rate"
-                type="number"
-                value={form.default_commission_rate ?? 0}
+                id="so_required"
+                name="so_required"
+                type="checkbox"
+                checked={!!form.so_required}
                 onChange={handleChange}
-                className={inputClass}
+                className="h-4 w-4 rounded border-border"
               />
+              <label htmlFor="so_required" className="text-sm text-body whitespace-nowrap">
+                Allow sales invoice creation without sales order
+              </label>
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                id="dn_required"
+                name="dn_required"
+                type="checkbox"
+                checked={!!form.dn_required}
+                onChange={handleChange}
+                className="h-4 w-4 rounded border-border"
+              />
+              <label htmlFor="dn_required" className="text-sm text-body whitespace-nowrap">
+                Allow sales invoice creation without delivery note
+              </label>
             </div>
           </div>
 
-          <div className="flex flex-wrap gap-4 pt-2 border-t border-border">
-            {[
-              { name: "so_required", label: "Sales Order Required" },
-              { name: "dn_required", label: "Delivery Note Required" },
-              { name: "is_frozen", label: "Is Frozen" },
-            ].map((f) => (
-              <div key={f.name} className="flex items-center gap-2">
-                <input
-                  id={f.name}
-                  name={f.name}
-                  type="checkbox"
-                  checked={!!form[f.name as keyof CustomerFormData]}
-                  onChange={handleChange}
-                  className="h-4 w-4 rounded border-border"
-                />
-                <label htmlFor={f.name} className="text-sm text-body whitespace-nowrap">
-                  {f.label}
-                </label>
-              </div>
-            ))}
-          </div>
-
-          <ChildTableGrid<CreditLimitRow>
-            title="Credit Limits"
-            rows={form.credit_limits ?? []}
-            onChange={(rows) =>
-              setForm((prev) => ({ ...prev, credit_limits: rows }))
-            }
-            emptyRow={{
-              company: "",
-              credit_limit: 0,
-              bypass_credit_limit_check: 0,
-            }}
-            columns={
-              [
-                {
-                  key: "company",
-                  label: "Company",
-                  type: "link",
-                  options: companiesOptions,
-                },
-                { key: "credit_limit", label: "Credit Limit", type: "number" },
-                {
-                  key: "bypass_credit_limit_check",
-                  label: "Bypass Check",
-                  type: "checkbox",
-                },
-              ] as GridColumn<CreditLimitRow>[]
-            }
-          />
-          <ChildTableGrid<PartyAccountRow>
-            title="Default Accounts"
-            rows={form.accounts ?? []}
-            onChange={(rows) =>
-              setForm((prev) => ({ ...prev, accounts: rows }))
-            }
-            emptyRow={{ company: "", account: "", advance_account: "" }}
-            columns={
-              [
-                {
-                  key: "company",
-                  label: "Company",
-                  type: "link",
-                  options: companiesOptions,
-                },
-                {
-                  key: "account",
-                  label: "Default Account",
-                  type: "link",
-                  options: accounts,
-                },
-                {
-                  key: "advance_account",
-                  label: "Advance Account",
-                  type: "link",
-                  options: accounts,
-                },
-              ] as GridColumn<PartyAccountRow>[]
-            }
-          />
-          <div className="pt-4 border-t border-border">
-            <p className="text-sm font-semibold text-heading mb-3">
-              Loyalty Points
-            </p>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className={labelClass}>Loyalty Program</label>
-                <LinkSelect
-                  name="loyalty_program"
-                  value={form.loyalty_program}
-                  options={loyaltyPrograms}
-                />
-              </div>
+          <div className="flex items-center gap-4 pt-4 border-t border-border">
+            <div className="flex items-center gap-2">
+              <input
+                id="disabled"
+                name="disabled"
+                type="checkbox"
+                checked={!!form.disabled}
+                onChange={handleChange}
+                className="h-4 w-4 rounded border-border"
+              />
+              <label htmlFor="disabled" className="text-sm text-body">
+                Disabled
+              </label>
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                id="is_frozen"
+                name="is_frozen"
+                type="checkbox"
+                checked={!!form.is_frozen}
+                onChange={handleChange}
+                className="h-4 w-4 rounded border-border"
+              />
+              <label htmlFor="is_frozen" className="text-sm text-body">
+                Is Frozen
+              </label>
             </div>
           </div>
         </div>
@@ -819,6 +935,15 @@ export default function CustomerForm({
       {/* ---------------- Sales Team ---------------- */}
       {activeTab === "Sales Team" && (
         <div className="space-y-6 pt-2">
+          <div>
+            <label className={labelClass}>Account Manager</label>
+            <LinkSelect
+              name="account_manager"
+              value={form.account_manager}
+              options={users}
+            />
+          </div>
+
           <ChildTableGrid<SalesTeamRow>
             title="Sales Team"
             rows={form.sales_team ?? []}
@@ -839,147 +964,40 @@ export default function CustomerForm({
                   type: "link",
                   options: salesPersons,
                 },
-                { key: "contact_no", label: "Contact No.", type: "text" },
                 {
                   key: "allocated_percentage",
                   label: "Contribution %",
                   type: "number",
                 },
-                {
-                  key: "allocated_amount",
-                  label: "Contribution Amt",
-                  type: "readonly",
-                },
-                {
-                  key: "commission_rate",
-                  label: "Commission Rate",
-                  type: "readonly",
-                },
-                { key: "incentives", label: "Incentives", type: "number" },
               ] as GridColumn<SalesTeamRow>[]
             }
           />
-        </div>
-      )}
 
-      {/* ---------------- Settings ---------------- */}
-      {activeTab === "Settings" && (
-        <div className="space-y-6 pt-2">
-          <div className="flex items-center gap-2">
-            <input
-              id="is_internal_customer"
-              name="is_internal_customer"
-              type="checkbox"
-              checked={!!form.is_internal_customer}
-              onChange={handleChange}
-              className="h-4 w-4 rounded border-border"
-            />
-            <label htmlFor="is_internal_customer" className="text-sm text-body">
-              Is Internal Customer
-            </label>
-          </div>
-          {form.is_internal_customer && (
+          <div className="pt-4 border-t border-border">
+            <p className="text-sm font-semibold text-heading mb-3">Sales Partner</p>
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className={labelClass}>Represents Company</label>
+                <label className={labelClass}>Sales Partner</label>
                 <LinkSelect
-                  name="represents_company"
-                  value={form.represents_company}
-                  options={companiesOptions}
+                  name="default_sales_partner"
+                  value={form.default_sales_partner}
+                  options={salesPartners}
                 />
               </div>
-              <div className="col-span-2">
-                <ChildTableGrid<AllowedCompanyRow>
-                  title="Allowed To Transact With"
-                  rows={form.companies ?? []}
-                  onChange={(rows) =>
-                    setForm((prev) => ({ ...prev, companies: rows }))
-                  }
-                  emptyRow={{ company: "" }}
-                  columns={
-                    [
-                      {
-                        key: "company",
-                        label: "Company",
-                        type: "link",
-                        options: companiesOptions,
-                      },
-                    ] as GridColumn<AllowedCompanyRow>[]
-                  }
+              <div>
+                <label htmlFor="default_commission_rate" className={labelClass}>
+                  Commission Rate (%)
+                </label>
+                <input
+                  id="default_commission_rate"
+                  name="default_commission_rate"
+                  type="number"
+                  value={form.default_commission_rate ?? 0}
+                  onChange={handleChange}
+                  className={inputClass}
                 />
               </div>
             </div>
-          )}
-
-          <div className="grid grid-cols-2 gap-4 pt-4 border-t border-border">
-            <div>
-              <label className={labelClass}>Market Segment</label>
-              <LinkSelect
-                name="market_segment"
-                value={form.market_segment}
-                options={marketSegments}
-              />
-            </div>
-            <div>
-              <label className={labelClass}>Industry</label>
-              <LinkSelect
-                name="industry"
-                value={form.industry}
-                options={industries}
-              />
-            </div>
-            <div>
-              <label htmlFor="website" className={labelClass}>Website</label>
-              <input
-                id="website"
-                name="website"
-                value={form.website}
-                onChange={handleChange}
-                className={inputClass}
-                placeholder="https://acmecorp.com"
-              />
-            </div>
-            <div>
-              <label className={labelClass}>Print Language</label>
-              <LinkSelect
-                name="language"
-                value={form.language}
-                options={languages}
-              />
-            </div>
-            <div>
-              <label htmlFor="customer_pos_id" className={labelClass}>Customer POS ID</label>
-              <input
-                id="customer_pos_id"
-                name="customer_pos_id"
-                value={form.customer_pos_id}
-                onChange={handleChange}
-                className={inputClass}
-                placeholder="POS-001"
-              />
-            </div>
-            <div>
-              <label className={labelClass}>Default Bank Account</label>
-              <LinkSelect
-                name="default_bank_account"
-                value={form.default_bank_account}
-                options={bankAccounts}
-              />
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2 pt-4 border-t border-border">
-            <input
-              id="disabled"
-              name="disabled"
-              type="checkbox"
-              checked={!!form.disabled}
-              onChange={handleChange}
-              className="h-4 w-4 rounded border-border"
-            />
-            <label htmlFor="disabled" className="text-sm text-body">
-              Disabled (customer is inactive)
-            </label>
           </div>
         </div>
       )}
@@ -988,25 +1006,126 @@ export default function CustomerForm({
       {activeTab === "More Info" && (
         <div className="space-y-6 pt-2">
           <div>
-            <label htmlFor="customer_details" className={labelClass}>
-              Customer Details
-            </label>
-            <textarea
-              id="customer_details"
-              name="customer_details"
-              value={form.customer_details}
-              onChange={handleChange}
-              rows={4}
-              className={inputClass + " resize-y"}
-              placeholder="Internal notes about this customer..."
+            <p className="text-sm font-semibold text-heading mb-3">References</p>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className={labelClass}>Lead</label>
+                <input
+                  value={form.lead_name ?? ""}
+                  readOnly
+                  className={inputClass + " bg-gray-50 cursor-not-allowed"}
+                  placeholder="Set from Lead conversion"
+                />
+              </div>
+              <div>
+                <label className={labelClass}>Opportunity</label>
+                <input
+                  value={form.opportunity_name ?? ""}
+                  readOnly
+                  className={inputClass + " bg-gray-50 cursor-not-allowed"}
+                  placeholder="Set from Opportunity conversion"
+                />
+              </div>
+              <div>
+                <label className={labelClass}>Prospect</label>
+                <input
+                  value={form.prospect_name ?? ""}
+                  readOnly
+                  className={inputClass + " bg-gray-50 cursor-not-allowed"}
+                  placeholder="Set from Prospect conversion"
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="pt-4 border-t border-border">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className={labelClass}>Market Segment</label>
+                <LinkSelect
+                  name="market_segment"
+                  value={form.market_segment}
+                  options={marketSegments}
+                />
+              </div>
+              <div>
+                <label className={labelClass}>Industry</label>
+                <LinkSelect
+                  name="industry"
+                  value={form.industry}
+                  options={industries}
+                />
+              </div>
+              <div>
+                <label htmlFor="website" className={labelClass}>Website</label>
+                <input
+                  id="website"
+                  name="website"
+                  value={form.website}
+                  onChange={handleChange}
+                  className={inputClass}
+                  placeholder="https://acmecorp.com"
+                />
+              </div>
+              <div>
+                <label className={labelClass}>Print Language</label>
+                <LinkSelect
+                  name="language"
+                  value={form.language}
+                  options={languages}
+                />
+              </div>
+              <div>
+                <label htmlFor="customer_pos_id" className={labelClass}>Customer POS ID</label>
+                <input
+                  id="customer_pos_id"
+                  name="customer_pos_id"
+                  value={form.customer_pos_id}
+                  readOnly
+                  className={inputClass + " bg-gray-50 cursor-not-allowed"}
+                  placeholder="POS-001"
+                />
+              </div>
+              <div>
+                <label htmlFor="customer_details" className={labelClass}>Customer Details</label>
+                <textarea
+                  id="customer_details"
+                  name="customer_details"
+                  value={form.customer_details}
+                  onChange={handleChange}
+                  rows={3}
+                  className={inputClass + " resize-y"}
+                  placeholder="Internal notes about this customer..."
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="pt-4 border-t border-border">
+            <ChildTableGrid<SupplierNumberRow>
+              title="Supplier Numbers"
+              rows={form.supplier_numbers ?? []}
+              onChange={(rows) =>
+                setForm((prev) => ({ ...prev, supplier_numbers: rows }))
+              }
+              emptyRow={{ company: "", supplier_number: "" }}
+              columns={
+                [
+                  {
+                    key: "company",
+                    label: "Company",
+                    type: "link",
+                    options: companiesOptions,
+                  },
+                  {
+                    key: "supplier_number",
+                    label: "Supplier Number",
+                    type: "text",
+                  },
+                ] as GridColumn<SupplierNumberRow>[]
+              }
             />
           </div>
-          {customer?.loyalty_program_tier && (
-            <div>
-              <label className={labelClass}>Loyalty Program Tier</label>
-              <p className="text-sm font-semibold text-heading bg-gray-50 px-3 py-2.5 rounded-[12px]">{customer.loyalty_program_tier}</p>
-            </div>
-          )}
         </div>
       )}
 
@@ -1014,7 +1133,7 @@ export default function CustomerForm({
       {activeTab === "Portal Users" && (
         <div className="pt-2">
           <ChildTableGrid<PortalUserRow>
-            title="Portal Users"
+            title="Customer Portal Users"
             rows={form.portal_users ?? []}
             onChange={(rows) =>
               setForm((prev) => ({ ...prev, portal_users: rows }))

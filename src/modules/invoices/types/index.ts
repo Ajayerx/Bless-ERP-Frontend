@@ -50,6 +50,25 @@ export interface SalesInvoiceTax {
   included_in_print_rate?: number
 }
 
+export type ChargeType =
+  | "Actual"
+  | "On Net Total"
+  | "On Previous Row Amount"
+  | "On Previous Row Total"
+  | "On Item Quantity"
+
+export interface EditableTaxRow {
+  charge_type: ChargeType
+  account_head: string
+  description: string
+  rate: number
+  tax_amount: number
+  net_amount: number
+  total: number
+  included_in_print_rate: boolean
+  row_id?: number
+}
+
 export interface SalesInvoicePayment {
   name?: string
   mode_of_payment: string

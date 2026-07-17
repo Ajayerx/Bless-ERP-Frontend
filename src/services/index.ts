@@ -5,13 +5,22 @@ export type { AuthService, User } from "./auth.service"
 
 // Module re-exports
 export { dashboardService } from "@/modules/dashboard/services"
-export type { DashboardData, KpiMetric, SalesDay, RecentInvoice, TopCustomer, InventoryAlert, RecentPayment } from "@/modules/dashboard/services"
+export type { DashboardData, KpiMetric, SalesDay, RecentInvoice, TopCustomer, InventoryAlert, RecentPayment, TodaySales, LowStockItem, CustomerActivity } from "@/modules/dashboard/services"
+export { todoService } from "@/modules/dashboard/services/todo.service"
+export type { TodoItem } from "@/modules/dashboard/services/todo.service"
+export { notificationService, timeAgo } from "@/modules/dashboard/services/notification.service"
+export type { NotificationItem } from "@/modules/dashboard/services/notification.service"
+export { eventService } from "@/modules/dashboard/services/event.service"
+export type { CalendarEvent } from "@/modules/dashboard/services/event.service"
 
 export { customerService } from "@/modules/customers/services"
-export type { Customer, CustomerFormData, CustomerListResponse, CustomerDetail, TransactionCounts } from "@/modules/customers/services"
+export type {
+  Customer, CustomerFormData, CustomerListResponse, CustomerDetail, TransactionCounts,
+  AddressInput, AllowedCompanyRow, CreditLimitRow, PartyAccountRow, SalesTeamRow, PortalUserRow, SupplierNumberRow,
+} from "@/modules/customers/services"
 
-export { invoiceService } from "@/modules/invoices/services"
-export type { SalesInvoice, SalesInvoiceFormData, SalesInvoiceItem, SalesInvoiceTax, SalesInvoiceListResponse } from "@/modules/invoices/services"
+export { invoiceService, templateRowsToEditable, invoiceTaxesToEditable, computeTaxes, createEmptyTaxRow } from "@/modules/invoices/services"
+export type { SalesInvoice, SalesInvoiceFormData, SalesInvoiceItem, SalesInvoiceTax, SalesInvoiceListResponse, EditableTaxRow, ChargeType, AccountInfo } from "@/modules/invoices/services"
 
 export { paymentService } from "@/modules/payments/services"
 export type { PaymentEntry, PaymentEntryListResponse, PaymentMethod, PAYMENT_METHOD_MAP, RecordPaymentData, InvoiceAllocation, PaymentDeductionForm } from "@/modules/payments/services"

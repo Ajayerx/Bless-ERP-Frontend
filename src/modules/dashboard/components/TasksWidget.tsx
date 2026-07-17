@@ -1,57 +1,74 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { CheckCircle2, Circle } from "lucide-react"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui"
 import { cn } from "@/lib/utils"
-
-const initialTasks = [
-  { id: "t1", label: "Review pending invoices", done: false },
-  { id: "t2", label: "Approve purchase order #PO-023", done: false },
-  { id: "t3", label: "Update inventory counts", done: true },
-  { id: "t4", label: "Follow up with Maple Store", done: false },
-]
+import { todoService, type TodoItem } from "@/services"
+import DashboardListCard from "./DashboardListCard"
 
 export default function TasksWidget() {
-  const [tasks, setTasks] = useState(initialTasks)
+  const [tasks, setTasks] = useState<TodoItem[]>([])
+  const [loading, setLoading] = useState(true)
 
-  const toggle = (id: string) => {
+  useEffect(() => {
+    let cancelled = false
+    todoService
+      .getOpenTasks()
+      .then((data) => {
+        if (!cancelled) setTasks(data)
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+    return () => { cancelled = true }
+  }, [])
+
+  const toggle = (task: TodoItem) => {
+    const newStatus = task.status === "Open" ? "Closed" : "Open"
     setTasks((prev) =>
-      prev.map((t) => (t.id === id ? { ...t, done: !t.done } : t)),
+      prev.map((t) => (t.name === task.name ? { ...t, status: newStatus as TodoItem["status"] } : t))
     )
+    todoService.toggleStatus(task.name, task.status).catch(() => {
+      setTasks((prev) =>
+        prev.map((t) => (t.name === task.name ? { ...t, status: task.status } : t))
+      )
+    })
   }
 
-  const doneCount = tasks.filter((t) => t.done).length
+  const visibleTasks = tasks.filter((t) => t.status === "Open").slice(0, 5)
+  const doneCount = tasks.length - visibleTasks.length
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Tasks</CardTitle>
-        <span className="text-xs text-muted">{doneCount}/{tasks.length} done</span>
-      </CardHeader>
-      <CardContent className="p-0">
-        <div className="divide-y divide-border">
-          {tasks.map((task) => (
-            <button
-              key={task.id}
-              onClick={() => toggle(task.id)}
-              className="flex items-center gap-3 w-full px-6 py-3 hover:bg-gray-50 transition-colors text-left"
-            >
-              {task.done ? (
-                <CheckCircle2 size={16} className="text-success-500 shrink-0" />
-              ) : (
-                <Circle size={16} className="text-muted shrink-0" />
-              )}
-              <span
-                className={cn(
-                  "text-sm",
-                  task.done ? "text-muted line-through" : "text-body font-medium",
-                )}
-              >
-                {task.label}
-              </span>
-            </button>
-          ))}
-        </div>
-      </CardContent>
-    </Card>
+    <DashboardListCard
+      title="Tasks"
+      headerRight={
+        <span className="text-xs text-muted">
+          {loading ? "—" : `${doneCount}/${tasks.length} done`}
+        </span>
+      }
+      loading={loading}
+      emptyMessage={!loading && tasks.length === 0 ? "No tasks" : undefined}
+    >
+      {tasks.map((task) => (
+        <button
+          key={task.name}
+          onClick={() => toggle(task)}
+          className="flex items-center gap-3 w-full px-5 py-2.5 hover:bg-gray-50 transition-colors text-left"
+        >
+          {task.status === "Closed" ? (
+            <CheckCircle2 size={16} className="text-success-500 shrink-0" />
+          ) : (
+            <Circle size={16} className="text-muted shrink-0" />
+          )}
+          <span
+            className={cn(
+              "text-sm",
+              task.status === "Closed" ? "text-muted line-through" : "text-body font-medium",
+            )}
+          >
+            {task.description || task.name}
+          </span>
+        </button>
+      ))}
+    </DashboardListCard>
   )
 }

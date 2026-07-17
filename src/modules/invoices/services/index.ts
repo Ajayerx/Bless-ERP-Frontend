@@ -1,9 +1,19 @@
 import { apiClient } from "@/services/api-client"
+import { API_CONFIG } from "@/config/api.config"
 import { getCompany } from "@/services/company"
-import { getDefaultTaxTemplate as sharedGetDefault, getTaxTemplateDetails as sharedGetDetails, DEFAULT_GST_RATE, DEFAULT_QST_RATE } from "@/services/tax-template"
-import type { SalesInvoice, SalesInvoiceFormData, SalesInvoiceItem, SalesInvoiceTax, SalesInvoiceListResponse } from "../types"
+import { getDefaultTaxTemplate as sharedGetDefault, getTaxTemplateDetails as sharedGetDetails } from "@/services/tax-template"
+export type { TaxTemplateResult, TaxRow } from "@/services/tax-template"
+import type { TaxTemplateResult } from "@/services/tax-template"
+import type { SalesInvoice, SalesInvoiceFormData, SalesInvoiceItem, SalesInvoiceTax, SalesInvoiceListResponse, EditableTaxRow, ChargeType } from "../types"
 
-export type { SalesInvoice, SalesInvoiceFormData, SalesInvoiceItem, SalesInvoiceTax, SalesInvoiceListResponse }
+export type { SalesInvoice, SalesInvoiceFormData, SalesInvoiceItem, SalesInvoiceTax, SalesInvoiceListResponse, EditableTaxRow, ChargeType }
+
+export interface AccountInfo {
+  name: string
+  account_name?: string
+  account_type?: string
+  tax_rate?: number
+}
 
 interface DocTypeOption {
   name: string
@@ -49,16 +59,6 @@ async function getCount(doctype: string, filters?: unknown[]): Promise<number> {
   if (filters) qp.set("filters", JSON.stringify(filters))
   const result = await apiClient<number | string>(`/method/frappe.client.get_count?${qp.toString()}`)
   return Number(result)
-}
-
-function toLegacyShape(result: { name: string; rows: { accountHead: string; rate: number }[] }): { name: string; gstRate: number; qstRate: number } {
-  const gstRow = result.rows.find((r) => r.accountHead?.toLowerCase().includes("gst"))
-  const qstRow = result.rows.find((r) => r.accountHead?.toLowerCase().includes("qst"))
-  return {
-    name: result.name,
-    gstRate: gstRow?.rate ?? DEFAULT_GST_RATE,
-    qstRate: qstRow?.rate ?? DEFAULT_QST_RATE,
-  }
 }
 
 const LIST_FIELDS = [
@@ -108,6 +108,8 @@ const DETAIL_FIELDS = [
   "base_write_off_amount", "total_advance",
   // Accounting
   "unrealized_profit_loss_account", "against_income_account",
+  // Child tables
+  "items", "taxes", "payments",
 ]
 
 export interface PartyDetailsResponse {
@@ -165,6 +167,19 @@ export const invoiceService = {
       const company = await getCompany()
       return fetchOptions("Account", [["is_group", "=", 0], ["company", "=", company]])
     },
+    taxAccounts: async (): Promise<AccountInfo[]> => {
+      const company = await getCompany()
+      const qp = new URLSearchParams()
+      qp.set("fields", JSON.stringify(["name", "account_name", "account_type", "tax_rate"]))
+      qp.set("filters", JSON.stringify([
+        ["is_group", "=", 0],
+        ["company", "=", company],
+        ["disabled", "=", 0],
+        ["account_type", "in", ["Tax", "Chargeable", "Expense Account"]],
+      ]))
+      qp.set("limit_page_length", "500")
+      return apiClient<AccountInfo[]>(`/resource/Account?${qp.toString()}`)
+    },
     costCenters: (): Promise<string[]> => fetchOptions("Cost Center"),
     terms: (): Promise<string[]> => fetchOptions("Terms and Conditions"),
     letterHeads: (): Promise<string[]> => fetchOptions("Letter Head"),
@@ -216,16 +231,22 @@ export const invoiceService = {
     }
   },
 
-  async getDefaultTaxTemplate(): Promise<{ name: string; gstRate: number; qstRate: number } | null> {
-    const result = await sharedGetDefault(SALES_DOCTYPE)
-    if (!result) return null
-    return toLegacyShape(result)
+  async getTaxRate(accountHead: string): Promise<{ tax_rate: number; account_name: string }> {
+    try {
+      return await apiClient<{ tax_rate: number; account_name: string }>(
+        `/method/erpnext.controllers.accounts_controller.get_tax_rate?account_head=${encodeURIComponent(accountHead)}`
+      )
+    } catch {
+      return { tax_rate: 0, account_name: accountHead }
+    }
   },
 
-  async getTaxTemplateDetails(name: string): Promise<{ name: string; gstRate: number; qstRate: number } | null> {
-    const result = await sharedGetDetails(SALES_DOCTYPE, name)
-    if (!result) return null
-    return toLegacyShape(result)
+  async getDefaultTaxTemplate(): Promise<TaxTemplateResult | null> {
+    return sharedGetDefault(SALES_DOCTYPE)
+  },
+
+  async getTaxTemplateDetails(name: string): Promise<TaxTemplateResult | null> {
+    return sharedGetDetails(SALES_DOCTYPE, name)
   },
   async list(params: {
     search?: string
@@ -320,9 +341,37 @@ export const invoiceService = {
   },
 
   async amend(name: string): Promise<SalesInvoice> {
-    return apiClient<SalesInvoice>("/method/frappe.client.amend", {
+    // ERPNext amend flow: GET cancelled doc → clean framework fields → POST with amended_from
+    const doc = await apiClient<Record<string, unknown>>(
+      `/resource/Sales Invoice/${encodeURIComponent(name)}`
+    )
+
+    const managedFields = new Set([
+      "name", "creation", "modified", "modified_by", "owner",
+      "docstatus", "idx", "_comments", "_assign", "_liked_by",
+    ])
+    const cleaned: Record<string, unknown> = {}
+    for (const [k, v] of Object.entries(doc)) {
+      if (managedFields.has(k)) continue
+      if (Array.isArray(v)) {
+        cleaned[k] = v.map((row: Record<string, unknown>) => {
+          if (row && typeof row === "object") {
+            const { name: _n, creation: _c, modified: _m, owner: _o, ...rest } = row as Record<string, unknown>
+            return rest
+          }
+          return row
+        })
+      } else {
+        cleaned[k] = v
+      }
+    }
+
+    cleaned.amended_from = name
+    cleaned.docstatus = 0
+
+    return apiClient<SalesInvoice>("/resource/Sales Invoice", {
       method: "POST",
-      body: JSON.stringify({ doctype: "Sales Invoice", docname: name }),
+      body: JSON.stringify(cleaned),
     })
   },
 
@@ -377,4 +426,158 @@ export const invoiceService = {
       return null
     }
   },
+
+  async getPrintFormats(): Promise<string[]> {
+    try {
+      return await apiClient<string[]>(
+        `/resource/Print Format?filters=${JSON.stringify([["doc_type", "=", "Sales Invoice"], ["disabled", "=", 0]])}&fields=["name"]&limit_page_length=100`
+      )
+    } catch {
+      return ["Standard"]
+    }
+  },
+
+  async generatePDF(name: string, options?: {
+    printFormat?: string
+    letterHead?: string
+    noLetterhead?: boolean
+    language?: string
+  }): Promise<Blob> {
+    const params = new URLSearchParams()
+    params.set("doctype", "Sales Invoice")
+    params.set("name", name)
+    if (options?.printFormat) params.set("format", options.printFormat)
+    if (options?.letterHead) params.set("letterhead", options.letterHead)
+    if (options?.noLetterhead) params.set("no_letterhead", "1")
+    if (options?.language) params.set("_lang", options.language)
+
+    const res = await fetch(`${API_CONFIG.baseUrl}/method/frappe.utils.print_format.download_pdf?${params.toString()}`, {
+      credentials: "include",
+      headers: API_CONFIG.headers,
+    })
+
+    if (!res.ok) {
+      throw new Error("Failed to generate PDF")
+    }
+
+    return res.blob()
+  },
+
+  async sendEmail(name: string, data: {
+    recipients: string
+    subject: string
+    content: string
+    printFormat?: string
+  }): Promise<{ name: string }> {
+    return apiClient<{ name: string }>("/method/frappe.core.doctype.communication.email.make", {
+      method: "POST",
+      body: JSON.stringify({
+        doctype: "Sales Invoice",
+        name,
+        recipients: data.recipients,
+        subject: data.subject,
+        content: data.content,
+        communication_medium: "Email",
+        send_email: 1,
+        print_format: data.printFormat || "Standard",
+      }),
+    })
+  },
+}
+
+// ---------------------------------------------------------------------------
+// Tax computation utilities
+// ---------------------------------------------------------------------------
+
+/** Convert TaxRow[] from a template into EditableTaxRow[] for the form. */
+export function templateRowsToEditable(rows: TaxRow[]): EditableTaxRow[] {
+  return rows.map((r) => ({
+    charge_type: (r.chargeType || "On Net Total") as EditableTaxRow["charge_type"],
+    account_head: r.accountHead,
+    description: r.description ?? "",
+    rate: Math.round(r.rate * 100 * 1000) / 1000,
+    tax_amount: 0,
+    net_amount: 0,
+    total: 0,
+    included_in_print_rate: !!r.includedInPrintRate,
+    row_id: undefined,
+  }))
+}
+
+/** Convert ERPNext invoice taxes[] into EditableTaxRow[] for editing an existing invoice. */
+export function invoiceTaxesToEditable(taxes: SalesInvoiceTax[]): EditableTaxRow[] {
+  return taxes.map((t) => ({
+    charge_type: (t.charge_type || "On Net Total") as EditableTaxRow["charge_type"],
+    account_head: t.account_head,
+    description: t.description ?? "",
+    rate: t.rate,
+    tax_amount: t.tax_amount ?? 0,
+    net_amount: 0,
+    total: t.total ?? 0,
+    included_in_print_rate: !!t.included_in_print_rate,
+    row_id: undefined,
+  }))
+}
+
+/** Compute tax amounts from editable rows — mirrors ERPNext server-side logic. */
+export function computeTaxes(rows: EditableTaxRow[], subtotal: number, totalQty: number): EditableTaxRow[] {
+  let runningTotal = subtotal
+  return rows.map((row, i) => {
+    let taxAmount = 0
+    let netAmount = subtotal
+
+    switch (row.charge_type) {
+      case "Actual":
+        taxAmount = row.tax_amount
+        break
+      case "On Net Total":
+        taxAmount = Math.round(subtotal * (row.rate / 100) * 100) / 100
+        break
+      case "On Previous Row Amount": {
+        const refIdx = (row.row_id ?? (i > 0 ? i : 1)) - 1
+        const refRow = rows[refIdx]
+        if (refRow) {
+          taxAmount = Math.round(refRow.tax_amount * (row.rate / 100) * 100) / 100
+          netAmount = refRow.tax_amount
+        }
+        break
+      }
+      case "On Previous Row Total": {
+        const refIdx = (row.row_id ?? (i > 0 ? i : 1)) - 1
+        const refRow = rows[refIdx]
+        if (refRow) {
+          taxAmount = Math.round(refRow.total * (row.rate / 100) * 100) / 100
+          netAmount = refRow.total
+        }
+        break
+      }
+      case "On Item Quantity":
+        taxAmount = Math.round(row.rate * totalQty * 100) / 100
+        netAmount = totalQty
+        break
+    }
+
+    runningTotal += taxAmount
+    return {
+      ...row,
+      tax_amount: taxAmount,
+      net_amount: netAmount,
+      total: Math.round(runningTotal * 100) / 100,
+    }
+  })
+}
+
+/** Create a blank tax row with sensible defaults. */
+export function createEmptyTaxRow(): EditableTaxRow {
+  return {
+    charge_type: "On Net Total",
+    account_head: "",
+    description: "",
+    rate: 0,
+    tax_amount: 0,
+    net_amount: 0,
+    total: 0,
+    included_in_print_rate: false,
+    row_id: undefined,
+  }
 }

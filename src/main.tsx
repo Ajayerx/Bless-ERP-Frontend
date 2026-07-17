@@ -2,7 +2,9 @@ import { StrictMode } from "react"
 import { createRoot } from "react-dom/client"
 import { BrowserRouter } from "react-router-dom"
 import { AuthProvider } from "./context/AuthContext"
+import { AppProvider } from "./context/AppContext"
 import { ThemeProvider } from "./context/ThemeContext"
+import { CompanyProvider } from "./context/CompanyContext"
 import { ToastProvider } from "./components/ui/toast"
 import ErrorBoundary from "./components/ErrorBoundary"
 import App from "./App"
@@ -29,7 +31,11 @@ async function bootstrap() {
           <ThemeProvider>
             <ToastProvider>
               <AuthProvider>
-                <App />
+                <CompanyProvider>
+                  <AppProvider>
+                    <App />
+                  </AppProvider>
+                </CompanyProvider>
               </AuthProvider>
             </ToastProvider>
           </ThemeProvider>

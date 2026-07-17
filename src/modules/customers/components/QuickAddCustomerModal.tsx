@@ -1,26 +1,21 @@
 "use client"
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useNavigate } from "react-router-dom"
 import { Loader2 } from "lucide-react"
 import Modal, { ModalFooter } from "@/components/ui/Modal"
-import { apiClient } from "@/services/api-client"
 import { customerService } from "@/modules/customers/services"
-import { contactService } from "@/services"
-import type { AddressInput } from "@/modules/customers/services"
 
 interface Props {
   open: boolean
   onClose: () => void
 }
 
-function hasAnyValue(obj: Record<string, string | undefined>): boolean {
-  return Object.values(obj).some((v) => v && v.trim().length > 0)
-}
-
 export default function QuickAddCustomerModal({ open, onClose }: Props) {
   const navigate = useNavigate()
   const [customerName, setCustomerName] = useState("")
   const [customerType, setCustomerType] = useState<"Company" | "Individual" | "Partnership">("Company")
+  const [customerGroup, setCustomerGroup] = useState("")
+  const [territory, setTerritory] = useState("")
   const [firstName, setFirstName] = useState("")
   const [lastName, setLastName] = useState("")
   const [email, setEmail] = useState("")
@@ -33,10 +28,40 @@ export default function QuickAddCustomerModal({ open, onClose }: Props) {
   const [country, setCountry] = useState("")
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState("")
+  const [loadingLookups, setLoadingLookups] = useState(true)
+  const [customerGroups, setCustomerGroups] = useState<string[]>([])
+  const [territories, setTerritories] = useState<string[]>([])
+
+  useEffect(() => {
+    if (!open) return
+    let cancelled = false
+    async function load() {
+      setLoadingLookups(true)
+      try {
+        const [groups, terrs] = await Promise.all([
+          customerService.lookups.customerGroups(),
+          customerService.lookups.territories(),
+        ])
+        if (cancelled) return
+        setCustomerGroups(groups)
+        setTerritories(terrs)
+        setCustomerGroup((prev) => prev || (groups.length > 0 ? groups[0] : ""))
+        setTerritory((prev) => prev || (terrs.length > 0 ? terrs[0] : ""))
+      } catch {
+        if (!cancelled) setError("Failed to load dropdown options.")
+      } finally {
+        if (!cancelled) setLoadingLookups(false)
+      }
+    }
+    load()
+    return () => { cancelled = true }
+  }, [open])
 
   const reset = () => {
     setCustomerName("")
     setCustomerType("Company")
+    setCustomerGroup("")
+    setTerritory("")
     setFirstName("")
     setLastName("")
     setEmail("")
@@ -57,14 +82,35 @@ export default function QuickAddCustomerModal({ open, onClose }: Props) {
       setError("Customer Name is required.")
       return
     }
+    if (!customerGroup) {
+      setError("Customer Group is required.")
+      return
+    }
+    if (!territory) {
+      setError("Territory is required.")
+      return
+    }
 
     setSaving(true)
     try {
-      const row = await customerService.create({
+      const contactFilled = [firstName, lastName, email, mobile].some((v) => v && v.trim().length > 0)
+      const addressFilled = [addrLine1, city, country].some((v) => v && v.trim().length > 0)
+
+      await customerService.create({
         customer_name: customerName.trim(),
         customer_type: customerType,
-        customer_group: "",
-        territory: "",
+        customer_group: customerGroup,
+        territory: territory,
+        contactEmail: contactFilled ? email || undefined : undefined,
+        contactPhone: contactFilled ? mobile || undefined : undefined,
+        billingAddress: addressFilled ? {
+          address_line1: addrLine1,
+          address_line2: addrLine2 || undefined,
+          city,
+          state: state || undefined,
+          country,
+          pincode: pincode || undefined,
+        } : undefined,
         so_required: false,
         dn_required: false,
         is_frozen: false,
@@ -72,54 +118,9 @@ export default function QuickAddCustomerModal({ open, onClose }: Props) {
         is_internal_customer: false,
       })
 
-      const patch: Record<string, string> = {}
-      const contactFilled = hasAnyValue({ firstName, lastName, email, mobile })
-      const addressFilled = hasAnyValue({ addrLine1, city, country })
-
-      if (contactFilled) {
-        const contact = await contactService.create({
-          first_name: firstName || customerName.trim(),
-          last_name: lastName || "",
-          email_ids: email ? [{ email_id: email, is_primary: 1 }] : [],
-          phone_nos: mobile ? [{ phone: mobile, is_primary_mobile_no: 1 }] : [],
-          links: [{ link_doctype: "Customer", link_name: row.name }],
-          is_primary_contact: true,
-          is_billing_contact: false,
-        })
-        patch.customer_primary_contact = contact.name
-      }
-
-      if (addressFilled) {
-        try {
-          const addrInput: AddressInput = {
-            address_line1: addrLine1,
-            address_line2: addrLine2 || undefined,
-            city: city,
-            state: state || undefined,
-            country: country,
-            pincode: pincode || undefined,
-          }
-          const addr = await customerService.createAddress(
-            row.name,
-            "Billing",
-            addrInput
-          )
-          patch.customer_primary_address = addr.name
-        } catch (e) {
-          console.error("Failed to create address, contact back-fill still proceeds", e)
-        }
-      }
-
-      if (Object.keys(patch).length > 0) {
-        await apiClient<Record<string, unknown>>(
-          `/resource/Customer/${encodeURIComponent(row.name)}`,
-          { method: "PUT", body: JSON.stringify(patch) }
-        )
-      }
-
       reset()
       onClose()
-      navigate(`/customers/${row.name}`)
+      navigate(`/customers/${customerName.trim()}`)
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Failed to create customer."
@@ -172,6 +173,34 @@ export default function QuickAddCustomerModal({ open, onClose }: Props) {
               <option value="Company">Company</option>
               <option value="Individual">Individual</option>
               <option value="Partnership">Partnership</option>
+            </select>
+          </div>
+          <div>
+            <label className={labelClass}>Customer Group *</label>
+            <select
+              value={customerGroup}
+              onChange={(e) => setCustomerGroup(e.target.value)}
+              className={inputClass}
+              disabled={loadingLookups}
+            >
+              <option value="">{loadingLookups ? "Loading..." : "Select group"}</option>
+              {customerGroups.map((g) => (
+                <option key={g} value={g}>{g}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className={labelClass}>Territory *</label>
+            <select
+              value={territory}
+              onChange={(e) => setTerritory(e.target.value)}
+              className={inputClass}
+              disabled={loadingLookups}
+            >
+              <option value="">{loadingLookups ? "Loading..." : "Select territory"}</option>
+              {territories.map((t) => (
+                <option key={t} value={t}>{t}</option>
+              ))}
             </select>
           </div>
         </div>
@@ -240,7 +269,7 @@ export default function QuickAddCustomerModal({ open, onClose }: Props) {
         <button
           type="button"
           onClick={handleSave}
-          disabled={saving}
+          disabled={saving || loadingLookups}
           className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-[10px] hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
         >
           {saving && <Loader2 size={14} className="animate-spin" />}

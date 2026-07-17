@@ -95,11 +95,15 @@ interface ProductTableProps {
   onFilterChange: (f: ProductFilter) => void
   toolbarActions?: React.ReactNode
   onRowClick?: (product: Product) => void
+  selectable?: boolean
+  selectedKeys?: Set<string>
+  onSelectionChange?: (keys: Set<string>) => void
 }
 
 export default function ProductTable({
   data, loading, search, onSearch, page, onPageChange,
   activeFilter, onFilterChange, toolbarActions, onRowClick,
+  selectable, selectedKeys, onSelectionChange,
 }: ProductTableProps) {
   const items = data?.items ?? []
   const lowStockCount = items.filter((p) => p.stock > 0 && p.stock < 20).length
@@ -147,6 +151,9 @@ export default function ProductTable({
         onPageChange={onPageChange}
         toolbarActions={toolbarActions}
         onRowClick={onRowClick}
+        selectable={selectable}
+        selectedKeys={selectedKeys}
+        onSelectionChange={onSelectionChange}
         emptyState={
           <div className="flex flex-col items-center gap-2 py-4">
             <Package size={32} className="text-muted opacity-40" />

@@ -3,6 +3,11 @@
 import { Card, CardContent } from "@/components/ui"
 import { formatCurrency, cn } from "@/lib/utils"
 
+export interface TaxLine {
+  label: string
+  amount: number
+}
+
 interface InvoiceTotalsProps {
   subtotal: number
   totalTaxesAndCharges?: number
@@ -12,6 +17,8 @@ interface InvoiceTotalsProps {
   roundedTotal?: number
   totalAdvance?: number
   outstandingAmount?: number
+  taxLines?: TaxLine[]
+  // Legacy props for backward compat
   gst?: number
   qst?: number
   gstLabel?: string
@@ -29,6 +36,7 @@ export default function InvoiceTotals({
   roundedTotal,
   totalAdvance = 0,
   outstandingAmount,
+  taxLines,
   gst,
   qst,
   gstLabel,
@@ -39,24 +47,26 @@ export default function InvoiceTotals({
   const effectiveRoundedTotal = roundedTotal ?? grandTotal + roundingAdjustment
   const effectiveOutstanding = outstandingAmount ?? effectiveRoundedTotal - totalAdvance
 
+  // Build tax display: use taxLines if provided, else fall back to gst/qst legacy props
+  const displayTaxLines: TaxLine[] = taxLines && taxLines.length > 0
+    ? taxLines
+    : [
+        ...(gst !== undefined ? [{ label: gstLabel ?? "GST", amount: gst }] : []),
+        ...(qst !== undefined ? [{ label: qstLabel ?? "QST", amount: qst }] : []),
+      ]
+
   const content = (
     <>
       <div className="flex justify-between text-sm">
         <span className="text-muted">Net Total</span>
         <span className="font-semibold text-heading tabular-nums">{formatCurrency(subtotal)}</span>
       </div>
-      {gst !== undefined && (
-        <div className="flex justify-between text-sm">
-          <span className="text-muted">{gstLabel ?? "GST"}</span>
-          <span className="text-body tabular-nums">{formatCurrency(gst)}</span>
+      {displayTaxLines.map((t, i) => (
+        <div key={i} className="flex justify-between text-sm">
+          <span className="text-muted">{t.label}</span>
+          <span className="text-body tabular-nums">{formatCurrency(t.amount)}</span>
         </div>
-      )}
-      {qst !== undefined && (
-        <div className="flex justify-between text-sm">
-          <span className="text-muted">{qstLabel ?? "QST"}</span>
-          <span className="text-body tabular-nums">{formatCurrency(qst)}</span>
-        </div>
-      )}
+      ))}
       {totalTaxesAndCharges !== undefined && (
         <div className="flex justify-between text-sm">
           <span className="text-muted">Total Taxes & Charges</span>

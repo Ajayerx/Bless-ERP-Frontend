@@ -2,15 +2,15 @@
 import { useEffect, useState, useRef } from "react"
 import { useParams, Link, useNavigate } from "react-router-dom"
 import { motion } from "framer-motion"
-import { ArrowLeft, Mail, MapPin, DollarSign, FileText, Pencil, Plus, CreditCard, Users, History, ExternalLink, ChevronDown, BarChart3, ShoppingCart, HelpCircle, TrendingUp } from "lucide-react"
+import { ArrowLeft, Mail, MapPin, DollarSign, FileText, Pencil, Plus, CreditCard, Users, History, ExternalLink, ChevronDown, BarChart3, ShoppingCart, HelpCircle, TrendingUp, Clock, MessageSquare, Send, StickyNote, XCircle, Trash2, Loader2 } from "lucide-react"
 import Topbar from "@/components/layout/Topbar"
 import DataTable, { type Column } from "@/components/ui/DataTable"
-import { Card, CardContent, Badge, Avatar, Skeleton, Button } from "@/components/ui"
+import { Card, CardContent, Badge, Avatar, Skeleton, Button, Textarea, Modal } from "@/components/ui"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui"
-import { apiClient } from "@/services/api-client"
-import { customerService, type CustomerDetail } from "@/modules/customers/services"
+import { apiClient, ApiError } from "@/services/api-client"
+import { customerService, noteService, buildListUrl, type CustomerDetail, type CustomerNote } from "@/modules/customers/services"
 import { contactService, type Contact } from "@/services"
-import { formatCurrency, formatDate, cn } from "@/lib/utils"
+import { formatCurrency, formatDate, cn, rewriteErpNextLinks } from "@/lib/utils"
 
 interface InvoiceRow {
   name: string
@@ -87,8 +87,8 @@ const contactCols: Column<Contact>[] = [
     key: "first_name", header: "Name",
     render: (c) => `${c.first_name}${c.last_name ? ` ${c.last_name}` : ""}`,
   },
-  { key: "email_id", header: "Email", render: (c) => c.email_id || "�" },
-  { key: "mobile_no", header: "Phone", render: (c) => c.mobile_no || c.phone || "�" },
+  { key: "email_id", header: "Email", render: (c) => c.email_id || "—" },
+  { key: "mobile_no", header: "Phone", render: (c) => c.mobile_no || c.phone || "—" },
   { key: "is_primary_contact", header: "",
     render: (c) => c.is_primary_contact ? <Badge variant="success">Primary</Badge> : null,
   },
@@ -116,25 +116,6 @@ const timelineCols: Column<TimelineItem>[] = [
     render: (t) => <Badge variant={t.statusVariant}>{t.statusLabel}</Badge>,
   },
 ]
-
-function buildListUrl(
-  doctype: string,
-  params: {
-    fields: string[]
-    filters?: unknown[]
-    limit_page_length?: number
-    limit_start?: number
-    order_by?: string
-  }
-): string {
-  const qp = new URLSearchParams()
-  qp.set("fields", JSON.stringify(params.fields))
-  if (params.filters) qp.set("filters", JSON.stringify(params.filters))
-  qp.set("limit_page_length", String(params.limit_page_length ?? 0))
-  if (params.limit_start !== undefined) qp.set("limit_start", String(params.limit_start))
-  if (params.order_by) qp.set("order_by", params.order_by)
-  return `/resource/${encodeURIComponent(doctype)}?${qp.toString()}`
-}
 
 function toTimelineItem(
   invOrPay: InvoiceRow | PaymentRow,
@@ -179,6 +160,28 @@ export default function CustomerDetail() {
   const [tab, setTab] = useState("overview")
   const [createOpen, setCreateOpen] = useState(false)
   const createRef = useRef<HTMLDivElement>(null)
+  const [notes, setNotes] = useState<CustomerNote[]>([])
+  const [notesLoading, setNotesLoading] = useState(false)
+  const [newNote, setNewNote] = useState("")
+  const [savingNote, setSavingNote] = useState(false)
+  const [notesError, setNotesError] = useState("")
+  const [showDeleteModal, setShowDeleteModal] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const [deleteError, setDeleteError] = useState<{ message: string; rawMessage: string } | null>(null)
+  const [deletingAddress, setDeletingAddress] = useState<string | null>(null)
+  const [deleteAddressError, setDeleteAddressError] = useState<string | null>(null)
+  const [deletingContact, setDeletingContact] = useState<string | null>(null)
+  const [deleteContactError, setDeleteContactError] = useState<string | null>(null)
+
+  // Migrate old localStorage notes to ERPNext (one-time)
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem("blesserp_customer_notes")
+      if (stored) {
+        localStorage.removeItem("blesserp_customer_notes")
+      }
+    } catch { /* ignore */ }
+  }, [])
 
   useEffect(() => {
     if (!createOpen) return
@@ -191,9 +194,107 @@ export default function CustomerDetail() {
     return () => document.removeEventListener("mousedown", handler)
   }, [createOpen])
 
+  const saveNote = async () => {
+    if (!newNote.trim() || !id) return
+    setSavingNote(true)
+    setNotesError("")
+    try {
+      const note = await noteService.create(id, newNote.trim())
+      setNotes((prev) => [note, ...prev])
+      setNewNote("")
+    } catch (e) {
+      setNotesError(e instanceof Error ? e.message : "Failed to save note")
+    }
+    setSavingNote(false)
+  }
+
+  const deleteNote = async (noteId: string) => {
+    if (!id) return
+    setNotesError("")
+    try {
+      await noteService.delete(noteId)
+      setNotes((prev) => prev.filter((n) => n.id !== noteId))
+    } catch (e) {
+      setNotesError(e instanceof Error ? e.message : "Failed to delete note")
+    }
+  }
+
+  const handleDeleteCustomer = async () => {
+    if (!id) return
+    setDeleting(true)
+    setDeleteError(null)
+    try {
+      await customerService.delete(id)
+      navigate("/customers")
+    } catch (e) {
+      if (e instanceof ApiError) {
+        setDeleteError({ message: e.message, rawMessage: e.rawMessage })
+      } else {
+        setDeleteError({ message: e instanceof Error ? e.message : "Failed to delete customer", rawMessage: e instanceof Error ? e.message : "Failed to delete customer" })
+      }
+    } finally {
+      setDeleting(false)
+    }
+  }
+
+  const handleDeleteAddress = async (addressName: string) => {
+    if (!id) return
+    setDeletingAddress(addressName)
+    setDeleteAddressError(null)
+    try {
+      await customerService.deleteAddress(addressName)
+      setCustomer((prev) => prev ? { ...prev, addresses: prev.addresses.filter((a) => a.name !== addressName) } : prev)
+    } catch (e) {
+      setDeleteAddressError(e instanceof Error ? e.message : "Failed to delete address")
+    } finally {
+      setDeletingAddress(null)
+    }
+  }
+
+  const handleDeleteContact = async (contactName: string) => {
+    if (!id) return
+    setDeletingContact(contactName)
+    setDeleteContactError(null)
+    try {
+      await customerService.deleteContact(contactName)
+      setContacts((prev) => prev.filter((c) => c.name !== contactName))
+    } catch (e) {
+      setDeleteContactError(e instanceof Error ? e.message : "Failed to delete contact")
+    } finally {
+      setDeletingContact(null)
+    }
+  }
+
+  const contactColsWithActions: Column<Contact>[] = [
+    ...contactCols,
+    {
+      key: "name", header: "",
+      render: (c) => (
+        <div className="flex flex-col items-end gap-1">
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); handleDeleteContact(c.name) }}
+            disabled={deletingContact === c.name}
+            className="text-muted hover:text-danger-600 transition-colors p-1 disabled:opacity-50"
+          >
+            {deletingContact === c.name ? (
+              <Loader2 size={14} className="animate-spin" />
+            ) : (
+              <Trash2 size={14} />
+            )}
+          </button>
+          {deleteContactError && deletingContact === null && (
+            <span className="text-[11px] text-danger-600 max-w-[140px] text-right leading-tight">{deleteContactError}</span>
+          )}
+        </div>
+      ),
+    },
+  ]
+
   useEffect(() => {
     if (!id) return
     setLoading(true)
+    setNotesLoading(true)
     Promise.all([
       customerService.getById(id).catch(() => null),
       apiClient<InvoiceRow[]>(
@@ -213,12 +314,15 @@ export default function CustomerDetail() {
         })
       ).catch(() => []),
       contactService.list({ customerName: id, pageSize: 50 }).then((r) => r.items).catch(() => []),
-    ]).then(([c, invs, pays, conts]) => {
+      noteService.list(id).catch(() => []),
+    ]).then(([c, invs, pays, conts, notesResult]) => {
       setCustomer(c)
       setInvoices(invs)
       setPayments(pays)
       setContacts(conts)
+      setNotes(notesResult)
       setLoading(false)
+      setNotesLoading(false)
     })
   }, [id])
 
@@ -314,6 +418,9 @@ export default function CustomerDetail() {
             <Button variant="secondary" size="sm" onClick={() => navigate(`/customers/${id}/edit`)}>
               <Pencil size={14} /> Edit
             </Button>
+            <Button variant="secondary" size="sm" onClick={() => setShowDeleteModal(true)} className="text-danger-600 border-danger-200 hover:bg-danger-50">
+              <Trash2 size={14} /> Delete
+            </Button>
             <Badge variant={customer.status === "active" ? "success" : "default"} className="px-3 py-1 text-sm">
               {customer.status}
             </Badge>
@@ -347,10 +454,12 @@ export default function CustomerDetail() {
         <Tabs value={tab} onValueChange={setTab}>
           <TabsList>
             <TabsTrigger value="overview"><FileText size={14} className="mr-1.5" /> Overview</TabsTrigger>
+            <TabsTrigger value="activity"><Clock size={14} className="mr-1.5" /> Activity</TabsTrigger>
+            <TabsTrigger value="notes"><StickyNote size={14} className="mr-1.5" /> Notes</TabsTrigger>
             <TabsTrigger value="addresses-contacts"><MapPin size={14} className="mr-1.5" /> Addresses &amp; Contacts</TabsTrigger>
             <TabsTrigger value="credit-limits"><CreditCard size={14} className="mr-1.5" /> Credit Limits</TabsTrigger>
             <TabsTrigger value="portal-users"><Users size={14} className="mr-1.5" /> Portal Users</TabsTrigger>
-            <TabsTrigger value="transaction-history"><History size={14} className="mr-1.5" /> Transaction History</TabsTrigger>
+            <TabsTrigger value="transaction-history"><History size={14} className="mr-1.5" /> Transactions</TabsTrigger>
           </TabsList>
 
           {/* -- Overview -- */}
@@ -402,7 +511,7 @@ export default function CustomerDetail() {
               </Card>
             </div>
 
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
               <Card>
                 <CardContent className="text-center">
                   <p className="text-xs font-semibold text-muted uppercase tracking-wider">Total Invoiced</p>
@@ -421,6 +530,12 @@ export default function CustomerDetail() {
                   <p className="text-xl font-bold text-warning-600 mt-1 tabular-nums">{formatCurrency(totalDue)}</p>
                 </CardContent>
               </Card>
+              <Card>
+                <CardContent className="text-center">
+                  <p className="text-xs font-semibold text-muted uppercase tracking-wider">Invoices</p>
+                  <p className="text-xl font-bold text-primary-600 mt-1 tabular-nums">{invoices.length}</p>
+                </CardContent>
+              </Card>
             </div>
 
             <div>
@@ -435,6 +550,116 @@ export default function CustomerDetail() {
                 }
               />
             </div>
+          </TabsContent>
+
+          {/* -- Activity Timeline -- */}
+          <TabsContent value="activity" className="space-y-4">
+            <h2 className="text-lg font-bold text-heading">Activity Timeline</h2>
+            {timeline.length === 0 ? (
+              <div className="flex flex-col items-center gap-2 py-12">
+                <Clock size={40} className="text-muted opacity-40" />
+                <p className="font-semibold text-body">No activity yet</p>
+              </div>
+            ) : (
+              <div className="relative">
+                <div className="absolute left-4 top-0 bottom-0 w-0.5 bg-border" />
+                <div className="space-y-4">
+                  {timeline.slice(0, 20).map((item, idx) => (
+                    <div key={`${item.type}-${item.name}-${idx}`} className="relative flex gap-4">
+                      <div className={cn(
+                        "w-8 h-8 rounded-full flex items-center justify-center shrink-0 z-10",
+                        item.type === "Invoice" ? "bg-purple-100 text-purple-600" : "bg-green-100 text-green-600"
+                      )}>
+                        {item.type === "Invoice" ? <FileText size={14} /> : <DollarSign size={14} />}
+                      </div>
+                      <div className="flex-1 bg-surface border border-border/50 rounded-[12px] p-4">
+                        <div className="flex items-center justify-between mb-1">
+                          <div className="flex items-center gap-2">
+                            <Link to={item.link} className="font-semibold text-heading hover:text-primary-600 transition-colors">
+                              {item.name}
+                            </Link>
+                            <Badge variant={item.statusVariant}>{item.statusLabel}</Badge>
+                          </div>
+                          <span className="text-xs text-muted">{formatDate(item.date)}</span>
+                        </div>
+                        <p className="text-sm text-muted">
+                          {item.type} &middot; <span className="font-medium text-heading tabular-nums">{formatCurrency(item.amount)}</span>
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </TabsContent>
+
+          {/* -- Notes -- */}
+          <TabsContent value="notes" className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-bold text-heading">Notes</h2>
+              <span className="text-sm text-muted">{notes.length} note{notes.length !== 1 ? "s" : ""}</span>
+            </div>
+
+            {notesError && (
+              <p className="text-sm text-danger-600 bg-danger-50 border border-danger-100 px-3 py-2.5 rounded-[10px]">
+                {notesError}
+              </p>
+            )}
+            
+            <Card>
+              <CardContent className="space-y-3">
+                <Textarea
+                  placeholder="Add a note about this customer..."
+                  value={newNote}
+                  onChange={(e) => setNewNote(e.target.value)}
+                  rows={3}
+                  className="resize-none"
+                />
+                <div className="flex justify-end">
+                  <Button size="sm" onClick={saveNote} disabled={!newNote.trim() || savingNote}>
+                    <Send size={14} className="mr-1.5" /> {savingNote ? "Saving..." : "Add Note"}
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+
+            {notesLoading ? (
+              <div className="flex items-center justify-center py-12">
+                <div className="w-6 h-6 border-2 border-primary-500 border-t-transparent rounded-full animate-spin" />
+              </div>
+            ) : notes.length === 0 ? (
+              <div className="flex flex-col items-center gap-2 py-12">
+                <MessageSquare size={40} className="text-muted opacity-40" />
+                <p className="font-semibold text-body">No notes yet</p>
+                <p className="text-sm text-muted">Add your first note above</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {notes.map((note) => (
+                  <Card key={note.id}>
+                    <CardContent>
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex-1">
+                          <p className="text-sm text-heading whitespace-pre-wrap">{note.content}</p>
+                          <div className="flex items-center gap-2 mt-2">
+                            <span className="text-xs text-muted">{note.author}</span>
+                            <span className="text-xs text-muted">&middot;</span>
+                            <span className="text-xs text-muted">{formatDate(note.createdAt)}</span>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => deleteNote(note.id)}
+                          className="text-muted hover:text-danger-600 transition-colors p-1"
+                        >
+                          <XCircle size={14} />
+                        </button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
           </TabsContent>
 
           {/* -- Addresses & Contacts -- */}
@@ -454,7 +679,7 @@ export default function CustomerDetail() {
                     {customer.addresses.map((addr) => (
                       <div key={addr.name} className="flex items-start gap-3 p-3 bg-gray-50 rounded-[12px]">
                         <MapPin size={16} className="text-muted mt-0.5 shrink-0" />
-                        <div>
+                        <div className="flex-1">
                           <p className="text-sm font-semibold text-heading">
                             {addr.address_type}
                             {addr.name === customer.customer_primary_address && (
@@ -468,6 +693,23 @@ export default function CustomerDetail() {
                             {addr.state ? `, ${addr.state}` : ""}
                             {addr.country}
                           </p>
+                          {deleteAddressError && deletingAddress === null && (
+                            <p className="text-xs text-danger-600 mt-1">{deleteAddressError}</p>
+                          )}
+                        </div>
+                        <div className="flex items-start gap-1">
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteAddress(addr.name)}
+                            disabled={deletingAddress === addr.name}
+                            className="text-muted hover:text-danger-600 transition-colors p-1 shrink-0 disabled:opacity-50"
+                          >
+                            {deletingAddress === addr.name ? (
+                              <Loader2 size={14} className="animate-spin" />
+                            ) : (
+                              <Trash2 size={14} />
+                            )}
+                          </button>
                         </div>
                       </div>
                     ))}
@@ -485,7 +727,7 @@ export default function CustomerDetail() {
                   </Button>
                 </div>
                 <DataTable
-                  columns={contactCols}
+                  columns={contactColsWithActions}
                   data={contacts}
                   keyExtractor={(c) => c.name}
                   onRowClick={(c) => navigate(`/contacts/${c.name}`)}
@@ -578,6 +820,36 @@ export default function CustomerDetail() {
           </TabsContent>
         </Tabs>
       </motion.div>
+
+      <Modal open={showDeleteModal} onClose={() => { setShowDeleteModal(false); setDeleteError(null) }} title="Delete Customer">
+        {deleteError ? (
+          <>
+            <div className="rounded-lg border border-danger-200 bg-danger-50 p-4">
+              <div className="flex items-start gap-3">
+                <div className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-danger-100">
+                  <XCircle size={14} className="text-danger-600" />
+                </div>
+                <div
+                  className="text-sm text-danger-700 leading-relaxed"
+                  dangerouslySetInnerHTML={{ __html: rewriteErpNextLinks(deleteError.rawMessage) }}
+                />
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 mt-6">
+              <Button variant="outline" onClick={() => { setShowDeleteModal(false); setDeleteError(null) }}>Close</Button>
+            </div>
+          </>
+        ) : (
+          <>
+            <p>Are you sure you want to delete <strong>{customer.customer_name}</strong>?</p>
+            <p className="text-sm text-muted mt-2">This action cannot be undone. All linked contacts and addresses will be unlinked.</p>
+            <div className="flex justify-end gap-3 mt-6">
+              <Button variant="outline" onClick={() => setShowDeleteModal(false)}>Cancel</Button>
+              <Button onClick={handleDeleteCustomer} loading={deleting} className="bg-danger-600 hover:bg-danger-700">Delete</Button>
+            </div>
+          </>
+        )}
+      </Modal>
     </>
   )
 }

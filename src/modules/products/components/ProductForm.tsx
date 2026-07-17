@@ -20,7 +20,22 @@ const emptyForm: ProductFormData = {
   brand: "",
   image: "",
   is_stock_item: true,
+  is_sales_item: true,
+  is_purchase_item: true,
   disabled: false,
+  has_batch_no: false,
+  has_serial_no: false,
+  has_variants: false,
+  valuation_method: "",
+  end_of_life: "",
+  warranty_period: "",
+  allow_negative_stock: false,
+  purchase_uom: "",
+  sales_uom: "",
+  max_discount: 0,
+  safety_stock: 0,
+  min_order_qty: 0,
+  lead_time_days: 0,
   weight_per_unit: 0,
   weight_uom: "",
   company: "",
@@ -85,7 +100,22 @@ export default function ProductForm({ product, onSaved, onCancel }: ProductFormP
       brand: product.brand ?? "",
       image: product.image ?? "",
       is_stock_item: !!product.is_stock_item,
+      is_sales_item: product.is_sales_item !== 0,
+      is_purchase_item: product.is_purchase_item !== 0,
       disabled: !!product.disabled,
+      has_batch_no: !!product.has_batch_no,
+      has_serial_no: !!product.has_serial_no,
+      has_variants: !!product.has_variants,
+      valuation_method: product.valuation_method ?? "",
+      end_of_life: product.end_of_life ?? "",
+      warranty_period: product.warranty_period ?? "",
+      allow_negative_stock: !!product.allow_negative_stock,
+      purchase_uom: product.purchase_uom ?? "",
+      sales_uom: product.sales_uom ?? "",
+      max_discount: product.max_discount ?? 0,
+      safety_stock: product.safety_stock ?? 0,
+      min_order_qty: product.min_order_qty ?? 0,
+      lead_time_days: product.lead_time_days ?? 0,
       weight_per_unit: product.weight_per_unit ?? 0,
       weight_uom: product.weight_uom ?? "",
       company: product.item_defaults[0]?.company ?? "",
@@ -209,16 +239,22 @@ export default function ProductForm({ product, onSaved, onCancel }: ProductFormP
 
       <div className="border-t border-border pt-4">
         <h3 className="text-sm font-semibold text-heading mb-3">Pricing</h3>
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label htmlFor="standard_rate" className={labelClass}>Selling Price</label>
-            <input
-              id="standard_rate" name="standard_rate" type="number" min={0} step={0.01}
-              value={form.standard_rate} onChange={handleChange}
-              className={inputClass} placeholder="0.00"
-            />
+        {!isEdit ? (
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label htmlFor="standard_rate" className={labelClass}>Selling Price</label>
+              <input
+                id="standard_rate" name="standard_rate" type="number" min={0} step={0.01}
+                value={form.standard_rate} onChange={handleChange}
+                className={inputClass} placeholder="0.00"
+              />
+            </div>
           </div>
-        </div>
+        ) : (
+          <p className="text-xs text-muted bg-gray-50 border border-border rounded-[10px] px-3 py-2">
+            Selling price is managed via <span className="font-medium">Item Price</span> records.
+          </p>
+        )}
       </div>
 
       <div className="border-t border-border pt-4">
@@ -227,10 +263,14 @@ export default function ProductForm({ product, onSaved, onCancel }: ProductFormP
             id="is_stock_item" name="is_stock_item" type="checkbox"
             checked={form.is_stock_item}
             onChange={handleChange}
-            className="w-4 h-4 rounded border-border text-primary-600 focus:ring-primary-500"
+            disabled={isEdit}
+            className="w-4 h-4 rounded border-border text-primary-600 focus:ring-primary-500 disabled:opacity-50 disabled:cursor-not-allowed"
           />
           <label htmlFor="is_stock_item" className="text-sm text-body font-semibold">Maintain stock for this item</label>
         </div>
+        {isEdit && (
+          <p className="text-[11px] text-muted mb-3 -mt-1">Cannot be changed after a stock transaction exists.</p>
+        )}
 
         {form.is_stock_item && (
           <div className="grid grid-cols-2 gap-4 bg-gray-50 rounded-[12px] p-4 border border-border">
@@ -243,14 +283,16 @@ export default function ProductForm({ product, onSaved, onCancel }: ProductFormP
               <label className={labelClass}>Default Warehouse *</label>
               <LinkSelect name="default_warehouse" value={form.default_warehouse} options={warehouses} placeholder="Select warehouse" />
             </div>
-            <div>
-              <label htmlFor="opening_stock" className={labelClass}>Opening Stock Qty</label>
-              <input
-                id="opening_stock" name="opening_stock" type="number" min={0} step={1}
-                value={form.opening_stock} onChange={handleChange}
-                className={inputClass} placeholder="0"
-              />
-            </div>
+            {!isEdit && (
+              <div>
+                <label htmlFor="opening_stock" className={labelClass}>Opening Stock Qty</label>
+                <input
+                  id="opening_stock" name="opening_stock" type="number" min={0} step={1}
+                  value={form.opening_stock} onChange={handleChange}
+                  className={inputClass} placeholder="0"
+                />
+              </div>
+            )}
             <div>
               <label htmlFor="valuation_rate" className={labelClass}>Valuation Rate (per unit)</label>
               <input
@@ -262,6 +304,132 @@ export default function ProductForm({ product, onSaved, onCancel }: ProductFormP
             </div>
           </div>
         )}
+      </div>
+
+      <div className="border-t border-border pt-4">
+        <h3 className="text-sm font-semibold text-heading mb-3">Sales & Purchase</h3>
+        <div className="grid grid-cols-2 gap-4">
+          <div className="flex items-center gap-2">
+            <input
+              id="is_sales_item" name="is_sales_item" type="checkbox"
+              checked={form.is_sales_item} onChange={handleChange}
+              className="w-4 h-4 rounded border-border text-primary-600 focus:ring-primary-500"
+            />
+            <label htmlFor="is_sales_item" className="text-sm text-body">Allow in Sales</label>
+          </div>
+          <div className="flex items-center gap-2">
+            <input
+              id="is_purchase_item" name="is_purchase_item" type="checkbox"
+              checked={form.is_purchase_item} onChange={handleChange}
+              className="w-4 h-4 rounded border-border text-primary-600 focus:ring-primary-500"
+            />
+            <label htmlFor="is_purchase_item" className="text-sm text-body">Allow in Purchase</label>
+          </div>
+          <div>
+            <label className={labelClass}>Sales UOM</label>
+            <LinkSelect name="sales_uom" value={form.sales_uom} options={uoms} placeholder="Same as Stock UOM" />
+          </div>
+          <div>
+            <label className={labelClass}>Purchase UOM</label>
+            <LinkSelect name="purchase_uom" value={form.purchase_uom} options={uoms} placeholder="Same as Stock UOM" />
+          </div>
+          <div>
+            <label htmlFor="max_discount" className={labelClass}>Max Discount %</label>
+            <input
+              id="max_discount" name="max_discount" type="number" min={0} step={0.01}
+              value={form.max_discount} onChange={handleChange}
+              className={inputClass} placeholder="0"
+            />
+          </div>
+        </div>
+      </div>
+
+      <div className="border-t border-border pt-4">
+        <h3 className="text-sm font-semibold text-heading mb-3">Inventory Settings</h3>
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className={labelClass}>Valuation Method</label>
+            <select name="valuation_method" value={form.valuation_method} onChange={handleChange} className={inputClass}>
+              <option value="">Default (from Stock Settings)</option>
+              <option value="FIFO">FIFO</option>
+              <option value="Moving Average">Moving Average</option>
+              <option value="LIFO">LIFO</option>
+              <option value="Standard Cost">Standard Cost</option>
+            </select>
+          </div>
+          <div>
+            <label htmlFor="end_of_life" className={labelClass}>End of Life</label>
+            <input
+              id="end_of_life" name="end_of_life" type="date"
+              value={form.end_of_life} onChange={handleChange}
+              className={inputClass}
+            />
+          </div>
+          <div>
+            <label htmlFor="warranty_period" className={labelClass}>Warranty Period (days)</label>
+            <input
+              id="warranty_period" name="warranty_period"
+              value={form.warranty_period} onChange={handleChange}
+              className={inputClass} placeholder="e.g. 365"
+            />
+          </div>
+          <div>
+            <label htmlFor="safety_stock" className={labelClass}>Safety Stock</label>
+            <input
+              id="safety_stock" name="safety_stock" type="number" min={0} step={1}
+              value={form.safety_stock} onChange={handleChange}
+              className={inputClass} placeholder="0"
+            />
+          </div>
+          <div>
+            <label htmlFor="min_order_qty" className={labelClass}>Min Order Qty</label>
+            <input
+              id="min_order_qty" name="min_order_qty" type="number" min={0} step={1}
+              value={form.min_order_qty} onChange={handleChange}
+              className={inputClass} placeholder="0"
+            />
+          </div>
+          <div>
+            <label htmlFor="lead_time_days" className={labelClass}>Lead Time (days)</label>
+            <input
+              id="lead_time_days" name="lead_time_days" type="number" min={0} step={1}
+              value={form.lead_time_days} onChange={handleChange}
+              className={inputClass} placeholder="0"
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <input
+              id="has_batch_no" name="has_batch_no" type="checkbox"
+              checked={form.has_batch_no} onChange={handleChange}
+              disabled={isEdit}
+              className="w-4 h-4 rounded border-border text-primary-600 focus:ring-primary-500 disabled:opacity-50 disabled:cursor-not-allowed"
+            />
+            <label htmlFor="has_batch_no" className="text-sm text-body">Batch Tracking</label>
+          </div>
+          {isEdit && (
+            <p className="text-[11px] text-muted col-span-2 -mt-2">Cannot be changed after a stock transaction exists.</p>
+          )}
+          <div className="flex items-center gap-2">
+            <input
+              id="has_serial_no" name="has_serial_no" type="checkbox"
+              checked={form.has_serial_no} onChange={handleChange}
+              disabled={isEdit}
+              className="w-4 h-4 rounded border-border text-primary-600 focus:ring-primary-500 disabled:opacity-50 disabled:cursor-not-allowed"
+            />
+            <label htmlFor="has_serial_no" className="text-sm text-body">Serial Number Tracking</label>
+          </div>
+          {isEdit && (
+            <p className="text-[11px] text-muted col-span-2 -mt-2">Cannot be changed after a stock transaction exists.</p>
+          )}
+          <div className="flex items-center gap-2">
+            <input
+              id="allow_negative_stock" name="allow_negative_stock" type="checkbox"
+              checked={form.allow_negative_stock} onChange={handleChange}
+              className="w-4 h-4 rounded border-border text-primary-600 focus:ring-primary-500"
+            />
+            <label htmlFor="allow_negative_stock" className="text-sm text-body">Allow Negative Stock</label>
+          </div>
+        </div>
       </div>
 
       <div className="border-t border-border pt-4">

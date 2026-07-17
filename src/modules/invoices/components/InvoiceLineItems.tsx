@@ -50,7 +50,6 @@ interface InvoiceLineItemsProps {
   onAddItemWithQty?: (product: Product, qty: number) => void
   onProductDropdownChange?: (id: string, dropdown: { open: boolean; search: string }) => void
   onSelectProduct?: (lineId: string, product: Product) => void
-  taxRate?: number
 }
 
 const inputClass =
@@ -71,7 +70,6 @@ export default function InvoiceLineItems({
   onAddItemWithQty,
   onProductDropdownChange,
   onSelectProduct,
-  taxRate = 0,
 }: InvoiceLineItemsProps) {
   if (readOnly) {
     return (
@@ -83,14 +81,11 @@ export default function InvoiceLineItems({
             <th className="text-left py-2 text-xs font-semibold text-muted uppercase tracking-wider">Description</th>
             <th className="text-right py-2 text-xs font-semibold text-muted uppercase tracking-wider">Qty</th>
             <th className="text-right py-2 text-xs font-semibold text-muted uppercase tracking-wider">Rate</th>
-            <th className="text-right py-2 text-xs font-semibold text-muted uppercase tracking-wider">Tax</th>
             <th className="text-right py-2 text-xs font-semibold text-muted uppercase tracking-wider">Amount</th>
           </tr>
         </thead>
         <tbody>
           {items.map((item, index) => {
-            // Per-item tax: use itemTaxTemplate rate if set; otherwise fall back to invoice-level tax rate
-            const perItemTaxAmount = Math.round(item.total * taxRate * 100) / 100
             return (
               <tr key={item.id} className="border-b border-gray-50">
                 <td className="py-2 text-muted text-center">{index + 1}</td>
@@ -98,7 +93,6 @@ export default function InvoiceLineItems({
                 <td className="py-2 text-sm text-muted">{item.description || "—"}</td>
                 <td className="py-2 text-right text-muted">{item.quantity}</td>
                 <td className="py-2 text-right text-muted">{formatCurrency(item.price)}</td>
-                <td className="py-2 text-right text-muted">{taxRate > 0 ? formatCurrency(perItemTaxAmount) : "—"}</td>
                 <td className="py-2 text-right font-semibold text-heading">{formatCurrency(item.total)}</td>
               </tr>
             )
@@ -148,7 +142,6 @@ export default function InvoiceLineItems({
               <th className="px-3 py-3 text-left text-xs font-semibold text-muted uppercase tracking-wider w-[22%]">Description</th>
               <th className="px-3 py-3 text-right text-xs font-semibold text-muted uppercase tracking-wider w-[7%]">Qty</th>
               <th className="px-3 py-3 text-right text-xs font-semibold text-muted uppercase tracking-wider w-[12%]">Rate</th>
-              <th className="px-3 py-3 text-right text-xs font-semibold text-muted uppercase tracking-wider w-[10%]">Tax</th>
               <th className="px-3 py-3 text-right text-xs font-semibold text-muted uppercase tracking-wider w-[13%]">Amount</th>
               <th className="px-3 py-3 w-[5%]" />
               <th className="px-3 py-3 w-[5%]" />
@@ -165,16 +158,11 @@ export default function InvoiceLineItems({
 
               const selectedProduct = products?.find((p) => p.item_code === line.productId)
 
-              // Per-item tax: use itemTaxTemplate rate if set; otherwise fall back to invoice-level tax rate
-              const perItemTaxAmount = Math.round(line.total * taxRate * 100) / 100
-
               return (
                 <LineItemRow
                   key={line.id}
                   line={line}
                   rowIndex={index + 1}
-                  perItemTaxAmount={perItemTaxAmount}
-                  taxRate={taxRate}
                   selectedProduct={selectedProduct}
                   filteredProducts={filteredProducts}
                   dropdown={dropdown}
@@ -397,8 +385,6 @@ function AddMultipleModal({
 function LineItemRow({
   line,
   rowIndex,
-  perItemTaxAmount,
-  taxRate,
   selectedProduct,
   filteredProducts,
   dropdown,
@@ -414,8 +400,6 @@ function LineItemRow({
 }: {
   line: LineItemForm
   rowIndex: number
-  perItemTaxAmount: number
-  taxRate: number
   selectedProduct?: Product
   filteredProducts?: Product[]
   dropdown?: { open: boolean; search: string }
@@ -504,11 +488,6 @@ function LineItemRow({
             onChange={(e) => onUpdate?.(line.id, { price: Math.max(0, parseFloat(e.target.value) || 0) })}
             className="w-full px-2 py-1.5 text-sm text-right border border-border rounded-[10px] focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500"
           />
-        </td>
-        <td className="px-3 py-2.5 text-right">
-          <span className="text-sm text-muted tabular-nums">
-            {taxRate > 0 ? formatCurrency(perItemTaxAmount) : "—"}
-          </span>
         </td>
         <td className="px-3 py-2.5 text-right">
           <span className="text-sm font-semibold tabular-nums text-heading">{formatCurrency(line.total)}</span>

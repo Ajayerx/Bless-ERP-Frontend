@@ -34,8 +34,10 @@ import {
   StockCountDetail,
   NewStockCount,
 } from "./modules/inventory/pages";
+import Notifications from "./modules/notifications/pages/Notifications";
 import HrmsDashboard from "./modules/hrms/pages/HrmsDashboard";
 import Apps from "./modules/apps/pages/Apps";
+import AppDetail from "./modules/apps/pages/AppDetail";
 import Employees from "./modules/hrms/employees/pages/Employees";
 import EmployeeDetail from "./modules/hrms/employees/pages/EmployeeDetail";
 import Attendance from "./modules/hrms/attendance/pages/Attendance";
@@ -145,7 +147,9 @@ function App() {
         <Route path="hrms/leave" element={<Leave />} />
         <Route path="hrms/payroll" element={<Payroll />} />
         <Route path="hrms/payroll/:id" element={<PayrollDetail />} />
+        <Route path="notifications" element={<Notifications />} />
         <Route path="apps" element={<Apps />} />
+        <Route path="apps/:id" element={<AppDetail />} />
         <Route path="settings" element={<Settings />} />
         <Route path="reports/sales" element={<SalesReportPage />} />
         <Route path="reports/ar" element={<ARReportPage />} />

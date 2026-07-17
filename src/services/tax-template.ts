@@ -1,14 +1,12 @@
 import { apiClient } from "./api-client"
 import { getCompany } from "./company"
 
-export const DEFAULT_GST_RATE = 0.05
-export const DEFAULT_QST_RATE = 0.09975
-export const DEFAULT_TAX_TEMPLATE_NAME = "Canada GST/QST - BE"
-
 export interface TaxRow {
+  chargeType: string
   accountHead: string
   rate: number
   description?: string
+  includedInPrintRate: number
 }
 
 export interface TaxTemplateResult {
@@ -52,6 +50,7 @@ export async function getTaxTemplateDetails(
     account_head: string
     rate: number
     description?: string
+    included_in_print_rate?: number
   }
   interface TemplateDoc {
     name: string
@@ -68,9 +67,11 @@ export async function getTaxTemplateDetails(
       name: doc.name,
       doctype,
       rows: taxes.map((t) => ({
+        chargeType: t.charge_type,
         accountHead: t.account_head,
         rate: t.rate / 100,
         description: t.description,
+        includedInPrintRate: t.included_in_print_rate ?? 0,
       })),
     }
   } catch {

@@ -2,10 +2,12 @@ import { API_CONFIG } from "../config/api.config"
 
 export class ApiError extends Error {
   public status: number
+  public rawMessage: string
 
-  constructor(status: number, message: string) {
+  constructor(status: number, message: string, rawMessage?: string) {
     super(message)
     this.status = status
+    this.rawMessage = rawMessage ?? message
     this.name = "ApiError"
   }
 }
@@ -16,6 +18,19 @@ export class ApiError extends Error {
 function getCsrfToken(): string | undefined {
   const match = document.cookie.match(/\bcsrf_token=([^;]+)/)
   return match ? decodeURIComponent(match[1]) : undefined
+}
+
+// --- Company header ---------------------------------------------------
+// ERPNext multi-company: set X-Frappe-Company to filter data by company.
+// CompanyContext sets this on mount / company switch.
+let activeCompany: string | null = null
+
+export function setActiveCompany(company: string | null) {
+  activeCompany = company
+}
+
+export function getActiveCompany(): string | null {
+  return activeCompany
 }
 
 // --- 401/403 handling -------------------------------------------------
@@ -72,6 +87,15 @@ export function parseErrorMessage(body: any, fallback = "Something went wrong"):
   return fallback
 }
 
+export function parseRawErrorMessage(body: any, fallback = "Something went wrong"): string {
+  const serverMessages = extractServerMessages(body?._server_messages)
+  if (serverMessages.length > 0) return serverMessages.join(" ")
+  if (typeof body?._error_message === "string") return body._error_message
+  if (typeof body?.message === "string") return body.message
+  if (typeof body?.exception === "string") return body.exception
+  return fallback
+}
+
 // --- Safe JSON parsing --------------------------------------------------
 // Guards against ERPNext/nginx ever returning HTML (a crashed bench, a
 // 502 page) instead of JSON, which would otherwise throw a confusing
@@ -104,6 +128,7 @@ export async function apiClient<T>(
       headers: {
         ...API_CONFIG.headers,
         ...(csrf ? { "X-Frappe-CSRF-Token": csrf } : {}),
+        ...(activeCompany ? { "X-Frappe-Company": activeCompany } : {}),
         ...(options.headers as Record<string, string>),
       },
     })
@@ -127,7 +152,7 @@ export async function apiClient<T>(
         unauthorizing = false
       }
     }
-    throw new ApiError(res.status, parseErrorMessage(body))
+    throw new ApiError(res.status, parseErrorMessage(body), parseRawErrorMessage(body))
   }
 
   return (body.data ?? body.message) as T

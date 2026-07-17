@@ -1,7 +1,8 @@
-import { useState, useMemo } from "react"
+import { useState, useMemo, useRef, useCallback } from "react"
 import { motion } from "framer-motion"
 import { Search, ChevronLeft, ChevronRight, ChevronDown } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { Checkbox } from "./checkbox"
 
 export interface Column<T> {
   key: string
@@ -30,6 +31,9 @@ interface DataTableProps<T> {
   onRowClick?: (item: T) => void
   toolbarActions?: React.ReactNode
   emptyState?: React.ReactNode
+  selectable?: boolean
+  selectedKeys?: Set<string>
+  onSelectionChange?: (keys: Set<string>) => void
 }
 
 export default function DataTable<T>({
@@ -48,14 +52,27 @@ export default function DataTable<T>({
   onRowClick,
   toolbarActions,
   emptyState,
+  selectable = false,
+  selectedKeys,
+  onSelectionChange,
 }: DataTableProps<T>) {
   const [internalPage, setInternalPage] = useState(1)
   const [internalSearch, setInternalSearch] = useState("")
+  const [internalSelected, setInternalSelected] = useState<Set<string>>(new Set())
+  const lastClickedIndex = useRef<number | null>(null)
 
   const isControlled = controlledPage !== undefined && onPageChange !== undefined
   const currentPage = isControlled ? controlledPage! : internalPage
   const totalItems = total ?? data.length
   const totalPages = Math.max(1, Math.ceil(totalItems / pageSize))
+
+  const controlledSelection = selectable && selectedKeys !== undefined && onSelectionChange !== undefined
+  const currentSelection = controlledSelection ? selectedKeys! : internalSelected
+
+  const updateSelection = useCallback((next: Set<string>) => {
+    if (controlledSelection) onSelectionChange!(next)
+    else setInternalSelected(next)
+  }, [controlledSelection, onSelectionChange])
 
   const paginatedData = useMemo(() => {
     if (isControlled) return data
@@ -68,6 +85,44 @@ export default function DataTable<T>({
   const goToPage = (p: number) => {
     if (isControlled) onPageChange(p)
     else setInternalPage(p)
+  }
+
+  const displayedKeys = useMemo(() => displayedData.map(keyExtractor), [displayedData, keyExtractor])
+
+  const allSelected = selectable && displayedKeys.length > 0 && displayedKeys.every((k) => currentSelection.has(k))
+  const someSelected = selectable && displayedKeys.some((k) => currentSelection.has(k))
+
+  const toggleSelectAll = () => {
+    if (allSelected) {
+      const next = new Set(currentSelection)
+      displayedKeys.forEach((k) => next.delete(k))
+      updateSelection(next)
+    } else {
+      const next = new Set(currentSelection)
+      displayedKeys.forEach((k) => next.add(k))
+      updateSelection(next)
+    }
+  }
+
+  const toggleRow = (key: string, index: number, shiftKey: boolean) => {
+    if (shiftKey && lastClickedIndex.current !== null && lastClickedIndex.current !== index) {
+      const start = Math.min(lastClickedIndex.current, index)
+      const end = Math.max(lastClickedIndex.current, index)
+      const keysToToggle = displayedKeys.slice(start, end + 1)
+      const next = new Set(currentSelection)
+      const allInRangeSelected = keysToToggle.every((k) => next.has(k))
+      keysToToggle.forEach((k) => {
+        if (allInRangeSelected) next.delete(k)
+        else next.add(k)
+      })
+      updateSelection(next)
+    } else {
+      const next = new Set(currentSelection)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      updateSelection(next)
+    }
+    lastClickedIndex.current = index
   }
 
   return (
@@ -107,6 +162,17 @@ export default function DataTable<T>({
         <table className="min-w-full divide-y divide-border">
           <thead>
             <tr className="bg-gray-50/50">
+              {selectable && (
+                <th className="px-4 py-3.5 w-12">
+                  <Checkbox
+                    checked={allSelected}
+                    ref={(el) => {
+                      if (el) el.dataset.state = someSelected && !allSelected ? "indeterminate" : allSelected ? "checked" : "unchecked"
+                    }}
+                    onCheckedChange={toggleSelectAll}
+                  />
+                </th>
+              )}
               {columns.map((col) => (
                 <th
                   key={col.key}
@@ -130,6 +196,11 @@ export default function DataTable<T>({
             {loading ? (
               [...Array(5)].map((_, i) => (
                 <tr key={i}>
+                  {selectable && (
+                    <td className="px-4 py-4 w-12">
+                      <div className="h-5 w-5 bg-gray-100 rounded-md animate-pulse" />
+                    </td>
+                  )}
                   {columns.map((col) => (
                     <td key={col.key} className="px-6 py-4">
                       <div className="h-5 bg-gray-100 rounded-[8px] w-3/4 animate-pulse" />
@@ -140,7 +211,7 @@ export default function DataTable<T>({
             ) : displayedData.length === 0 ? (
               <tr>
                 <td
-                  colSpan={columns.length}
+                  colSpan={columns.length + (selectable ? 1 : 0)}
                   className="px-6 py-16 text-center text-sm text-muted"
                 >
                   {emptyState ?? (
@@ -152,36 +223,49 @@ export default function DataTable<T>({
                 </td>
               </tr>
             ) : (
-              displayedData.map((item, idx) => (
-                <motion.tr
-                  key={keyExtractor(item)}
-                  initial={{ opacity: 0, y: 4 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: idx * 0.03, duration: 0.2 }}
-                  onClick={() => onRowClick?.(item)}
-                  className={cn(
-                    "transition-colors",
-                    onRowClick ? "cursor-pointer hover:bg-gray-50/80" : ""
-                  )}
-                >
-                  {columns.map((col) => (
-                    <td
-                      key={col.key}
-                      className={cn(
-                        "px-6 py-4 text-sm text-body whitespace-nowrap",
-                        col.align === "right" ? "text-right" : col.align === "center" ? "text-center" : "text-left",
-                        col.hideOnMobile && "hidden lg:table-cell",
-                        col.width,
-                        col.className
-                      )}
-                    >
-                      {col.render
-                        ? col.render(item)
-                        : String((item as any)[col.key] ?? "")}
-                    </td>
-                  ))}
-                </motion.tr>
-              ))
+              displayedData.map((item, idx) => {
+                const itemKey = keyExtractor(item)
+                const isSelected = currentSelection.has(itemKey)
+                return (
+                  <motion.tr
+                    key={itemKey}
+                    initial={{ opacity: 0, y: 4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: idx * 0.03, duration: 0.2 }}
+                    onClick={() => onRowClick?.(item)}
+                    className={cn(
+                      "transition-colors",
+                      onRowClick ? "cursor-pointer hover:bg-gray-50/80" : "",
+                      isSelected && "bg-primary-50/50"
+                    )}
+                  >
+                    {selectable && (
+                      <td className="px-4 py-4 w-12" onClick={(e) => e.stopPropagation()}>
+                        <Checkbox
+                          checked={isSelected}
+                          onCheckedChange={() => toggleRow(itemKey, idx, false)}
+                        />
+                      </td>
+                    )}
+                    {columns.map((col) => (
+                      <td
+                        key={col.key}
+                        className={cn(
+                          "px-6 py-4 text-sm text-body whitespace-nowrap",
+                          col.align === "right" ? "text-right" : col.align === "center" ? "text-center" : "text-left",
+                          col.hideOnMobile && "hidden lg:table-cell",
+                          col.width,
+                          col.className
+                        )}
+                      >
+                        {col.render
+                          ? col.render(item)
+                          : String((item as any)[col.key] ?? "")}
+                      </td>
+                    ))}
+                  </motion.tr>
+                )
+              })
             )}
           </tbody>
         </table>

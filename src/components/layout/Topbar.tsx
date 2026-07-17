@@ -1,19 +1,22 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { motion } from "framer-motion"
+
 import {
   Search,
   Bell,
   HelpCircle,
   Sun,
   Moon,
+  Monitor,
   Globe,
   LogOut,
   User,
   ChevronDown,
   Building2,
 } from "lucide-react"
+import NotificationDropdown from "@/modules/notifications/components/NotificationDropdown"
+import CompanySwitcher from "./CompanySwitcher"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -65,20 +68,16 @@ export default function Topbar() {
 
       {/* Right actions */}
       <div className="flex items-center gap-1">
+        {/* Company Switcher */}
+        <CompanySwitcher />
+
         {/* Help */}
         <button className="p-2.5 rounded-[10px] text-muted hover:text-body hover:bg-gray-100 transition-colors">
           <HelpCircle size={18} />
         </button>
 
         {/* Notifications */}
-        <button className="p-2.5 rounded-[10px] text-muted hover:text-body hover:bg-gray-100 transition-colors relative">
-          <Bell size={18} />
-          <motion.span
-            initial={{ scale: 0 }}
-            animate={{ scale: 1 }}
-            className="absolute top-2 right-2 w-2 h-2 bg-danger-500 rounded-full ring-2 ring-white"
-          />
-        </button>
+        <NotificationDropdown />
 
         <div className="h-6 w-px bg-border mx-2" />
 
@@ -107,7 +106,7 @@ export default function Topbar() {
               <Building2 size={16} />
               Company Settings
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => navigate("/settings?tab=notifications")}>
+            <DropdownMenuItem onClick={() => navigate("/notifications")}>
               <Bell size={16} />
               Notifications
             </DropdownMenuItem>
@@ -116,8 +115,8 @@ export default function Topbar() {
               Language
             </DropdownMenuItem>
             <DropdownMenuItem onClick={toggleTheme}>
-              {theme === "light" ? <Moon size={16} /> : <Sun size={16} />}
-              {theme === "light" ? "Dark Mode" : "Light Mode"}
+              {theme === "system" ? <Monitor size={16} /> : theme === "light" ? <Moon size={16} /> : <Sun size={16} />}
+              {theme === "system" ? "System Theme" : theme === "light" ? "Dark Mode" : "Light Mode"}
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem

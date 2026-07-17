@@ -388,4 +388,26 @@ export const frappeCustomerHandlers = [
     return HttpResponse.json({ data: null })
   }),
 
+  // ── DELETE /api/resource/Address/{name} ──────────────────────────
+  http.delete("/api/resource/Address/:name", async ({ params }) => {
+    await delay(200)
+    const idx = addresses.findIndex((a) => a.name === params.name)
+    if (idx === -1) {
+      return HttpResponse.json({ message: "Not Found" }, { status: 404 })
+    }
+    addresses.splice(idx, 1)
+    return HttpResponse.json({ data: null })
+  }),
+
+  // ── DELETE /api/resource/Contact/{name} ──────────────────────────
+  http.delete("/api/resource/Contact/:name", async ({ params }) => {
+    await delay(200)
+    const idx = contacts.findIndex((c) => c.name === params.name)
+    if (idx === -1) {
+      return HttpResponse.json({ message: "Not Found" }, { status: 404 })
+    }
+    contacts.splice(idx, 1)
+    return HttpResponse.json({ data: null })
+  }),
+
 ]

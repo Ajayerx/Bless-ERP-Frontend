@@ -23,12 +23,14 @@ export default function StockTransferDetail() {
   const [transfer, setTransfer] = useState<StockTransfer | null>(null)
   const [loading, setLoading] = useState(true)
   const [actionLoading, setActionLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!id) return
     const name = decodeURIComponent(id)
     inventoryService.getTransfer(name)
       .then(setTransfer)
+      .catch((e) => { setError(e instanceof Error ? e.message : "Failed to load transfer details.") })
       .finally(() => setLoading(false))
   }, [id])
 
@@ -39,8 +41,8 @@ export default function StockTransferDetail() {
       await inventoryService.submitTransfer(transfer.name)
       const updated = await inventoryService.getTransfer(transfer.name)
       setTransfer(updated)
-    } catch {
-      // error handled via toast in future
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to submit transfer.")
     } finally {
       setActionLoading(false)
     }
@@ -53,6 +55,8 @@ export default function StockTransferDetail() {
       await inventoryService.cancelTransfer(transfer.name)
       const updated = await inventoryService.getTransfer(transfer.name)
       setTransfer(updated)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to cancel transfer.")
     } finally {
       setActionLoading(false)
     }
@@ -66,6 +70,18 @@ export default function StockTransferDetail() {
           <Skeleton className="h-8 w-64" />
           <Skeleton className="h-48 rounded-[16px]" />
           <Skeleton className="h-64 rounded-[16px]" />
+        </div>
+      </>
+    )
+  }
+
+  if (error) {
+    return (
+      <>
+        <Topbar />
+        <div className="p-6 text-center">
+          <p className="text-sm text-danger-600 bg-danger-50 border border-danger-100 px-3 py-2.5 rounded-[10px]">{error}</p>
+          <Button className="mt-4" onClick={() => navigate("/inventory/transfers")}>Back to Transfers</Button>
         </div>
       </>
     )

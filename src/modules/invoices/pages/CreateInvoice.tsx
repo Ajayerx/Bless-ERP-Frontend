@@ -8,16 +8,16 @@ import Topbar from "@/components/layout/Topbar";
 import { Button, Skeleton } from "@/components/ui";
 import { getCompanyDefaults } from "@/services/company";
 import {
-  DEFAULT_GST_RATE,
-  DEFAULT_QST_RATE,
-  DEFAULT_TAX_TEMPLATE_NAME,
-} from "@/services/tax-template";
-import {
   invoiceService,
   customerService,
   productService,
   type Customer,
   type Product,
+  type TaxTemplateResult,
+  type EditableTaxRow,
+  type AccountInfo,
+  templateRowsToEditable,
+  computeTaxes,
 } from "@/services";
 import InvoiceForm, { type InvoiceFormData, type InvoiceFieldErrors } from "../components/InvoiceForm";
 import InvoiceLineItems, {
@@ -191,17 +191,13 @@ export default function CreateInvoice() {
     Record<string, { open: boolean; search: string }>
   >({});
   const [warehouses, setWarehouses] = useState<string[]>([]);
-  const [accounts, setAccounts] = useState<string[]>([]);
+  const [accounts, setAccounts] = useState<AccountInfo[]>([]);
   const [costCenters, setCostCenters] = useState<string[]>([]);
   const [itemTaxTemplates, setItemTaxTemplates] = useState<string[]>([]);
   const [taxesAndChargesTemplates, setTaxesAndChargesTemplates] = useState<
     string[]
   >([]);
-  const [taxTemplate, setTaxTemplate] = useState<{
-    name: string;
-    gstRate: number;
-    qstRate: number;
-  } | null>(null);
+  const [taxTemplate, setTaxTemplate] = useState<TaxTemplateResult | null>(null);
   const [companyDefaults, setCompanyDefaults] = useState<{
     company: string;
     currency: string;
@@ -217,10 +213,12 @@ export default function CreateInvoice() {
   const [loadingPartyDetails, setLoadingPartyDetails] = useState(false);
   const [conversionRate, setConversionRate] = useState<number>(1);
   const [plcConversionRate, setPlcConversionRate] = useState<number>(1);
+  const [editableTaxRows, setEditableTaxRows] = useState<EditableTaxRow[]>([]);
 
-  const gstRate = taxTemplate?.gstRate ?? DEFAULT_GST_RATE;
-  const qstRate = taxTemplate?.qstRate ?? DEFAULT_QST_RATE;
-  const defaultTaxTemplate = taxTemplate?.name ?? DEFAULT_TAX_TEMPLATE_NAME;
+  // Fallback template name if template hasn't loaded yet
+  const FALLBACK_TEMPLATE_NAME = "Canada GST/QST - BE";
+
+  const defaultTaxTemplate = taxTemplate?.name ?? FALLBACK_TEMPLATE_NAME;
 
   useEffect(() => {
     Promise.all([
@@ -228,7 +226,7 @@ export default function CreateInvoice() {
       productService.list({ pageSize: 100 }),
       invoiceService.getDefaultTaxTemplate(),
       invoiceService.lookups.warehouses(),
-      invoiceService.lookups.accounts(),
+      invoiceService.lookups.taxAccounts(),
       invoiceService.lookups.costCenters(),
       invoiceService.lookups.itemTaxTemplates(),
       invoiceService.lookups.taxesAndChargesTemplates(),
@@ -238,6 +236,7 @@ export default function CreateInvoice() {
         setCustomers(custRes.items);
         setProducts(prodRes.items);
         setTaxTemplate(tmpl);
+        setEditableTaxRows(templateRowsToEditable(tmpl?.rows ?? []));
         setWarehouses(wh);
         setAccounts(ac);
         setCostCenters(cst);
@@ -293,6 +292,7 @@ export default function CreateInvoice() {
       const result = await invoiceService.getTaxTemplateDetails(templateName);
       if (result) {
         setTaxTemplate(result);
+        setEditableTaxRows(templateRowsToEditable(result.rows));
       }
     } catch {
       // keep existing rates on failure
@@ -505,10 +505,11 @@ export default function CreateInvoice() {
   };
 
   const subtotal = lineItems.reduce((sum, l) => sum + l.total, 0);
-  const gstAmount = Math.round(subtotal * gstRate * 100) / 100;
-  const qstAmount = Math.round(subtotal * qstRate * 100) / 100;
-  const totalTaxesAndCharges = Math.round((gstAmount + qstAmount) * 100) / 100;
-  const combinedTaxRate = gstRate + qstRate;
+  const totalQuantity = lineItems.reduce((sum, l) => sum + l.quantity, 0);
+
+  // Compute taxes from editable rows
+  const taxRows = computeTaxes(editableTaxRows, subtotal, totalQuantity);
+  const totalTaxesAndCharges = taxRows.reduce((sum, r) => sum + r.tax_amount, 0);
 
   // Compute additional discount
   let additionalDiscount = 0;
@@ -531,25 +532,15 @@ export default function CreateInvoice() {
     Math.round((subtotal + totalTaxesAndCharges - additionalDiscount) * 100) /
     100;
 
-  // Build tax rows for the read-only Taxes and Charges section
-  const taxRows = [
-    {
-      charge_type: "On Net Total",
-      account_head: `GST - ${companyDefaults?.company?.split(" ")[0] ?? "BE"}`,
-      description: `GST (${(gstRate * 100).toFixed(1)}%)`,
-      rate: gstRate * 100,
-      tax_amount: gstAmount,
-      total: subtotal + gstAmount,
-    },
-    {
-      charge_type: "On Net Total",
-      account_head: `QST - ${companyDefaults?.company?.split(" ")[0] ?? "BE"}`,
-      description: `QST (${(qstRate * 100).toFixed(3)}%)`,
-      rate: qstRate * 100,
-      tax_amount: qstAmount,
-      total: subtotal + gstAmount + qstAmount,
-    },
-  ];
+  // ERPNext-style rounding: round to nearest 0.01 (smallest currency fraction for CAD)
+  const roundedTotal = Math.round(grandTotal * 100) / 100;
+  const roundingAdjustment = roundedTotal - grandTotal;
+
+  // Tax lines for InvoiceTotals display
+  const taxLinesForDisplay = taxRows.map((r) => ({
+    label: r.description || r.account_head,
+    amount: r.tax_amount,
+  }));
 
   const buildPayload = () => ({
     customer: formData.customer,
@@ -575,6 +566,13 @@ export default function CreateInvoice() {
     cost_center: formData.costCenter || undefined,
     project: formData.project || undefined,
     taxes_and_charges: taxTemplate?.name || defaultTaxTemplate,
+    taxes: taxRows.map((r) => ({
+      charge_type: r.charge_type,
+      account_head: r.account_head,
+      rate: r.rate,
+      description: r.description,
+      included_in_print_rate: r.included_in_print_rate,
+    })),
     customer_address: formData.customerAddress || undefined,
     shipping_address_name: formData.shippingAddressName || undefined,
     contact_person: formData.contactPerson || undefined,
@@ -867,6 +865,9 @@ export default function CreateInvoice() {
             onSelectCustomer={handleSelectCustomer}
             loadingPartyDetails={loadingPartyDetails}
             taxRows={taxRows}
+            editableTaxRows={editableTaxRows}
+            onTaxRowsChange={setEditableTaxRows}
+            taxAccounts={accounts}
             companyDefaults={companyDefaults}
             grandTotal={grandTotal}
             subtotal={subtotal}
@@ -892,7 +893,6 @@ export default function CreateInvoice() {
                   setProductDropdowns((prev) => ({ ...prev, [id]: dropdown }))
                 }
                 onSelectProduct={selectProduct}
-                taxRate={combinedTaxRate}
               />
             }
             totals={
@@ -902,10 +902,9 @@ export default function CreateInvoice() {
                 totalTaxesAndCharges={totalTaxesAndCharges}
                 discountAmount={additionalDiscount}
                 grandTotal={grandTotal}
-                gst={gstAmount}
-                qst={qstAmount}
-                gstLabel={`GST (${(gstRate * 100).toFixed(1)}%)`}
-                qstLabel={`QST (${(qstRate * 100).toFixed(3)}%)`}
+                roundingAdjustment={roundingAdjustment}
+                roundedTotal={roundedTotal}
+                taxLines={taxLinesForDisplay}
               />
             }
           />

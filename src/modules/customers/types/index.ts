@@ -2,6 +2,7 @@ export interface Customer {
   name: string
   naming_series?: string
   salutation?: string
+  alias?: string
   customer_name: string
   customer_type: "Company" | "Individual" | "Partnership"
   customer_group: string
@@ -33,6 +34,7 @@ export interface Customer {
   last_name?: string
   tax_id?: string
   tax_category?: string
+  tax_withholding_group?: string
   tax_withholding_category?: string
   payment_terms?: string
   loyalty_program?: string
@@ -100,14 +102,24 @@ export interface PortalUserRow {
   user: string
 }
 
+export interface SupplierNumberRow {
+  name?: string
+  company?: string
+  supplier_number?: string
+}
+
 export interface CustomerFormData {
   salutation?: string
+  alias?: string
   customer_name: string
   customer_type: "Company" | "Individual" | "Partnership"
   customer_group: string
   territory: string
   gender?: string
   lead_name?: string
+  opportunity_name?: string
+  prospect_name?: string
+  crm_deal?: string
   account_manager?: string
   image?: string
   default_currency?: string
@@ -123,6 +135,7 @@ export interface CustomerFormData {
   customer_details?: string
   tax_id?: string
   tax_category?: string
+  tax_withholding_group?: string
   tax_withholding_category?: string
   payment_terms?: string
   loyalty_program?: string
@@ -144,6 +157,7 @@ export interface CustomerFormData {
   accounts?: PartyAccountRow[]
   sales_team?: SalesTeamRow[]
   portal_users?: PortalUserRow[]
+  supplier_numbers?: SupplierNumberRow[]
 }
 
 export interface TransactionCounts {
@@ -170,4 +184,5 @@ export interface CustomerDetail extends Customer {
   accounts: PartyAccountRow[]
   sales_team: SalesTeamRow[]
   portal_users: PortalUserRow[]
+  supplier_numbers?: SupplierNumberRow[]
 }

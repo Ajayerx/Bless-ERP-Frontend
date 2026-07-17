@@ -78,6 +78,20 @@ const items = [
   { item_code: "PRD-015", item_name: "Gluten-Free Pancake Mix", shelf_life_in_days: 270 },
 ]
 
+// ── Item Prices ──────────────────────────────────────────────────────
+const itemPrices = [
+  { name: "IPR-001", item_code: "PRD-001", price_list: "Standard Selling", price_list_rate: 25.00, currency: "CAD", selling: 1, buying: 0, valid_from: "2026-01-01", valid_upto: "2026-12-31" },
+  { name: "IPR-002", item_code: "PRD-001", price_list: "Standard Buying", price_list_rate: 18.00, currency: "CAD", selling: 0, buying: 1, valid_from: "2026-01-01", valid_upto: "2026-12-31" },
+  { name: "IPR-003", item_code: "PRD-002", price_list: "Standard Selling", price_list_rate: 5.50, currency: "CAD", selling: 1, buying: 0, valid_from: "2026-01-01", valid_upto: "2026-12-31" },
+  { name: "IPR-004", item_code: "PRD-002", price_list: "Standard Buying", price_list_rate: 3.20, currency: "CAD", selling: 0, buying: 1, valid_from: "2026-01-01", valid_upto: "2026-12-31" },
+  { name: "IPR-005", item_code: "PRD-003", price_list: "Standard Selling", price_list_rate: 15.00, currency: "CAD", selling: 1, buying: 0, valid_from: "2026-01-01", valid_upto: "2026-12-31" },
+  { name: "IPR-006", item_code: "PRD-003", price_list: "Standard Buying", price_list_rate: 9.50, currency: "CAD", selling: 0, buying: 1, valid_from: "2026-01-01", valid_upto: "2026-12-31" },
+  { name: "IPR-007", item_code: "PRD-004", price_list: "Standard Selling", price_list_rate: 9.00, currency: "CAD", selling: 1, buying: 0, valid_from: "2026-01-01", valid_upto: "2026-12-31" },
+  { name: "IPR-008", item_code: "PRD-004", price_list: "Standard Buying", price_list_rate: 5.00, currency: "CAD", selling: 0, buying: 1, valid_from: "2026-01-01", valid_upto: "2026-12-31" },
+  { name: "IPR-009", item_code: "PRD-005", price_list: "Standard Selling", price_list_rate: 28.00, currency: "CAD", selling: 1, buying: 0, valid_from: "2026-01-01", valid_upto: "2026-12-31" },
+  { name: "IPR-010", item_code: "PRD-005", price_list: "Standard Buying", price_list_rate: 16.00, currency: "CAD", selling: 0, buying: 1, valid_from: "2026-01-01", valid_upto: "2026-12-31" },
+]
+
 // ── Batches (expiring) ───────────────────────────────────────────────
 const today = new Date()
 const batchDate = (daysFromNow: number) =>
@@ -177,6 +191,7 @@ const listData: Record<string, Record<string, unknown>[]> = {
   "Payment Entry": paymentEntries as unknown as Record<string, unknown>[],
   "Bin": bins as unknown as Record<string, unknown>[],
   "Item": items as unknown as Record<string, unknown>[],
+  "Item Price": itemPrices as unknown as Record<string, unknown>[],
   "Batch": batches as unknown as Record<string, unknown>[],
   "Purchase Order": poDocs as unknown as Record<string, unknown>[],
 }

@@ -117,6 +117,10 @@
   --color-body: #374151;
   --color-muted: #6b7280;
 
+  --color-surface-hover: #f9fafb;
+  --color-surface-muted: #f3f4f6;
+  --color-surface-subtle: rgba(249, 250, 251, 0.5);
+
   --radius-card: 16px;
   --radius-input: 12px;
   --radius-button: 12px;
@@ -201,6 +205,10 @@ body {
   --color-heading: #f1f5f9;
   --color-body: #cbd5e1;
   --color-muted: #94a3b8;
+
+  --color-surface-hover: #334155;
+  --color-surface-muted: #1e293b;
+  --color-surface-subtle: rgba(30, 41, 59, 0.5);
 }
 
 .dark body {
@@ -208,23 +216,23 @@ body {
 }
 
 .dark .hover\:bg-gray-100:hover {
-  background-color: #334155;
+  background-color: var(--color-surface-hover);
 }
 
 .dark .hover\:bg-gray-50:hover {
-  background-color: #1e293b;
+  background-color: var(--color-surface-hover);
 }
 
 .dark .bg-gray-50 {
-  background-color: #1e293b;
+  background-color: var(--color-surface-muted);
 }
 
 .dark .bg-gray-100 {
-  background-color: #334155;
+  background-color: var(--color-surface-hover);
 }
 
 .dark .text-gray-900 {
-  color: #f1f5f9;
+  color: var(--color-heading);
 }
 
 .dark .shadow-card {
@@ -236,7 +244,7 @@ body {
 }
 
 .dark .ring-white {
-  --tw-ring-color: #1e293b;
+  --tw-ring-color: var(--color-surface);
 }
 
 .dark .scrollbar-thin {
@@ -252,7 +260,7 @@ body {
 .dark .text-gray-500 { color: #64748b; }
 .dark .text-gray-400 { color: #64748b; }
 
-.dark .bg-gray-200 { background-color: #334155; }
+.dark .bg-gray-200 { background-color: var(--color-surface-hover); }
 .dark .bg-white { background-color: var(--color-surface); }
 
 .dark .border-gray-50,
@@ -263,7 +271,7 @@ body {
 .dark .bg-gray-50\/50,
 .dark .bg-gray-50\/80,
 .dark .bg-gray-50\/30 {
-  background-color: rgba(30, 41, 59, 0.5);
+  background-color: var(--color-surface-subtle);
 }
 
 @layer utilities {

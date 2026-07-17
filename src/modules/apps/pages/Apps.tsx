@@ -1,6 +1,8 @@
+import { useState } from "react"
 import { motion } from "framer-motion"
 import Topbar from "@/components/layout/Topbar"
-import { AVAILABLE_MODULES } from "@/config/modules.config"
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { useInstalledApps } from "@/hooks/useInstalledApps"
 import AppCard from "../components/AppCard"
 
 const containerVariants = {
@@ -21,6 +23,11 @@ const itemVariants = {
 }
 
 export default function Apps() {
+  const { installed, available, installApp, uninstallApp, isInstalled } = useInstalledApps()
+  const [tab, setTab] = useState<"all" | "installed" | "available">("all")
+
+  const filtered = tab === "installed" ? installed : tab === "available" ? available : [...installed, ...available]
+
   return (
     <>
       <Topbar />
@@ -37,14 +44,40 @@ export default function Apps() {
           </p>
         </motion.div>
 
+        <motion.div variants={itemVariants}>
+          <Tabs value={tab} onValueChange={(v) => setTab(v as typeof tab)}>
+            <TabsList>
+              <TabsTrigger value="all">All ({installed.length + available.length})</TabsTrigger>
+              <TabsTrigger value="installed">Installed ({installed.length})</TabsTrigger>
+              <TabsTrigger value="available">Available ({available.length})</TabsTrigger>
+            </TabsList>
+          </Tabs>
+        </motion.div>
+
         <motion.div
           variants={itemVariants}
           className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"
         >
-          {AVAILABLE_MODULES.map((app) => (
-            <AppCard key={app.id} app={app} />
+          {filtered.map((app) => (
+            <AppCard
+              key={app.id}
+              app={app}
+              isInstalled={isInstalled(app.id)}
+              onInstall={() => installApp(app.id)}
+              onUninstall={() => uninstallApp(app.id)}
+            />
           ))}
         </motion.div>
+
+        {filtered.length === 0 && (
+          <motion.div variants={itemVariants} className="text-center py-12">
+            <p className="text-sm text-muted">
+              {tab === "installed"
+                ? "No apps installed yet."
+                : "No apps available."}
+            </p>
+          </motion.div>
+        )}
       </motion.div>
     </>
   )

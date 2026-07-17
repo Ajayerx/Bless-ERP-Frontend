@@ -8,6 +8,9 @@ import {
 import { type Customer } from "@/services";
 import { invoiceService } from "@/services";
 import { cn, formatCurrency } from "@/lib/utils";
+import type { EditableTaxRow, ChargeType } from "../types";
+import type { AccountInfo } from "../services";
+import { createEmptyTaxRow } from "../services";
 
 export interface InvoiceFormData {
   customer: string;
@@ -213,7 +216,11 @@ interface InvoiceFormProps {
     rate: number;
     tax_amount: number;
     total: number;
+    included_in_print_rate?: boolean;
   }>;
+  editableTaxRows?: EditableTaxRow[];
+  onTaxRowsChange?: (rows: EditableTaxRow[]) => void;
+  taxAccounts?: AccountInfo[];
   companyDefaults?: {
     company: string;
     currency: string;
@@ -296,6 +303,9 @@ export default function InvoiceForm({
   lineItems,
   totals,
   taxRows,
+  editableTaxRows,
+  onTaxRowsChange,
+  taxAccounts,
   companyDefaults,
   grandTotal,
   totalTaxesAndCharges,
@@ -1007,23 +1017,14 @@ export default function InvoiceForm({
               </div>
             </div>
             {lineItems}
-            {/* Items footer: 3-column matching ERPNext */}
+            {/* Items footer: 2-column */}
             {subtotal != null && (
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mt-3 pt-3 border-t border-border/50">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-3 pt-3 border-t border-border/50">
                 <div>
                   <label className={labelClass}>Total Quantity</label>
                   <input
                     type="text"
                     value={totalQuantity ?? ""}
-                    className={`${inputClass} bg-gray-50`}
-                    readOnly
-                  />
-                </div>
-                <div>
-                  <label className={labelClass}>Total Net Weight</label>
-                  <input
-                    type="text"
-                    value={formData.totalNetWeight ?? ""}
                     className={`${inputClass} bg-gray-50`}
                     readOnly
                   />
@@ -1112,60 +1113,218 @@ export default function InvoiceForm({
                 />
               </div>
             )}
-            {/* Row 3: Tax table */}
-            {taxRows && taxRows.length > 0 ? (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-gray-100">
-                      <th className="text-left py-2 text-xs font-semibold text-muted uppercase tracking-wider">
-                        No.
-                      </th>
-                      <th className="text-left py-2 text-xs font-semibold text-muted uppercase tracking-wider">
-                        Type
-                      </th>
-                      <th className="text-left py-2 text-xs font-semibold text-muted uppercase tracking-wider">
-                        Account Head
-                      </th>
-                      <th className="text-right py-2 text-xs font-semibold text-muted uppercase tracking-wider">
-                        Tax Rate
-                      </th>
-                      <th className="text-right py-2 text-xs font-semibold text-muted uppercase tracking-wider">
-                        Amount ({formData.currency ?? "CAD"})
-                      </th>
-                      <th className="text-right py-2 text-xs font-semibold text-muted uppercase tracking-wider">
-                        Total ({formData.currency ?? "CAD"})
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {taxRows.map((row, i) => (
-                      <tr key={i} className="border-b border-gray-50">
-                        <td className="py-2 text-muted">{i + 1}</td>
-                        <td className="py-2 text-heading">{row.charge_type}</td>
-                        <td className="py-2 text-heading">
-                          {row.account_head}
-                        </td>
-                        <td className="py-2 text-right text-muted">
-                          {row.rate}
-                        </td>
-                        <td className="py-2 text-right font-semibold text-heading">
-                          {formatCurrency(row.tax_amount)}
-                        </td>
-                        <td className="py-2 text-right text-heading">
-                          {formatCurrency(row.total)}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <p className="text-xs text-muted">
-                No taxes configured. A default tax template will be applied on
-                save.
-              </p>
-            )}
+            {/* Row 3: Tax table — ERPNext-style editable grid */}
+            {(() => {
+              const rows = taxRows && taxRows.length > 0
+                ? taxRows.map((r) => ({
+                    charge_type: r.charge_type as ChargeType,
+                    account_head: r.account_head,
+                    description: r.description,
+                    rate: r.rate,
+                    tax_amount: r.tax_amount,
+                    total: r.total,
+                    included_in_print_rate: !!r.included_in_print_rate,
+                  }))
+                : (editableTaxRows ?? [])
+              const isEditable = !!onTaxRowsChange
+              const currency = formData.currency ?? "CAD"
+              const chargeTypes: ChargeType[] = [
+                "Actual", "On Net Total", "On Previous Row Amount",
+                "On Previous Row Total", "On Item Quantity",
+              ]
+
+              const updateRow = (idx: number, patch: Partial<EditableTaxRow>) => {
+                if (!onTaxRowsChange) return
+                const next = rows.map((r, i) => i === idx ? { ...r, ...patch } : r)
+                onTaxRowsChange(next)
+              }
+              const deleteRow = (idx: number) => {
+                if (!onTaxRowsChange || rows.length <= 1) return
+                onTaxRowsChange(rows.filter((_, i) => i !== idx))
+              }
+              const addRow = () => {
+                if (!onTaxRowsChange) return
+                onTaxRowsChange([...rows, createEmptyTaxRow()])
+              }
+
+              const handleAccountSelect = async (idx: number, account: AccountInfo) => {
+                updateRow(idx, {
+                  account_head: account.name,
+                  description: account.account_name || account.name,
+                })
+                if (rows[idx].charge_type !== "Actual") {
+                  const result = await invoiceService.getTaxRate(account.name)
+                  if (result.tax_rate > 0) {
+                    updateRow(idx, {
+                      rate: result.tax_rate,
+                      description: result.account_name || account.name,
+                    })
+                  }
+                }
+              }
+
+              return (
+                <>
+                  {rows.length > 0 ? (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="border-b border-gray-100">
+                            <th className="px-2 py-2 text-center text-xs font-semibold text-muted uppercase tracking-wider w-[4%]">#</th>
+                            <th className="px-2 py-2 text-left text-xs font-semibold text-muted uppercase tracking-wider w-[14%]">Type</th>
+                            <th className="px-2 py-2 text-left text-xs font-semibold text-muted uppercase tracking-wider w-[20%]">Account Head</th>
+                            <th className="px-2 py-2 text-right text-xs font-semibold text-muted uppercase tracking-wider w-[10%]">Rate (%)</th>
+                            <th className="px-2 py-2 text-right text-xs font-semibold text-muted uppercase tracking-wider w-[13%]">Amount ({currency})</th>
+                            <th className="px-2 py-2 text-right text-xs font-semibold text-muted uppercase tracking-wider w-[13%]">Total</th>
+                            {isEditable && <th className="px-2 py-2 w-[4%]" />}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {rows.map((row, i) => {
+                            const isActual = row.charge_type === "Actual"
+                            const isRefRow = row.charge_type === "On Previous Row Amount" || row.charge_type === "On Previous Row Total"
+                            return (
+                              <tr key={i} className="border-b border-gray-50 hover:bg-gray-50/30">
+                                <td className="px-2 py-2 text-center text-muted text-xs">{i + 1}</td>
+                                <td className="px-2 py-2">
+                                  {isEditable ? (
+                                    <select
+                                      value={row.charge_type}
+                                      onChange={(e) => updateRow(i, { charge_type: e.target.value as ChargeType })}
+                                      className="w-full px-2 py-1.5 text-sm border border-border rounded-[8px] focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 bg-white"
+                                    >
+                                      {chargeTypes.map((ct) => (
+                                        <option key={ct} value={ct}>{ct}</option>
+                                      ))}
+                                    </select>
+                                  ) : (
+                                    <span className="text-sm text-heading">{row.charge_type}</span>
+                                  )}
+                                </td>
+                                <td className="px-2 py-2">
+                                  {isEditable ? (
+                                    <div className="relative">
+                                      {!row.account_head ? (
+                                        <>
+                                          {row.charge_type ? (
+                                            <input
+                                              type="text"
+                                              defaultValue=""
+                                              list={`account-head-list-${i}`}
+                                              onChange={(e) => {
+                                                const val = e.target.value
+                                                const match = (taxAccounts ?? []).find((a) => a.name === val)
+                                                if (match) {
+                                                  handleAccountSelect(i, match)
+                                                } else {
+                                                  updateRow(i, { account_head: val })
+                                                }
+                                              }}
+                                              className="w-full px-2 py-1.5 text-sm border border-border rounded-[8px] focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 bg-white"
+                                              placeholder="Select account…"
+                                            />
+                                          ) : (
+                                            <input
+                                              type="text"
+                                              readOnly
+                                              value=""
+                                              className="w-full px-2 py-1.5 text-sm border border-border rounded-[8px] bg-gray-50 text-muted cursor-not-allowed"
+                                              placeholder="Select Charge Type first"
+                                            />
+                                          )}
+                                          <datalist id={`account-head-list-${i}`}>
+                                            {(taxAccounts ?? []).map((a) => (
+                                              <option key={a.name} value={a.name}>{a.account_name || a.name}</option>
+                                            ))}
+                                          </datalist>
+                                        </>
+                                      ) : (
+                                        <div className="flex items-center gap-1.5">
+                                          <span className="text-sm text-heading truncate flex-1" title={row.account_head}>
+                                            {row.account_head}
+                                          </span>
+                                          <button
+                                            type="button"
+                                            onClick={() => updateRow(i, { account_head: "", description: "", rate: 0 })}
+                                            className="p-0.5 rounded text-muted hover:text-danger-600 hover:bg-danger-50 transition-colors flex-shrink-0"
+                                            title="Clear account"
+                                          >
+                                            <Trash2 size={11} />
+                                          </button>
+                                        </div>
+                                      )}
+                                    </div>
+                                  ) : (
+                                    <span className="text-sm text-heading">{row.account_head || "—"}</span>
+                                  )}
+                                </td>
+                                <td className="px-2 py-2 text-right">
+                                  {isEditable && !isActual ? (
+                                    <input
+                                      type="number"
+                                      min={0}
+                                      step={0.001}
+                                      value={row.rate}
+                                      onChange={(e) => updateRow(i, { rate: parseFloat(e.target.value) || 0 })}
+                                      className="w-full px-2 py-1.5 text-sm text-right border border-border rounded-[8px] focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 bg-white"
+                                    />
+                                  ) : (
+                                    <span className="text-sm text-muted tabular-nums">{row.rate}</span>
+                                  )}
+                                </td>
+                                <td className="px-2 py-2 text-right">
+                                  {isEditable && isActual ? (
+                                    <input
+                                      type="number"
+                                      min={0}
+                                      step={0.01}
+                                      value={row.tax_amount}
+                                      onChange={(e) => updateRow(i, { tax_amount: parseFloat(e.target.value) || 0 })}
+                                      className="w-full px-2 py-1.5 text-sm text-right border border-border rounded-[8px] focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 bg-white"
+                                    />
+                                  ) : (
+                                    <span className="text-sm font-semibold text-heading tabular-nums">{formatCurrency(row.tax_amount)}</span>
+                                  )}
+                                </td>
+                                <td className="px-2 py-2 text-right">
+                                  <span className="text-sm text-heading tabular-nums">{formatCurrency(row.total)}</span>
+                                </td>
+                                {isEditable && (
+                                  <td className="px-2 py-2 text-center">
+                                    <button
+                                      type="button"
+                                      onClick={() => deleteRow(i)}
+                                      disabled={rows.length <= 1}
+                                      className="p-1 rounded-[6px] text-muted hover:text-danger-600 hover:bg-danger-50 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                                    >
+                                      <Trash2 size={13} />
+                                    </button>
+                                  </td>
+                                )}
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <p className="text-xs text-muted">
+                      No taxes configured. Select a template or add tax rows manually.
+                    </p>
+                  )}
+                  {isEditable && (
+                    <button
+                      type="button"
+                      onClick={addRow}
+                      className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-primary-600 hover:text-primary-700 hover:bg-primary-50 rounded-[8px] transition-colors"
+                    >
+                      <Plus size={13} />
+                      Add Row
+                    </button>
+                  )}
+                </>
+              )
+            })()}
             {/* Tax totals — transaction currency only */}
             {totalTaxesAndCharges != null && (
               <div className="mt-3 pt-3 border-t border-border/50">
@@ -1240,7 +1399,7 @@ export default function InvoiceForm({
                     <input
                       type="text"
                       value={formatCurrency(
-                        formData.roundingAdjustment ?? Math.round(grandTotal ?? 0) - (grandTotal ?? 0),
+                        formData.roundingAdjustment ?? (Math.round((grandTotal ?? 0) * 100) / 100) - (grandTotal ?? 0),
                       )}
                       className={`${inputClass} bg-gray-50`}
                       readOnly
@@ -1252,7 +1411,7 @@ export default function InvoiceForm({
                     <label className={labelClass}>Rounded Total ({formData.currency ?? "CAD"})</label>
                     <input
                       type="text"
-                      value={formatCurrency(formData.roundedTotal ?? Math.round(grandTotal ?? 0))}
+                      value={formatCurrency(formData.roundedTotal ?? (Math.round((grandTotal ?? 0) * 100) / 100))}
                       className={`${inputClass} bg-gray-50`}
                       readOnly
                     />
@@ -1271,7 +1430,7 @@ export default function InvoiceForm({
                   <label className={labelClass}>Outstanding Amount ({formData.currency ?? "CAD"})</label>
                   <input
                     type="text"
-                    value={formatCurrency(outstandingAmount ?? grandTotal ?? 0)}
+                    value={formatCurrency(outstandingAmount ?? (formData.roundedTotal ?? (Math.round((grandTotal ?? 0) * 100) / 100)))}
                     className={`${inputClass} bg-gray-50 font-semibold`}
                     readOnly
                   />

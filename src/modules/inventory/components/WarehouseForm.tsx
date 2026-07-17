@@ -54,15 +54,19 @@ export default function WarehouseForm({ warehouse, onSaved, onCancel }: Warehous
   const [error, setError] = useState("")
 
   useEffect(() => {
+    let cancelled = false
     Promise.all([
       inventoryLookups.companies(),
       inventoryService.listWarehouses({ pageSize: 100 }).then((r) => r.items.filter((w) => w.is_group).map((w) => w.name)),
       inventoryLookups.warehouseTypes(),
     ]).then(([cos, whs, wts]) => {
-      setCompanies(cos)
-      setParentWarehouses(whs)
-      setWarehouseTypes(wts)
-    })
+      if (!cancelled) {
+        setCompanies(cos)
+        setParentWarehouses(whs)
+        setWarehouseTypes(wts)
+      }
+    }).catch((e) => { if (!cancelled) setError(e instanceof Error ? e.message : "Failed to load dropdown options.") })
+    return () => { cancelled = true }
   }, [])
 
   useEffect(() => {

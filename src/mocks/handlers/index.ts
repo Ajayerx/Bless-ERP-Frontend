@@ -1,6 +1,5 @@
 import { authHandlers } from "./auth"
 import { dashboardHandlers } from "./dashboard"
-import { customerHandlers } from "./customers"
 import { invoiceHandlers } from "./invoices"
 import { paymentHandlers } from "./payments"
 import { reportHandlers } from "./reports"
@@ -16,6 +15,7 @@ import { contactHandlers } from "./contacts"
 import { opportunityHandlers } from "./opportunities"
 import { settingsHandlers } from "./settings"
 import { purchaseOrderHandlers } from "./purchase_orders"
+import { notificationHandlers } from "./notifications"
 import { hrmsHandlers } from "./hrms"
 import { frappeAuthHandlers } from "./frappe-auth"
 import { frappeSettingsHandlers } from "./frappe-settings"
@@ -25,7 +25,6 @@ import { frappeLookupHandlers } from "./frappe-lookups"
 export const handlers = [
   ...authHandlers,
   ...dashboardHandlers,
-  ...customerHandlers,
   ...productsHandlers,
   ...paymentHandlers,
   ...invoiceHandlers,
@@ -42,6 +41,7 @@ export const handlers = [
   ...settingsHandlers,
   ...purchaseOrderHandlers,
   ...hrmsHandlers,
+  ...notificationHandlers,
   // Frappe REST handlers — more specific first, wildcard last
   ...frappeAuthHandlers,
   ...frappeSettingsHandlers,

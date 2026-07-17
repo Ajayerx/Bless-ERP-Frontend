@@ -34,3 +34,29 @@ export function timeAgo(iso: string): string {
   const days = Math.floor(hours / 24)
   return `${days}d ago`
 }
+
+const ERPNEXT_DOCTYPE_ROUTES: Record<string, string> = {
+  customer: "/customers",
+  contact: "/contacts",
+  "sales-invoice": "/invoices",
+  "purchase-invoice": "/invoices",
+  "payment-entry": "/payments",
+  "sales-order": "/orders",
+  address: "/customers",
+  item: "/products",
+  warehouse: "/inventory/warehouses",
+  "stock-entry": "/inventory/transfers",
+  "stock-reconciliation": "/inventory/counts",
+}
+
+export function rewriteErpNextLinks(html: string): string {
+  return html.replace(
+    /href="([^"]*?\/app\/([^/]+)\/([^"]+))"/g,
+    (_, _fullUrl: string, doctype: string, encodedName: string) => {
+      const route = ERPNEXT_DOCTYPE_ROUTES[doctype]
+      if (!route) return `href="#"`
+      const name = decodeURIComponent(encodedName)
+      return `href="${route}/${encodeURIComponent(name)}"`
+    }
+  )
+}

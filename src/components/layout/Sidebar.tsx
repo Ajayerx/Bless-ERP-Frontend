@@ -1,6 +1,6 @@
 import { NavLink, useLocation } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { createPortal } from "react-dom";
 import {
   LayoutDashboard,
@@ -36,6 +36,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/context/AuthContext";
 import { useSidebar } from "@/context/SidebarContext";
+import { useInstalledApps } from "@/hooks/useInstalledApps";
 
 interface NavItem {
   label: string;
@@ -105,10 +106,6 @@ const navSections: NavSection[] = [
     label: "APPS",
     items: [
       { label: "App Store", to: "/apps", icon: Grid3x3 },
-      { label: "BlessPOS", icon: ShoppingCart, badge: "Soon" as const },
-      { label: "BlessShipping", icon: Truck, badge: "Soon" as const },
-      { label: "BlessSupply", icon: Package, badge: "Soon" as const },
-      { label: "BlessEats", icon: ShoppingBag, badge: "Soon" as const },
       {
         label: "Human Resources",
         icon: Briefcase,
@@ -218,13 +215,32 @@ export default function Sidebar() {
   const { logout } = useAuth();
   const location = useLocation();
   const { collapsed, setCollapsed } = useSidebar();
+  const { installed, isInstalled } = useInstalledApps();
   const [expandedSections, setExpandedSections] = useState<string[]>([]);
   const [expandedSubGroups, setExpandedSubGroups] = useState<string[]>([]);
+
+  const sections: NavSection[] = useMemo(() => navSections.map((section) => {
+    if (section.label !== "APPS") return section;
+    const appItems: NavItem[] = installed.map((app) => ({
+      label: app.label,
+      to: `/apps/${app.id}`,
+      icon: Grid3x3,
+    }));
+    const hrItem = section.items.find((i) => i.label === "Human Resources");
+    return {
+      ...section,
+      items: [
+        section.items[0], // App Store
+        ...appItems,
+        ...(hrItem ? [hrItem] : []),
+      ],
+    };
+  }), [installed]);
 
   // Auto-expand section + sub-group containing the active route on navigation
   useEffect(() => {
     setExpandedSections((prev) => {
-      const activeSection = navSections.find((section) =>
+      const activeSection = sections.find((section) =>
         section.items.some((item) => {
           if (item.to && (location.pathname === item.to || location.pathname.startsWith(item.to + "/"))) return true
           if (item.children) return item.children.some(
@@ -241,7 +257,7 @@ export default function Sidebar() {
 
     setExpandedSubGroups((prev) => {
       const next = [...prev];
-      navSections.forEach((section) => {
+      sections.forEach((section) => {
         section.items.forEach((item) => {
           if (!item.children) return;
           const key = `${section.label}::${item.label}`;
@@ -253,7 +269,7 @@ export default function Sidebar() {
       });
       return next;
     });
-  }, [location.pathname]);
+  }, [location.pathname, sections]);
 
   const toggleSection = (label: string) => {
     setExpandedSections((prev) =>
@@ -336,7 +352,7 @@ export default function Sidebar() {
         </NavItemWrapper>
 
         {/* Sectioned nav items */}
-        {navSections.map((section) => {
+        {sections.map((section) => {
           const isExpanded = expandedSections.includes(section.label);
 
           // Find the best-matching route to avoid double-highlighting

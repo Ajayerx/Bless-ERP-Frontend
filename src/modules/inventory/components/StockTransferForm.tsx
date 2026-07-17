@@ -26,13 +26,17 @@ export default function StockTransferForm({ transfer, onSaved, onCancel }: Stock
   const [error, setError] = useState("")
 
   useEffect(() => {
+    let cancelled = false
     Promise.all([
       inventoryLookups.companies(),
       inventoryService.listWarehouses({ pageSize: 100 }).then((r) => r.items.map((w) => w.name)),
     ]).then(([cos, whs]) => {
-      setCompanies(cos)
-      setWarehouses(whs)
-    })
+      if (!cancelled) {
+        setCompanies(cos)
+        setWarehouses(whs)
+      }
+    }).catch((e) => { if (!cancelled) setError(e instanceof Error ? e.message : "Failed to load dropdown options.") })
+    return () => { cancelled = true }
   }, [])
 
   useEffect(() => {

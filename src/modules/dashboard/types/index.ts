@@ -46,6 +46,29 @@ export interface RecentPayment {
   amount: number
 }
 
+export interface TodaySales {
+  amount: number
+  previousDayAmount: number
+  percentChange: number
+  sparkline: number[]
+}
+
+export interface LowStockItem {
+  id: string
+  productName: string
+  stock: number
+  reorderLevel: number
+}
+
+export interface CustomerActivity {
+  id: string
+  customer: string
+  action: string
+  target: string
+  amount: number
+  date: string
+}
+
 export interface DashboardData {
   kpis: {
     totalRevenue: KpiMetric
@@ -58,4 +81,7 @@ export interface DashboardData {
   topCustomers: TopCustomer[]
   inventoryAlerts: InventoryAlert[]
   recentPayments: RecentPayment[]
+  todaySales: TodaySales
+  lowStockItems: LowStockItem[]
+  activities: CustomerActivity[]
 }

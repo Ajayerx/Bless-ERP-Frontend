@@ -1,7 +1,21 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useCallback } from "react"
 import { motion } from "framer-motion"
+import {
+  DndContext,
+  DragOverlay,
+  closestCenter,
+  PointerSensor,
+  KeyboardSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core"
+import {
+  SortableContext,
+  rectSortingStrategy,
+} from "@dnd-kit/sortable"
 import {
   DollarSign,
   Users,
@@ -18,17 +32,18 @@ import TopCustomersCard from "../components/TopCustomersCard"
 import InventoryAlertsCard from "../components/InventoryAlertsCard"
 import RecentPaymentsCard from "../components/RecentPaymentsCard"
 import QuickActionsBar from "../components/QuickActionsBar"
-import TodaySalesWidget from "../components/TodaySalesWidget"
 import PendingOrdersWidget from "../components/PendingOrdersWidget"
 import LowStockWidget from "../components/LowStockWidget"
 import TasksWidget from "../components/TasksWidget"
 import CalendarWidget from "../components/CalendarWidget"
 import NotificationsWidget from "../components/NotificationsWidget"
 import CustomerActivitiesWidget from "../components/CustomerActivitiesWidget"
+import SortableWidget from "../components/SortableWidget"
 import { useDashboard } from "../hooks/useDashboard"
 import DateRangeSelector, { type DatePreset, presetLabels } from "../components/DateRangeSelector"
 import WidgetSettingsPanel from "../components/WidgetSettingsPanel"
 import { useDashboardWidgets } from "../hooks/useDashboardWidgets"
+import { useKpiVisibility } from "../hooks/useKpiVisibility"
 import { useAuth } from "@/context/AuthContext"
 import { formatCurrency } from "@/lib/utils"
 
@@ -82,6 +97,14 @@ const kpiConfig = [
     chartColor: "#7C3AED",
     trendColor: "#7C3AED",
   },
+  {
+    key: "todaySales" as const,
+    title: "Today's Sales",
+    icon: <DollarSign size={20} />,
+    iconBgColor: "#0891B2",
+    chartColor: "#0891B2",
+    trendColor: "#0891B2",
+  },
 ]
 
 export default function Dashboard() {
@@ -89,14 +112,111 @@ export default function Dashboard() {
   const [startDate, setStartDate] = useState("")
   const [endDate, setEndDate] = useState("")
   const [widgetSettingsOpen, setWidgetSettingsOpen] = useState(false)
+  const [activeDragId, setActiveDragId] = useState<string | null>(null)
   const { data, loading } = useDashboard(startDate, endDate)
   const { user } = useAuth()
-  const { isVisible, toggleWidget, visibleWidgets, availableWidgets } = useDashboardWidgets()
+  const { orderedWidgets, isVisible, toggleWidget, reorderWidgets, resetWidgets, getWidgetSize, availableWidgets } = useDashboardWidgets()
+  const { isKpiVisible, toggleKpi, visibleCount } = useKpiVisibility()
 
-  const handleDateChange = (preset: DatePreset, sd: string, ed: string) => {
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(KeyboardSensor)
+  )
+
+  const handleDateChange = useCallback((preset: DatePreset, sd: string, ed: string) => {
     setDatePreset(preset)
     setStartDate(sd)
     setEndDate(ed)
+  }, [])
+
+  const handleDragEnd = useCallback((event: DragEndEvent) => {
+    const { active, over } = event
+    setActiveDragId(null)
+    if (!over || active.id === over.id) return
+
+    const visibleList = orderedWidgets.filter((w) => isVisible(w.id))
+    const oldIndex = visibleList.findIndex((w) => w.id === active.id)
+    const newIndex = visibleList.findIndex((w) => w.id === over.id)
+    if (oldIndex !== -1 && newIndex !== -1) {
+      reorderWidgets(oldIndex, newIndex)
+    }
+  }, [orderedWidgets, isVisible, reorderWidgets])
+
+  const handleDragStart = useCallback((event: { active: { id: string | number } }) => {
+    setActiveDragId(String(event.active.id))
+  }, [])
+
+  const kpis = data?.kpis
+
+  function renderWidgetContent(id: string) {
+    switch (id) {
+      case "kpiCards": {
+        const visibleKpis = kpiConfig.filter((cfg) => isKpiVisible(cfg.key))
+        const gridCols = visibleKpis.length <= 3
+          ? "lg:grid-cols-3"
+          : visibleKpis.length <= 4
+            ? "lg:grid-cols-4"
+            : "lg:grid-cols-3"
+        return (
+          <motion.div variants={itemVariants} className={`grid grid-cols-1 sm:grid-cols-2 ${gridCols} gap-5`}>
+            {visibleKpis.map((cfg) => {
+              let value: number
+              let trend: number
+              let sparkline: number[]
+              if (cfg.key === "todaySales") {
+                value = data?.todaySales?.amount ?? 0
+                trend = data?.todaySales?.percentChange ?? 0
+                sparkline = data?.todaySales?.sparkline ?? []
+              } else {
+                const metric = kpis?.[cfg.key as keyof typeof kpis]
+                value = metric?.value ?? 0
+                trend = metric?.trend ?? 0
+                sparkline = metric?.sparkline ?? []
+              }
+              return (
+                <KpiCard
+                  key={cfg.key}
+                  title={cfg.title}
+                  value={formatCurrency(value)}
+                  trend={trend}
+                  icon={cfg.icon}
+                  iconBgColor={cfg.iconBgColor}
+                  chartColor={cfg.chartColor}
+                  trendColor={cfg.trendColor}
+                  sparkline={sparkline}
+                />
+              )
+            })}
+          </motion.div>
+        )
+      }
+      case "salesChart":
+        return <SalesOverviewChart data={data?.salesChart ?? []} periodLabel={presetLabels[datePreset]} />
+      case "recentInvoices":
+        return <RecentInvoicesCard data={data?.recentInvoices ?? []} />
+      case "topCustomers":
+        return <TopCustomersCard data={data?.topCustomers ?? []} />
+      case "inventoryAlerts":
+        return <InventoryAlertsCard data={data?.inventoryAlerts ?? []} />
+      case "recentPayments":
+        return <RecentPaymentsCard data={data?.recentPayments ?? []} />
+      case "quickActions":
+        return <QuickActionsBar />
+      case "pendingOrders":
+        return <PendingOrdersWidget />
+      case "lowStock":
+        return <LowStockWidget data={data?.lowStockItems} loading={loading} />
+      case "tasks":
+        return <TasksWidget />
+      case "calendar":
+        return <CalendarWidget />
+      case "notifications":
+        return <NotificationsWidget />
+      case "customerActivities":
+        return <CustomerActivitiesWidget data={data?.activities} loading={loading} />
+      default:
+        return null
+    }
   }
 
   if (loading) {
@@ -121,7 +241,8 @@ export default function Dashboard() {
     )
   }
 
-  const kpis = data?.kpis
+  const visibleOrdered = orderedWidgets.filter((w) => isVisible(w.id))
+  const widgetIds = visibleOrdered.map((w) => w.id)
 
   return (
     <>
@@ -157,87 +278,45 @@ export default function Dashboard() {
           </div>
         </motion.div>
 
-        {/* KPI Cards */}
-        {isVisible("kpiCards") && (
-          <motion.div
-            variants={itemVariants}
-            className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5"
-          >
-            {kpiConfig.map((cfg) => {
-              const metric = kpis?.[cfg.key]
-              return (
-                <KpiCard
-                  key={cfg.key}
-                  title={cfg.title}
-                  value={metric ? formatCurrency(metric.value) : "$0"}
-                  trend={metric?.trend ?? 0}
-                  icon={cfg.icon}
-                  iconBgColor={cfg.iconBgColor}
-                  chartColor={cfg.chartColor}
-                  trendColor={cfg.trendColor}
-                  sparkline={metric?.sparkline ?? []}
-                />
-              )
-            })}
-          </motion.div>
-        )}
-
-        {/* Middle: Sales Overview + Recent Invoices */}
-        {(isVisible("salesChart") || isVisible("recentInvoices")) && (
-          <motion.div
-            variants={itemVariants}
-            className="grid grid-cols-1 lg:grid-cols-3 gap-5"
-          >
-            {isVisible("salesChart") && (
-              <div className="lg:col-span-2">
-                <SalesOverviewChart data={data?.salesChart ?? []} periodLabel={presetLabels[datePreset]} />
-              </div>
-            )}
-            {isVisible("recentInvoices") && (
-              <RecentInvoicesCard data={data?.recentInvoices ?? []} />
-            )}
-          </motion.div>
-        )}
-
-        {/* Bottom: Top Customers + Inventory Alerts + Recent Payments */}
-        {(isVisible("topCustomers") || isVisible("inventoryAlerts") || isVisible("recentPayments")) && (
-          <motion.div
-            variants={itemVariants}
-            className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5"
-          >
-            {isVisible("topCustomers") && <TopCustomersCard data={data?.topCustomers ?? []} />}
-            {isVisible("inventoryAlerts") && <InventoryAlertsCard data={data?.inventoryAlerts ?? []} />}
-            {isVisible("recentPayments") && <RecentPaymentsCard data={data?.recentPayments ?? []} />}
-          </motion.div>
-        )}
-
-        {/* Quick Actions */}
-        {isVisible("quickActions") && (
-          <motion.div variants={itemVariants}>
-            <QuickActionsBar />
-          </motion.div>
-        )}
-
-        {/* New Widgets Grid */}
-        <motion.div
-          variants={itemVariants}
-          className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5"
+        {/* Draggable Widget Grid */}
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragStart={handleDragStart}
+          onDragEnd={handleDragEnd}
         >
-          {isVisible("todaySales") && <TodaySalesWidget />}
-          {isVisible("pendingOrders") && <PendingOrdersWidget />}
-          {isVisible("lowStock") && <LowStockWidget />}
-          {isVisible("tasks") && <TasksWidget />}
-          {isVisible("calendar") && <CalendarWidget />}
-          {isVisible("notifications") && <NotificationsWidget />}
-          {isVisible("customerActivities") && <CustomerActivitiesWidget />}
-        </motion.div>
+          <SortableContext items={widgetIds} strategy={rectSortingStrategy}>
+            <motion.div
+              variants={itemVariants}
+              className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-5"
+            >
+              {visibleOrdered.map((w) => (
+                <SortableWidget key={w.id} id={w.id} size={getWidgetSize(w.id)}>
+                  {renderWidgetContent(w.id)}
+                </SortableWidget>
+              ))}
+            </motion.div>
+          </SortableContext>
+
+          <DragOverlay>
+            {activeDragId ? (
+              <div className="rounded-[16px] shadow-xl ring-2 ring-primary-500/20 opacity-90 bg-surface">
+                {renderWidgetContent(activeDragId)}
+              </div>
+            ) : null}
+          </DragOverlay>
+        </DndContext>
 
         <WidgetSettingsPanel
           open={widgetSettingsOpen}
           onOpenChange={setWidgetSettingsOpen}
           widgets={availableWidgets}
-          visibleWidgets={visibleWidgets}
+          orderedWidgets={orderedWidgets}
           onToggle={toggleWidget}
+          onReorder={reorderWidgets}
+          onReset={resetWidgets}
+          isKpiVisible={isKpiVisible}
+          onToggleKpi={toggleKpi}
         />
       </motion.div>
     </>

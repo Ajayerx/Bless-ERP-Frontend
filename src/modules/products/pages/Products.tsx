@@ -1,15 +1,41 @@
+import { useState, useEffect } from "react"
 import { useNavigate } from "react-router-dom"
 import { motion } from "framer-motion"
 import { Plus } from "lucide-react"
 import Topbar from "@/components/layout/Topbar"
-import { Button } from "@/components/ui"
+import { Button, SelectionBar, BulkDeleteModal, type BulkDeleteItem } from "@/components/ui"
 import { useProducts } from "../hooks/useProducts"
 import ProductTable from "../components/ProductTable"
+import ProductImportModal from "../components/ProductImportModal"
+import { productService } from "@/services"
 
 export default function Products() {
   const navigate = useNavigate()
-  const { data, loading, error, search, setSearch, page, setPage, filter, setFilter } =
+  const { data, loading, error, search, setSearch, page, setPage, filter, setFilter, refetch } =
     useProducts({ pageSize: 10 })
+  const [importOpen, setImportOpen] = useState(false)
+  const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set())
+  const [deleteItems, setDeleteItems] = useState<BulkDeleteItem[]>([])
+  const [showDeleteModal, setShowDeleteModal] = useState(false)
+
+  useEffect(() => {
+    setSelectedKeys(new Set())
+  }, [search, page, filter])
+
+  const handleBulkDelete = () => {
+    if (!data || selectedKeys.size === 0) return
+    const items: BulkDeleteItem[] = data.items
+      .filter((p) => selectedKeys.has(p.name))
+      .map((p) => ({ name: p.name, label: p.item_name }))
+    setDeleteItems(items)
+    setShowDeleteModal(true)
+  }
+
+  const handleDeleteComplete = () => {
+    setSelectedKeys(new Set())
+    setDeleteItems([])
+    refetch()
+  }
 
   return (
     <>
@@ -46,15 +72,36 @@ export default function Products() {
           onPageChange={setPage}
           activeFilter={filter}
           onFilterChange={setFilter}
+          selectable
+          selectedKeys={selectedKeys}
+          onSelectionChange={setSelectedKeys}
           toolbarActions={
             <div className="flex items-center gap-2">
-              <Button variant="secondary" size="sm">Export</Button>
-              <Button variant="secondary" size="sm">Import</Button>
+              <Button variant="secondary" size="sm" onClick={() => productService.exportToCsv({ search })}>Export</Button>
+              <Button variant="secondary" size="sm" onClick={() => setImportOpen(true)}>Import</Button>
             </div>
           }
           onRowClick={(product) => navigate(`/products/${product.name}`)}
         />
       </motion.div>
+
+      <ProductImportModal open={importOpen} onClose={() => setImportOpen(false)} onComplete={() => refetch()} />
+
+      <BulkDeleteModal
+        open={showDeleteModal}
+        onClose={() => { setShowDeleteModal(false); setDeleteItems([]); }}
+        onComplete={handleDeleteComplete}
+        items={deleteItems}
+        onDelete={(name) => productService.delete(name)}
+        doctypeLabel="Product"
+      />
+
+      <SelectionBar
+        count={selectedKeys.size}
+        onDelete={handleBulkDelete}
+        onClearSelection={() => setSelectedKeys(new Set())}
+        label="product"
+      />
     </>
   )
 }

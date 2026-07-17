@@ -41,10 +41,23 @@ export interface Product {
   image?: string
   brand?: string
   is_stock_item?: number
+  is_sales_item?: number
+  is_purchase_item?: number
   disabled?: number
   has_variants?: number
+  variant_of?: string
   has_batch_no?: number
   has_serial_no?: number
+  valuation_method?: string
+  end_of_life?: string
+  warranty_period?: string
+  allow_negative_stock?: number
+  purchase_uom?: string
+  sales_uom?: string
+  max_discount?: number
+  safety_stock?: number
+  min_order_qty?: number
+  lead_time_days?: number
   weight_per_unit?: number
   weight_uom?: string
   opening_stock?: number
@@ -75,7 +88,22 @@ export interface ProductFormData {
   brand: string
   image: string
   is_stock_item: boolean
+  is_sales_item: boolean
+  is_purchase_item: boolean
   disabled: boolean
+  has_batch_no: boolean
+  has_serial_no: boolean
+  has_variants: boolean
+  valuation_method: string
+  end_of_life: string
+  warranty_period: string
+  allow_negative_stock: boolean
+  purchase_uom: string
+  sales_uom: string
+  max_discount: number
+  safety_stock: number
+  min_order_qty: number
+  lead_time_days: number
   weight_per_unit: number
   weight_uom: string
   company: string

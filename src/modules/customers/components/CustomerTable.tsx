@@ -86,6 +86,9 @@ interface CustomerTableProps {
   onPageChange: (page: number) => void;
   toolbarActions?: React.ReactNode;
   onRowClick?: (customer: Customer) => void;
+  selectable?: boolean;
+  selectedKeys?: Set<string>;
+  onSelectionChange?: (keys: Set<string>) => void;
 }
 
 export default function CustomerTable({
@@ -97,6 +100,9 @@ export default function CustomerTable({
   onPageChange,
   toolbarActions,
   onRowClick,
+  selectable,
+  selectedKeys,
+  onSelectionChange,
 }: CustomerTableProps) {
   return (
     <div className="space-y-6">
@@ -128,6 +134,9 @@ export default function CustomerTable({
         onPageChange={onPageChange}
         toolbarActions={toolbarActions}
         onRowClick={onRowClick}
+        selectable={selectable}
+        selectedKeys={selectedKeys}
+        onSelectionChange={onSelectionChange}
       />
     </div>
   );
