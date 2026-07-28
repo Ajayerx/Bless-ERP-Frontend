@@ -254,6 +254,8 @@ export const invoiceService = {
     pageSize?: number
     status?: string
     customerId?: string
+    postingDateFrom?: string
+    postingDateTo?: string
   }): Promise<SalesInvoiceListResponse> {
     const page = params.page ?? 1
     const pageSize = params.pageSize ?? 10
@@ -276,6 +278,12 @@ export const invoiceService = {
       }
       const mapped = statusMap[params.status.toLowerCase()] || params.status
       filters.push(["status", "=", mapped])
+    }
+    if (params.postingDateFrom) {
+      filters.push(["posting_date", ">=", params.postingDateFrom])
+    }
+    if (params.postingDateTo) {
+      filters.push(["posting_date", "<=", params.postingDateTo])
     }
 
     const [rows, total] = await Promise.all([
@@ -429,9 +437,10 @@ export const invoiceService = {
 
   async getPrintFormats(): Promise<string[]> {
     try {
-      return await apiClient<string[]>(
+      const raw = await apiClient<Array<{ name: string }>>(
         `/resource/Print Format?filters=${JSON.stringify([["doc_type", "=", "Sales Invoice"], ["disabled", "=", 0]])}&fields=["name"]&limit_page_length=100`
       )
+      return raw.map((f) => f.name)
     } catch {
       return ["Standard"]
     }

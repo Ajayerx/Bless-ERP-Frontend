@@ -14,10 +14,12 @@ export default function InvoicePDFButton({ invoice }: Props) {
   const [downloading, setDownloading] = useState(false)
   const [emailOpen, setEmailOpen] = useState(false)
   const [previewOpen, setPreviewOpen] = useState(false)
+  const [pdfError, setPdfError] = useState("")
   const isDraft = invoice.docstatus === 0
 
   const handlePDF = async () => {
     setDownloading(true)
+    setPdfError("")
     try {
       const blob = await invoiceService.generatePDF(invoice.name, {
         printFormat: invoice.select_print_heading || undefined,
@@ -32,8 +34,8 @@ export default function InvoicePDFButton({ invoice }: Props) {
       a.click()
       document.body.removeChild(a)
       URL.revokeObjectURL(url)
-    } catch {
-      // error handled silently
+    } catch (err) {
+      setPdfError(err instanceof Error ? err.message : "Failed to generate PDF")
     } finally {
       setDownloading(false)
     }
@@ -70,6 +72,12 @@ export default function InvoicePDFButton({ invoice }: Props) {
           <Send size={14} /> Send
         </Button>
       </div>
+
+      {pdfError && (
+        <p className="text-xs text-danger-600 bg-danger-50 border border-danger-100 px-3 py-1.5 rounded-[8px]">
+          {pdfError}
+        </p>
+      )}
 
       <PrintPreviewDialog
         open={previewOpen}

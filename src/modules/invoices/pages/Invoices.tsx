@@ -16,19 +16,34 @@ export default function Invoices() {
   const [data, setData] = useState<SalesInvoiceListResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
-  const [search, setSearch] = useState("")
   const [page, setPage] = useState(1)
   const [activeFilter, setActiveFilter] = useState<StatusFilter>("All")
+
+  // Filter state
+  const [customerSearch, setCustomerSearch] = useState("")
+  const [dateFrom, setDateFrom] = useState("")
+  const [dateTo, setDateTo] = useState("")
+
+  const hasActiveFilters = customerSearch !== "" || dateFrom !== "" || dateTo !== ""
+
+  const resetFilters = () => {
+    setCustomerSearch("")
+    setDateFrom("")
+    setDateTo("")
+    setPage(1)
+  }
 
   const fetchData = useCallback(async () => {
     setLoading(true)
     setError("")
     try {
       const result = await invoiceService.list({
-        search,
+        search: customerSearch,
         page,
         pageSize: 10,
         status: activeFilter === "All" ? undefined : activeFilter.toLowerCase(),
+        postingDateFrom: dateFrom || undefined,
+        postingDateTo: dateTo || undefined,
       })
       setData(result)
     } catch (e) {
@@ -36,7 +51,7 @@ export default function Invoices() {
     } finally {
       setLoading(false)
     }
-  }, [search, page, activeFilter])
+  }, [customerSearch, page, activeFilter, dateFrom, dateTo])
 
   useEffect(() => {
     fetchData()
@@ -77,14 +92,20 @@ export default function Invoices() {
         <InvoiceTable
           data={data}
           loading={loading}
-          search={search}
-          onSearch={(q) => { setSearch(q); setPage(1) }}
           page={page}
           onPageChange={setPage}
           activeFilter={activeFilter}
           onFilterChange={(f) => { setActiveFilter(f); setPage(1) }}
           onRowClick={(inv) => navigate(`/invoices/${inv.name}`)}
           onRecordPayment={handleRecordPayment}
+          customerSearch={customerSearch}
+          onCustomerSearchChange={(v) => { setCustomerSearch(v); setPage(1) }}
+          dateFrom={dateFrom}
+          onDateFromChange={(v) => { setDateFrom(v); setPage(1) }}
+          dateTo={dateTo}
+          onDateToChange={(v) => { setDateTo(v); setPage(1) }}
+          onResetFilters={resetFilters}
+          hasActiveFilters={hasActiveFilters}
           toolbarActions={
             <Button variant="secondary" size="sm">Export</Button>
           }

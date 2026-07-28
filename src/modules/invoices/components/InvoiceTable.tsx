@@ -1,6 +1,6 @@
 "use client"
 
-import { FileText, DollarSign, AlertTriangle, CheckCircle2, Users } from "lucide-react"
+import { FileText, DollarSign, AlertTriangle, CheckCircle2, Users, X } from "lucide-react"
 import { Button, Badge } from "@/components/ui"
 import DataTable, { type Column } from "@/components/ui/DataTable"
 import { type SalesInvoice, type SalesInvoiceListResponse } from "@/services"
@@ -136,28 +136,40 @@ function buildColumns(
 interface InvoiceTableProps {
   data: SalesInvoiceListResponse | null
   loading: boolean
-  search: string
-  onSearch: (q: string) => void
   page: number
   onPageChange: (page: number) => void
   activeFilter: StatusFilter
   onFilterChange: (filter: StatusFilter) => void
   onRowClick: (inv: SalesInvoice) => void
   onRecordPayment: (inv: SalesInvoice) => void
+  customerSearch: string
+  onCustomerSearchChange: (v: string) => void
+  dateFrom: string
+  onDateFromChange: (v: string) => void
+  dateTo: string
+  onDateToChange: (v: string) => void
+  onResetFilters: () => void
+  hasActiveFilters: boolean
   toolbarActions?: React.ReactNode
 }
 
 export default function InvoiceTable({
   data,
   loading,
-  search,
-  onSearch,
   page,
   onPageChange,
   activeFilter,
   onFilterChange,
   onRowClick,
   onRecordPayment,
+  customerSearch,
+  onCustomerSearchChange,
+  dateFrom,
+  onDateFromChange,
+  dateTo,
+  onDateToChange,
+  onResetFilters,
+  hasActiveFilters,
   toolbarActions,
 }: InvoiceTableProps) {
   const allItems = data?.items ?? []
@@ -205,6 +217,7 @@ export default function InvoiceTable({
         />
       </div>
 
+      {/* Status pill tabs */}
       <div className="flex items-center gap-2 flex-wrap">
         {STATUS_FILTERS.map((f) => (
           <button
@@ -225,17 +238,49 @@ export default function InvoiceTable({
         ))}
       </div>
 
+      {/* Filter bar */}
+      <div className="flex items-center gap-3 flex-wrap">
+        {/* Customer search */}
+        <input
+          type="text"
+          value={customerSearch}
+          onChange={(e) => onCustomerSearchChange(e.target.value)}
+          placeholder="Search customer..."
+          className="h-9 px-3 text-sm rounded-[10px] border border-border bg-surface text-body placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-400 transition-colors w-48"
+        />
+
+        {/* Posting Date range */}
+        <input
+          type="date"
+          value={dateFrom}
+          onChange={(e) => onDateFromChange(e.target.value)}
+          className="h-9 px-3 text-sm rounded-[10px] border border-border bg-surface text-body focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-400 transition-colors"
+          title="From date"
+        />
+        <span className="text-xs text-muted">to</span>
+        <input
+          type="date"
+          value={dateTo}
+          onChange={(e) => onDateToChange(e.target.value)}
+          className="h-9 px-3 text-sm rounded-[10px] border border-border bg-surface text-body focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-400 transition-colors"
+          title="To date"
+        />
+
+        {/* Clear filters */}
+        {hasActiveFilters && (
+          <button
+            onClick={onResetFilters}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-muted hover:text-body hover:bg-gray-100 rounded-[8px] transition-colors"
+          >
+            <X size={12} /> Clear filters
+          </button>
+        )}
+      </div>
+
       <DataTable
         columns={columns}
         data={data?.items ?? []}
         keyExtractor={(inv) => inv.name}
-        searchable
-        searchPlaceholder="Search invoices or customers..."
-        searchQuery={search}
-        onSearch={(q) => {
-          onSearch(q)
-          onPageChange(1)
-        }}
         loading={loading}
         page={page}
         total={data?.total}
@@ -248,8 +293,8 @@ export default function InvoiceTable({
             <FileText size={32} className="text-muted opacity-40" />
             <p className="font-semibold text-body">No invoices found</p>
             <p className="text-xs text-muted">
-              {activeFilter !== "All"
-                ? `No ${activeFilter.toLowerCase()} invoices.`
+              {hasActiveFilters
+                ? "No invoices match the current filters."
                 : "Create your first invoice to get started."}
             </p>
           </div>

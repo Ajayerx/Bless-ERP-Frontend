@@ -74,6 +74,9 @@ export const productLookups = {
   warehouses: () => fetchLinkOptions("Warehouse", "name", [["is_group", "=", 0]]),
   companies: () => fetchLinkOptions("Company"),
   weightUoms: () => fetchLinkOptions("UOM", "name", [["must_be_whole_number", "=", 1]]),
+  accounts: () => fetchLinkOptions("Account", "name", [["is_group", "=", 0], ["account_type", "in", ["Income", "Expense", "Bank", "Cash"]]]),
+  costCenters: () => fetchLinkOptions("Cost Center", "name", [["is_group", "=", 0]]),
+  priceLists: () => fetchLinkOptions("Price List"),
 }
 
 const ITEM_FIELDS = [
@@ -214,8 +217,14 @@ function toProductDocPayload(data: ProductFormData, isEdit = false): Record<stri
     lead_time_days: data.lead_time_days || undefined,
     weight_per_unit: data.weight_per_unit || 0,
     weight_uom: data.weight_uom || undefined,
-    item_defaults: data.default_warehouse && data.company
-      ? [{ company: data.company, default_warehouse: data.default_warehouse }]
+    item_defaults: (data.default_warehouse || data.income_account || data.cost_center || data.default_price_list) && data.company
+      ? [{
+          company: data.company,
+          default_warehouse: data.default_warehouse || undefined,
+          income_account: data.income_account || undefined,
+          cost_center: data.cost_center || undefined,
+          default_price_list: data.default_price_list || undefined,
+        }]
       : undefined,
   }
 }

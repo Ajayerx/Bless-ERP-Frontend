@@ -108,6 +108,9 @@ export interface ProductFormData {
   weight_uom: string
   company: string
   default_warehouse: string
+  income_account: string
+  cost_center: string
+  default_price_list: string
 }
 
 export interface ProductListResponse {

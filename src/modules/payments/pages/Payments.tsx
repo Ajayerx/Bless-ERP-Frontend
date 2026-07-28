@@ -1,20 +1,21 @@
 "use client"
 
 import { useEffect, useState, useCallback } from "react"
-import { useNavigate, useSearchParams } from "react-router-dom"
+import { useNavigate } from "react-router-dom"
 import { motion } from "framer-motion"
-import { DollarSign, FileText, CheckCircle2, BadgeCheck } from "lucide-react"
+import { DollarSign, FileText, BadgeCheck, AlertCircle } from "lucide-react"
 import Topbar from "@/components/layout/Topbar"
-import { Button, Badge, Card, CardContent } from "@/components/ui"
-import RecordPaymentModal from "../components/RecordPaymentModal"
+import { Button, Badge, Card, CardContent, ConfirmationDialog } from "@/components/ui"
 import PaymentTable from "../components/PaymentTable"
 import { paymentService, type SalesInvoice, type PaymentEntryListResponse } from "@/services"
+import type { PaymentListFilters } from "../services"
+import { ApiError } from "@/services/api-client"
 import { formatCurrency, formatDate, cn } from "@/lib/utils"
+
+type StatusFilter = "All" | "Draft" | "Submitted" | "Cancelled"
 
 export default function Payments() {
   const navigate = useNavigate()
-  const [searchParams] = useSearchParams()
-  const preselectedInvoiceId = searchParams.get("invoice")
 
   const [unpaidInvoices, setUnpaidInvoices] = useState<SalesInvoice[]>([])
   const [paymentsData, setPaymentsData] = useState<PaymentEntryListResponse | null>(null)
@@ -22,49 +23,150 @@ export default function Payments() {
   const [loadingPayments, setLoadingPayments] = useState(true)
   const [paymentPage, setPaymentPage] = useState(1)
 
-  const [modalOpen, setModalOpen] = useState(false)
-  const [selectedInvoice, setSelectedInvoice] = useState<SalesInvoice | null>(null)
+  const [selectedPayments, setSelectedPayments] = useState<string[]>([])
+  const [acting, setActing] = useState(false)
+  const [error, setError] = useState("")
+  const [confirmAction, setConfirmAction] = useState<{
+    type: "bulk-submit" | "bulk-cancel" | "bulk-delete" | "single-submit" | "single-cancel" | "single-delete" | "single-amend"
+    target?: string
+  } | null>(null)
+  const [confirmError, setConfirmError] = useState<string | null>(null)
 
-  const fetchData = useCallback(async () => {
+  // Filter state
+  const [activeStatus, setActiveStatus] = useState<StatusFilter>("All")
+  const [paymentTypeFilter, setPaymentTypeFilter] = useState("")
+  const [modeFilter, setModeFilter] = useState("")
+  const [partySearch, setPartySearch] = useState("")
+  const [dateFrom, setDateFrom] = useState("")
+  const [dateTo, setDateTo] = useState("")
+
+  const fetchUnpaid = useCallback(async () => {
     setLoadingUnpaid(true)
-    setLoadingPayments(true)
     try {
-      const [unpaid, paid] = await Promise.all([
-        paymentService.getUnpaidInvoices(),
-        paymentService.list({ page: paymentPage, pageSize: 10 }),
-      ])
+      const unpaid = await paymentService.getUnpaidInvoices()
       setUnpaidInvoices(unpaid)
-      setPaymentsData(paid)
-
-      if (preselectedInvoiceId) {
-        const match = unpaid.find((inv) => inv.name === preselectedInvoiceId)
-        if (match) {
-          setSelectedInvoice(match)
-          setModalOpen(true)
-        }
-      }
+    } catch (err) {
+      console.error("[Payments] Failed to fetch unpaid invoices:", err)
+      setUnpaidInvoices([])
     } finally {
       setLoadingUnpaid(false)
+    }
+  }, [])
+
+  const fetchPayments = useCallback(async () => {
+    setLoadingPayments(true)
+    try {
+      const filterParams: PaymentListFilters = {
+        page: paymentPage,
+        pageSize: 10,
+      }
+      if (activeStatus !== "All") {
+        filterParams.status = activeStatus.toLowerCase()
+      }
+      if (paymentTypeFilter) filterParams.paymentType = paymentTypeFilter
+      if (modeFilter) filterParams.modeOfPayment = modeFilter
+      if (partySearch) filterParams.party = partySearch
+      if (dateFrom) filterParams.postingDateFrom = dateFrom
+      if (dateTo) filterParams.postingDateTo = dateTo
+
+      const paid = await paymentService.list(filterParams)
+      setPaymentsData(paid)
+    } catch (err) {
+      console.error("[Payments] Failed to fetch payments:", err)
+      setPaymentsData(null)
+    } finally {
       setLoadingPayments(false)
     }
-  }, [paymentPage, preselectedInvoiceId])
+  }, [paymentPage, activeStatus, paymentTypeFilter, modeFilter, partySearch, dateFrom, dateTo])
+
+  const fetchData = useCallback(async () => {
+    await Promise.all([fetchUnpaid(), fetchPayments()])
+  }, [fetchUnpaid, fetchPayments])
 
   useEffect(() => { fetchData() }, [fetchData])
-
-  const handleRecordPayment = (inv: SalesInvoice) => {
-    setSelectedInvoice(inv)
-    setModalOpen(true)
-  }
-
-  const handlePaymentSuccess = () => {
-    setModalOpen(false)
-    setSelectedInvoice(null)
-    fetchData()
-  }
 
   const overdueCount = unpaidInvoices.filter(
     (inv) => inv.status === "Overdue",
   ).length
+
+  const handleRecordPayment = (inv: SalesInvoice) => {
+    navigate(`/payments/new?invoice=${inv.name}`)
+  }
+
+  const hasActiveFilters = activeStatus !== "All" || paymentTypeFilter !== "" || modeFilter !== "" || partySearch !== "" || dateFrom !== "" || dateTo !== ""
+
+  const resetFilters = () => {
+    setActiveStatus("All")
+    setPaymentTypeFilter("")
+    setModeFilter("")
+    setPartySearch("")
+    setDateFrom("")
+    setDateTo("")
+    setPaymentPage(1)
+  }
+
+  // --- Confirmation dialog handling ---
+  const getConfirmInfo = () => {
+    if (!confirmAction) return { title: "", message: "" }
+    const { type, target } = confirmAction
+    const count = type.startsWith("bulk-") ? selectedPayments.length : 1
+    const name = target ?? ""
+
+    switch (type) {
+      case "bulk-submit":
+        return { title: `Submit ${count} payments`, message: `Permanently submit ${count} payment(s)? This action cannot be undone.` }
+      case "bulk-cancel":
+        return { title: `Cancel ${count} payments`, message: `Permanently cancel ${count} payment(s)? This will reverse all GL entries.` }
+      case "bulk-delete":
+        return { title: `Delete ${count} payments`, message: `Delete ${count} payment(s)? This action cannot be undone.` }
+      case "single-submit":
+        return { title: "Submit Payment", message: `Permanently submit ${name}? This action cannot be undone.` }
+      case "single-cancel":
+        return { title: "Cancel Payment", message: `Permanently cancel ${name}? This will reverse all GL entries.` }
+      case "single-delete":
+        return { title: "Delete Payment", message: `Delete ${name}? This action cannot be undone.` }
+      case "single-amend":
+        return { title: "Amend Payment", message: `Create a new draft copy of ${name}?` }
+      default:
+        return { title: "", message: "" }
+    }
+  }
+
+  const handleConfirm = async () => {
+    if (!confirmAction) return
+    setActing(true)
+    setConfirmError(null)
+    try {
+      const { type, target } = confirmAction
+      if (type === "bulk-submit") {
+        await Promise.all(selectedPayments.map((n) => paymentService.submitPayment(n)))
+        setSelectedPayments([])
+      } else if (type === "bulk-cancel") {
+        await Promise.all(selectedPayments.map((n) => paymentService.cancelPayment(n)))
+        setSelectedPayments([])
+      } else if (type === "bulk-delete") {
+        await Promise.all(selectedPayments.map((n) => paymentService.deletePayment(n)))
+        setSelectedPayments([])
+      } else if (type === "single-submit" && target) {
+        await paymentService.submitPayment(target)
+      } else if (type === "single-cancel" && target) {
+        await paymentService.cancelPayment(target)
+      } else if (type === "single-delete" && target) {
+        await paymentService.deletePayment(target)
+      } else if (type === "single-amend" && target) {
+        const original = await paymentService.getById(target)
+        navigate("/payments/new", { state: { amendFrom: original } })
+      }
+      await fetchData()
+      setConfirmAction(null)
+    } catch (err) {
+      setConfirmError(err instanceof ApiError ? err.message : "Action failed. Please try again.")
+    } finally {
+      setActing(false)
+    }
+  }
+
+  const confirmInfo = getConfirmInfo()
 
   return (
     <>
@@ -80,10 +182,17 @@ export default function Payments() {
             <h1 className="text-2xl font-bold text-heading">Payments</h1>
             <p className="text-sm text-muted mt-1">Record payments and view payment history.</p>
           </div>
-          <Button onClick={() => setModalOpen(true)}>
-            <DollarSign size={16} /> Record Payment
+          <Button onClick={() => navigate("/payments/new")}>
+            <DollarSign size={16} /> New Payment Entry
           </Button>
         </div>
+
+        {error && (
+          <div className="flex items-start gap-2 text-sm text-danger-600 bg-danger-50 border border-danger-100 px-4 py-3 rounded-[10px]">
+            <AlertCircle size={16} className="shrink-0 mt-0.5" />
+            <p>{error}</p>
+          </div>
+        )}
 
         <PaymentTable
           paymentsData={paymentsData}
@@ -91,6 +200,31 @@ export default function Payments() {
           page={paymentPage}
           onPageChange={setPaymentPage}
           onRowClick={(payment) => navigate(`/payments/${payment.name}`)}
+          unpaidCount={unpaidInvoices.length}
+          overdueCount={overdueCount}
+          selectedPayments={selectedPayments}
+          onSelectionChange={setSelectedPayments}
+          onBulkSubmit={() => setConfirmAction({ type: "bulk-submit" })}
+          onBulkCancel={() => setConfirmAction({ type: "bulk-cancel" })}
+          onBulkDelete={() => setConfirmAction({ type: "bulk-delete" })}
+          onSubmitSingle={(name) => setConfirmAction({ type: "single-submit", target: name })}
+          onCancelSingle={(name) => setConfirmAction({ type: "single-cancel", target: name })}
+          onDeleteSingle={(name) => setConfirmAction({ type: "single-delete", target: name })}
+          onAmendSingle={(name) => setConfirmAction({ type: "single-amend", target: name })}
+          activeStatus={activeStatus}
+          onStatusFilterChange={(f) => { setActiveStatus(f); setPaymentPage(1) }}
+          paymentTypeFilter={paymentTypeFilter}
+          onPaymentTypeFilterChange={(v) => { setPaymentTypeFilter(v); setPaymentPage(1) }}
+          modeFilter={modeFilter}
+          onModeFilterChange={(v) => { setModeFilter(v); setPaymentPage(1) }}
+          partySearch={partySearch}
+          onPartySearchChange={(v) => { setPartySearch(v); setPaymentPage(1) }}
+          dateFrom={dateFrom}
+          onDateFromChange={(v) => { setDateFrom(v); setPaymentPage(1) }}
+          dateTo={dateTo}
+          onDateToChange={(v) => { setDateTo(v); setPaymentPage(1) }}
+          onResetFilters={resetFilters}
+          hasActiveFilters={hasActiveFilters}
         />
 
         <section className="space-y-4">
@@ -184,14 +318,23 @@ export default function Payments() {
         </section>
       </motion.div>
 
-      {modalOpen && (
-        <RecordPaymentModal
-          open={modalOpen}
-          invoice={selectedInvoice}
-          onClose={() => { setModalOpen(false); setSelectedInvoice(null) }}
-          onRecorded={handlePaymentSuccess}
-        />
-      )}
+      {/* Confirmation dialog */}
+      <ConfirmationDialog
+        open={!!confirmAction}
+        onOpenChange={(open) => {
+          if (!open) {
+            setConfirmAction(null)
+            setConfirmError(null)
+          }
+        }}
+        onConfirm={handleConfirm}
+        title={confirmInfo.title}
+        description={confirmInfo.message}
+        confirmLabel={confirmAction?.type.includes("submit") ? "Submit" : confirmAction?.type.includes("cancel") ? "Cancel" : confirmAction?.type.includes("amend") ? "Amend" : "Delete"}
+        variant={confirmAction?.type.includes("delete") || confirmAction?.type.includes("cancel") ? "danger" : "warning"}
+        loading={acting}
+        error={confirmError}
+      />
     </>
   )
 }

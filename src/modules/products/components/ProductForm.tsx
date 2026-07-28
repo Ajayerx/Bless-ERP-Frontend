@@ -40,6 +40,9 @@ const emptyForm: ProductFormData = {
   weight_uom: "",
   company: "",
   default_warehouse: "",
+  income_account: "",
+  cost_center: "",
+  default_price_list: "",
 }
 
 export default function ProductForm({ product, onSaved, onCancel }: ProductFormProps) {
@@ -54,18 +57,24 @@ export default function ProductForm({ product, onSaved, onCancel }: ProductFormP
   const [brands, setBrands] = useState<string[]>([])
   const [warehouses, setWarehouses] = useState<string[]>([])
   const [companies, setCompanies] = useState<string[]>([])
+  const [accounts, setAccounts] = useState<string[]>([])
+  const [costCenters, setCostCenters] = useState<string[]>([])
+  const [priceLists, setPriceLists] = useState<string[]>([])
 
   useEffect(() => {
     let cancelled = false
     async function loadLookups() {
       setLoadingLookups(true)
       try {
-        const [groups, uomList, brandList, whList, compList] = await Promise.all([
+        const [groups, uomList, brandList, whList, compList, acctList, ccList, plList] = await Promise.all([
           productService.lookups.itemGroups(),
           productService.lookups.uoms(),
           productService.lookups.brands(),
           productService.lookups.warehouses(),
           productService.lookups.companies(),
+          productService.lookups.accounts(),
+          productService.lookups.costCenters(),
+          productService.lookups.priceLists(),
         ])
         if (cancelled) return
         setItemGroups(groups)
@@ -73,6 +82,9 @@ export default function ProductForm({ product, onSaved, onCancel }: ProductFormP
         setBrands(brandList)
         setWarehouses(whList)
         setCompanies(compList)
+        setAccounts(acctList)
+        setCostCenters(ccList)
+        setPriceLists(plList)
       } catch {
         if (!cancelled) setError("Failed to load dropdown options.")
       } finally {
@@ -120,6 +132,9 @@ export default function ProductForm({ product, onSaved, onCancel }: ProductFormP
       weight_uom: product.weight_uom ?? "",
       company: product.item_defaults[0]?.company ?? "",
       default_warehouse: product.default_warehouse ?? "",
+      income_account: product.income_account ?? product.item_defaults[0]?.income_account ?? "",
+      cost_center: product.cost_center ?? product.item_defaults[0]?.cost_center ?? "",
+      default_price_list: product.item_defaults[0]?.default_price_list ?? "",
     })
   }, [product])
 
@@ -282,6 +297,18 @@ export default function ProductForm({ product, onSaved, onCancel }: ProductFormP
             <div>
               <label className={labelClass}>Default Warehouse *</label>
               <LinkSelect name="default_warehouse" value={form.default_warehouse} options={warehouses} placeholder="Select warehouse" />
+            </div>
+            <div>
+              <label className={labelClass}>Income Account</label>
+              <LinkSelect name="income_account" value={form.income_account} options={accounts} placeholder="Select income account" />
+            </div>
+            <div>
+              <label className={labelClass}>Cost Center</label>
+              <LinkSelect name="cost_center" value={form.cost_center} options={costCenters} placeholder="Select cost center" />
+            </div>
+            <div>
+              <label className={labelClass}>Default Price List</label>
+              <LinkSelect name="default_price_list" value={form.default_price_list} options={priceLists} placeholder="Select price list" />
             </div>
             {!isEdit && (
               <div>

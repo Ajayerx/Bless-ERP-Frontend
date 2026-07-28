@@ -7,6 +7,22 @@ function getCookie(name: string): string | undefined {
   return match ? decodeURIComponent(match[1]) : undefined
 }
 
+interface FrappeSystemSettings {
+  session_expiry: string
+}
+
+function parseSessionExpiry(expiry: string | undefined): number {
+  if (!expiry) return 60
+  const parts = expiry.split(":").map(Number)
+  if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+    return parts[0] * 60 + parts[1]
+  }
+  if (parts.length === 1 && !isNaN(parts[0])) {
+    return parts[0] * 60
+  }
+  return 60
+}
+
 interface FrappeUserDoc {
   name: string
   full_name: string
@@ -82,8 +98,6 @@ function invertTheme(t: "light" | "dark" | "system"): "Light" | "Dark" | "Automa
 }
 
 function parseGstRates(company: FrappeCompanyDoc): { gstRate: number; qstRate: number; gstEnabled: boolean; qstEnabled: boolean } {
-  // ERPNext doesn't have explicit GST/QST fields — this is Canada-specific
-  // Default to reasonable values; backend should store these in company fields
   return { gstRate: 0.05, qstRate: 0.09975, gstEnabled: true, qstEnabled: false }
 }
 
@@ -93,9 +107,12 @@ export const settingsService = {
     if (!userId || userId === "Guest") return null
 
     try {
-      const [userDoc, globalDefaults] = await Promise.all([
+      const [userDoc, globalDefaults, systemSettings] = await Promise.all([
         apiClient<FrappeUserDoc>(`/resource/User/${encodeURIComponent(userId)}`).catch(() => null),
         apiClient<FrappeGlobalDefaults>(`/resource/${encodeURIComponent("Global Defaults")}`).catch(() => null),
+        apiClient<{ message: FrappeSystemSettings }>(
+          `/method/frappe.client.get_value?doctype=System%20Settings&fieldname=session_expiry`
+        ).catch(() => null),
       ])
 
       const companyName = globalDefaults?.default_company
@@ -185,7 +202,7 @@ export const settingsService = {
         },
         security: {
           twoFactorEnabled: false,
-          sessionTimeoutMinutes: 60,
+          sessionTimeoutMinutes: parseSessionExpiry(systemSettings?.message?.session_expiry),
           passwordMinLength: 8,
           requireSpecialChars: true,
           lastPasswordChange: null,

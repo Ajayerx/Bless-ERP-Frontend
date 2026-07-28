@@ -6,7 +6,7 @@ export interface TodoItem {
   status: "Open" | "Closed" | "Cancelled"
   priority: "Low" | "Medium" | "High" | "Urgent"
   date: string
-  assigned_to: string
+  allocated_to: string
 }
 
 function buildListUrl(params: {
@@ -27,7 +27,7 @@ export const todoService = {
   async getOpenTasks(): Promise<TodoItem[]> {
     return apiClient<TodoItem[]>(
       buildListUrl({
-        fields: ["name", "description", "status", "priority", "date", "assigned_to"],
+        fields: ["name", "description", "status", "priority", "date", "allocated_to"],
         filters: [["status", "=", "Open"]],
         order_by: "date asc",
         limit_page_length: 10,

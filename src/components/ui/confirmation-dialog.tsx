@@ -1,4 +1,4 @@
-import { AlertTriangle } from "lucide-react"
+import { AlertTriangle, AlertCircle } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "./button"
 import {
@@ -20,6 +20,7 @@ interface ConfirmationDialogProps {
   variant?: "danger" | "warning"
   onConfirm: () => void
   loading?: boolean
+  error?: string | null
 }
 
 function ConfirmationDialog({
@@ -32,6 +33,7 @@ function ConfirmationDialog({
   variant = "danger",
   onConfirm,
   loading,
+  error,
 }: ConfirmationDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -55,6 +57,12 @@ function ConfirmationDialog({
             </div>
           </div>
         </DialogHeader>
+        {error && (
+          <div className="flex items-start gap-2 text-sm text-danger-600 bg-danger-50 border border-danger-100 px-4 py-3 rounded-[10px]">
+            <AlertCircle size={16} className="shrink-0 mt-0.5" />
+            <p>{error}</p>
+          </div>
+        )}
         <DialogFooter>
           <Button
             variant="secondary"
