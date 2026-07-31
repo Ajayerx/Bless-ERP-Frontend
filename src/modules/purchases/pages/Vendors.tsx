@@ -27,7 +27,6 @@ const columns: Column<Vendor>[] = [
   {
     key: "email",
     header: "Contact",
-    hideOnMobile: true,
     render: (v) => (
       <div className="space-y-0.5">
         <div className="flex items-center gap-1.5 text-xs text-muted">
@@ -44,7 +43,6 @@ const columns: Column<Vendor>[] = [
   {
     key: "taxId",
     header: "Tax ID",
-    hideOnMobile: true,
     render: (v) => <span className="text-xs text-muted">{v.taxId || "—"}</span>,
   },
   {
@@ -59,7 +57,6 @@ const columns: Column<Vendor>[] = [
   {
     key: "createdAt",
     header: "Created",
-    hideOnMobile: true,
     render: (v) => (
       <span className="text-xs text-muted">
         {new Date(v.createdAt).toLocaleDateString("en-US", {

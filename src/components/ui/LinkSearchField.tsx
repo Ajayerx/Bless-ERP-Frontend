@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react"
-import { Search, X, Plus, ArrowRight } from "lucide-react"
+import { createPortal } from "react-dom"
+import { Search, X, Plus } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 type SearchResult = { value: string; label: string; description: string }
@@ -8,6 +9,7 @@ interface LinkSearchFieldProps {
   value?: string
   onChange?: (value: string | undefined) => void
   searchFn: (query: string) => Promise<{ items: SearchResult[] }>
+  validate?: (value: string) => Promise<void>
   onCreateNew?: () => void
   onAdvancedSearch?: () => void
   placeholder?: string
@@ -24,36 +26,51 @@ export default function LinkSearchField({
   value,
   onChange,
   searchFn,
+  validate,
   onCreateNew,
   onAdvancedSearch,
-  placeholder = "Begin typing for results.",
+  placeholder,
   disabled = false,
   readOnly = false,
   label,
   required = false,
   className,
   inputClassName,
-  docType = "sales-invoice",
 }: LinkSearchFieldProps) {
   const [open, setOpen] = useState(false)
-  const [query, setQuery] = useState("")
+  const [query, setQuery] = useState(value ?? "")
   const [results, setResults] = useState<SearchResult[]>([])
   const [loading, setLoading] = useState(false)
   const [highlightedIndex, setHighlightedIndex] = useState(-1)
-  const [selectedLabel, setSelectedLabel] = useState("")
+  const [selectedLabel, setSelectedLabel] = useState(value ?? "")
+  const [validationError, setValidationError] = useState("")
+  const [ddPos, setDdPos] = useState<{
+    left: number
+    width: number
+    top?: number
+    bottom?: number
+    maxHeight: number
+  } | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>()
   const wrapperRef = useRef<HTMLDivElement>(null)
+  const dropdownRef = useRef<HTMLDivElement>(null)
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const blurRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const searchFnRef = useRef(searchFn)
   const fetchedRef = useRef(false)
+  const lastValidatedRef = useRef<{ value: string; label: string } | null>(null)
+  const lastValueRef = useRef(value)
+  const labelFetchValueRef = useRef<string | null>(null)
+  const queryRef = useRef("")
   searchFnRef.current = searchFn
+  queryRef.current = query
 
   const doSearch = useCallback(async (q: string) => {
     setLoading(true)
     try {
       const res = await searchFnRef.current(q)
       setResults(res.items)
-      if (!q && value && !selectedLabel && fetchedRef.current) {
+      if (!q && value && (!selectedLabel || selectedLabel === value) && fetchedRef.current) {
         const match = res.items.find((item) => item.value === value)
         if (match) {
           setSelectedLabel(match.label || match.value)
@@ -67,9 +84,28 @@ export default function LinkSearchField({
     }
   }, [value, selectedLabel])
 
+  const positionDropdown = useCallback(() => {
+    const anchor = wrapperRef.current
+    if (!anchor) return
+    const rect = anchor.getBoundingClientRect()
+    const width = Math.min(Math.round(rect.width), window.innerWidth - 16)
+    const spaceAbove = rect.top
+    const spaceBelow = window.innerHeight - rect.bottom
+    const above = spaceBelow < 100 && spaceAbove > spaceBelow
+    const left = Math.max(8, Math.min(rect.left, window.innerWidth - width - 8))
+    setDdPos(
+      above
+        ? { left, width, bottom: Math.max(8, window.innerHeight - rect.top + 4), maxHeight: Math.max(60, spaceAbove - 8) }
+        : { left, width, top: rect.bottom + 4, maxHeight: Math.max(60, spaceBelow - 8) }
+    )
+  }, [])
+
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
-      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
+      const target = e.target as Node
+      const inWrapper = wrapperRef.current?.contains(target)
+      const inDropdown = dropdownRef.current?.contains(target)
+      if (!inWrapper && !inDropdown) {
         setOpen(false)
       }
     }
@@ -78,11 +114,47 @@ export default function LinkSearchField({
   }, [])
 
   useEffect(() => {
+    if (!open || readOnly) {
+      setDdPos(null)
+      return
+    }
+    positionDropdown()
+    window.addEventListener("scroll", positionDropdown, true)
+    window.addEventListener("resize", positionDropdown)
+    return () => {
+      window.removeEventListener("scroll", positionDropdown, true)
+      window.removeEventListener("resize", positionDropdown)
+    }
+  }, [open, readOnly, positionDropdown])
+
+  useEffect(() => {
+    if (value === lastValueRef.current) return
+    lastValueRef.current = value
     if (!value) {
       setQuery("")
       setSelectedLabel("")
+      setValidationError("")
+      lastValidatedRef.current = null
+      return
+    }
+    const last = lastValidatedRef.current
+    if (last?.value === value) {
+      setQuery(last.label)
+      setSelectedLabel(last.label)
+    } else {
+      setQuery(value)
+      setSelectedLabel(value)
+      lastValidatedRef.current = { value, label: value }
     }
   }, [value])
+
+  useEffect(() => {
+    if (value && labelFetchValueRef.current !== value && selectedLabel === value && searchFnRef.current) {
+      labelFetchValueRef.current = value
+      fetchedRef.current = true
+      doSearch("")
+    }
+  }, [value, selectedLabel, doSearch])
 
   const handleSelect = (item: SearchResult) => {
     onChange?.(item.value)
@@ -91,6 +163,23 @@ export default function LinkSearchField({
     setResults([])
     setOpen(false)
     setHighlightedIndex(-1)
+    labelFetchValueRef.current = item.value
+    if (validate) {
+      validate(item.value)
+        .then(() => {
+          lastValidatedRef.current = { value: item.value, label: item.label || item.value }
+          setValidationError("")
+        })
+        .catch((err) => {
+          lastValidatedRef.current = null
+          setValidationError(err instanceof Error ? err.message : "Invalid link")
+          onChange?.(undefined)
+          setQuery("")
+          setSelectedLabel("")
+        })
+    } else {
+      lastValidatedRef.current = { value: item.value, label: item.label || item.value }
+    }
   }
 
   const handleClear = () => {
@@ -99,8 +188,42 @@ export default function LinkSearchField({
     setSelectedLabel("")
     setResults([])
     setHighlightedIndex(-1)
+    setValidationError("")
+    lastValidatedRef.current = null
     fetchedRef.current = false
+    labelFetchValueRef.current = null
     inputRef.current?.focus()
+  }
+
+  const handleBlur = () => {
+    if (readOnly) return
+    if (!validate) return
+    if (blurRef.current) clearTimeout(blurRef.current)
+    blurRef.current = setTimeout(() => {
+      const text = queryRef.current.trim()
+      const last = lastValidatedRef.current
+      if (!text) return
+      if (last && (text === last.label || text === last.value)) return
+      validate(text)
+        .then(() => {
+          lastValidatedRef.current = { value: text, label: text }
+          setValidationError("")
+          onChange?.(text)
+        })
+        .catch((err) => {
+          lastValidatedRef.current = null
+          setValidationError(err instanceof Error ? err.message : "Invalid link")
+          if (last) {
+            setQuery(last.label)
+            setSelectedLabel(last.label)
+            onChange?.(last.value)
+          } else {
+            setQuery("")
+            setSelectedLabel("")
+            onChange?.(undefined)
+          }
+        })
+    }, 150)
   }
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -151,6 +274,7 @@ export default function LinkSearchField({
   }
 
   const showDropdown = open && !readOnly
+  const showClear = !!value && !disabled && !readOnly
 
   return (
     <div className={cn("space-y-1.5", className)}>
@@ -169,43 +293,47 @@ export default function LinkSearchField({
             onChange={handleInputChange}
             onFocus={handleFocus}
             onKeyDown={handleKeyDown}
+            onBlur={handleBlur}
             disabled={disabled}
             readOnly={readOnly}
             placeholder={placeholder}
             className={cn(
               "w-full px-3 py-2.5 bg-white border border-border rounded-lg text-sm text-body placeholder:text-muted transition-all duration-200",
               "focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500",
-              value && !query ? "pr-20" : "pr-8",
+              showClear ? "pr-9" : "pr-3",
               (disabled || readOnly) ? "bg-gray-50 cursor-not-allowed opacity-70" : "",
               inputClassName,
             )}
           />
-          {value && !disabled && !readOnly && (
+          {showClear && (
             <button
               type="button"
               onClick={handleClear}
-              className="absolute right-8 p-1 text-muted hover:text-heading transition-colors"
+              className="absolute right-2 p-1 text-muted hover:text-heading transition-colors"
               tabIndex={-1}
+              aria-label="Clear"
             >
               <X size={14} />
             </button>
           )}
-          {value && (
-            <button
-              type="button"
-              onClick={() => {
-                window.open(`/app/${docType}/${encodeURIComponent(value)}`, "_blank")
-              }}
-              className="absolute right-2 p-1 text-muted hover:text-heading transition-colors"
-              tabIndex={-1}
-            >
-              <ArrowRight size={14} />
-            </button>
-          )}
         </div>
 
-        {showDropdown && (
-          <div className="absolute z-50 mt-1 w-full bg-surface border border-border rounded-xl shadow-lg overflow-hidden max-h-64 overflow-y-auto">
+        {validationError && (
+          <p className="mt-1 text-xs text-danger-600">{validationError}</p>
+        )}
+
+        {showDropdown && ddPos && createPortal(
+          <div
+            ref={dropdownRef}
+            className="z-[1000] bg-surface border border-border rounded-xl shadow-lg overflow-hidden overflow-y-auto"
+            style={{
+              position: "fixed",
+              left: ddPos.left,
+              width: ddPos.width,
+              maxHeight: ddPos.maxHeight,
+              ...(ddPos.top !== undefined ? { top: ddPos.top } : { bottom: ddPos.bottom }),
+            }}
+          >
             {loading && results.length === 0 ? (
               <div className="px-4 py-3 text-sm text-muted">Searching...</div>
             ) : results.length > 0 ? (
@@ -276,7 +404,8 @@ export default function LinkSearchField({
                 )}
               </div>
             )}
-          </div>
+          </div>,
+          document.body
         )}
       </div>
     </div>

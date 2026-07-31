@@ -31,13 +31,11 @@ const columns: Column<Expense>[] = [
   {
     key: "date",
     header: "Date",
-    hideOnMobile: true,
     render: (e) => <span className="text-sm text-muted">{formatDate(e.date)}</span>,
   },
   {
     key: "paymentMethod",
     header: "Method",
-    hideOnMobile: true,
     render: (e) => {
       const icons: Record<string, React.ReactNode> = {
         credit_card: <CreditCard size={13} />,

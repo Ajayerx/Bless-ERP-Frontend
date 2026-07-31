@@ -10,8 +10,9 @@ const columns: Column<Customer>[] = [
   {
     key: "customer_name",
     header: "Customer",
+    width: "w-[23%]",
     render: (c) => (
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 min-w-0">
         {c.image ? (
           <img
             src={c.image.startsWith("http") ? c.image : `/api/method/frappe.utils.file_manager.get_file?name=${encodeURIComponent(c.image)}`}
@@ -21,9 +22,9 @@ const columns: Column<Customer>[] = [
         ) : (
           <Avatar name={c.customer_name} size="sm" />
         )}
-        <div>
-          <p className="font-semibold text-heading">{c.customer_name}</p>
-          <p className="text-xs text-muted">{c.customer_type}</p>
+        <div className="min-w-0">
+          <p className="font-semibold text-heading truncate">{c.customer_name}</p>
+          <p className="text-xs text-muted truncate">{c.customer_type}</p>
         </div>
       </div>
     ),
@@ -31,16 +32,17 @@ const columns: Column<Customer>[] = [
   {
     key: "email_id",
     header: "Contact",
-    hideOnMobile: true,
+    width: "w-[19%]",
+    title: (c) => `Contact: ${[c.email_id, c.mobile_no].filter(Boolean).join(" · ")}`,
     render: (c) => (
-      <div className="space-y-0.5">
+      <div className="space-y-0.5 min-w-0">
         <div className="flex items-center gap-1.5 text-xs text-muted">
-          <Mail size={12} />
-          {c.email_id || "—"}
+          <Mail size={12} className="shrink-0" />
+          <span className="truncate">{c.email_id || "—"}</span>
         </div>
         <div className="flex items-center gap-1.5 text-xs text-muted">
-          <Phone size={12} />
-          {c.mobile_no || "—"}
+          <Phone size={12} className="shrink-0" />
+          <span className="truncate">{c.mobile_no || "—"}</span>
         </div>
       </div>
     ),
@@ -48,7 +50,7 @@ const columns: Column<Customer>[] = [
   {
     key: "customer_group",
     header: "Group",
-    hideOnMobile: true,
+    width: "w-[12%]",
     render: (c) => (
       <span className="text-sm text-muted">{c.customer_group || "—"}</span>
     ),
@@ -56,7 +58,7 @@ const columns: Column<Customer>[] = [
   {
     key: "territory",
     header: "Territory",
-    hideOnMobile: true,
+    width: "w-[15%]",
     render: (c) => (
       <span className="text-sm text-muted">{c.territory || "—"}</span>
     ),
@@ -65,6 +67,8 @@ const columns: Column<Customer>[] = [
     key: "outstanding",
     header: "Outstanding",
     align: "right",
+    width: "w-[16%]",
+    title: (c) => `Outstanding: ${formatCurrency(c.outstanding)}`,
     render: (c) => (
       <span
         className={cn(
@@ -79,6 +83,8 @@ const columns: Column<Customer>[] = [
   {
     key: "status",
     header: "Status",
+    width: "w-[11%]",
+    title: (c) => `Status: ${c.status === "active" ? "Active" : "Inactive"}`,
     render: (c) => (
       <Badge variant={c.status === "active" ? "success" : "default"}>
         {c.status === "active" ? "Active" : "Inactive"}

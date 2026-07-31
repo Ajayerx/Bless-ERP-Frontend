@@ -40,7 +40,6 @@ const columns: Column<Warehouse>[] = [
   {
     key: "warehouse_type",
     header: "Type",
-    hideOnMobile: true,
     render: (w) => (
       <span className="text-sm text-muted">{w.warehouse_type ?? "—"}</span>
     ),
@@ -48,7 +47,6 @@ const columns: Column<Warehouse>[] = [
   {
     key: "parent_warehouse",
     header: "Parent",
-    hideOnMobile: true,
     render: (w) => (
       <span className="text-sm text-muted">{w.parent_warehouse ?? "—"}</span>
     ),

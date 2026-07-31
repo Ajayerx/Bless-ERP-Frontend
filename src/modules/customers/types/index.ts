@@ -80,7 +80,6 @@ export interface PartyAccountRow {
   name?: string
   company: string
   account?: string
-  advance_account?: string
 }
 
 export interface SalesTeamRow {
@@ -96,7 +95,6 @@ export interface SalesTeamRow {
 export interface PortalUserRow {
   name?: string
   user: string
-  email?: string
 }
 
 export interface SupplierNumberRow {

@@ -1,10 +1,10 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Save } from "lucide-react";
 import {
   customerService,
   searchLink,
+  validateLink,
   type CustomerDetail,
   type CustomerFormData,
   type AllowedCompanyRow,
@@ -17,13 +17,13 @@ import { apiClient } from "@/services/api-client";
 import ChildTableGrid, {
   type GridColumn,
 } from "@/components/ui/ChildTableGrid";
-import { Input, FormField, Button, Select, Checkbox, Tabs, TabsList, TabsTrigger, TabsContent, LinkSearchField } from "@/components/ui";
+import { Input, FormField, Select, Checkbox, Tabs, TabsList, TabsTrigger, TabsContent, LinkSearchField } from "@/components/ui";
 
 interface CustomerFormProps {
   customer?: CustomerDetail | null;
   initialValues?: Partial<CustomerFormData>;
   onSaved: () => void;
-  onCancel: () => void;
+  onSavingChange?: (saving: boolean) => void;
 }
 
 const TABS = [
@@ -87,12 +87,11 @@ export default function CustomerForm({
   customer,
   initialValues,
   onSaved,
-  onCancel,
+  onSavingChange,
 }: CustomerFormProps) {
   const isEdit = !!customer;
   const [activeTab, setActiveTab] = useState<TabName>("Details");
   const [form, setForm] = useState<CustomerFormData>(emptyForm);
-  const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
   const customerTypeOptions = ["Company", "Individual", "Partnership"];
@@ -260,7 +259,7 @@ export default function CustomerForm({
       customer_name: form.customer_name.trim(),
     };
 
-    setSaving(true);
+    onSavingChange?.(true);
     try {
       if (isEdit && customer) {
         await customerService.update(customer.name, payload);
@@ -275,15 +274,15 @@ export default function CustomerForm({
           : "Failed to save customer. Please try again.",
       );
     } finally {
-      setSaving(false);
+      onSavingChange?.(false);
     }
   };
 
-  const sectionTitle = "text-sm font-semibold text-heading mb-3";
+  const sectionTitle = "text-base font-bold text-heading mb-3";
   const sectionDivider = "pt-4 border-t border-border";
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6">
+    <form id="customer-form" onSubmit={handleSubmit} className="space-y-6">
       {error && (
         <p className="text-sm text-danger-600 bg-danger-50 border border-danger-100 px-3 py-2.5 rounded-[10px]">
           {error}
@@ -308,8 +307,8 @@ export default function CustomerForm({
                     value={form.salutation}
                     onChange={handleLinkChange("salutation")}
                     searchFn={(q) => searchLink("Salutation", q).then((items) => ({ items }))}
-                    docType="salutation"
-                    placeholder="Begin typing for results."
+                    validate={(v) => validateLink("Salutation", v)}
+                    docType="Salutation"
                   />
                 </FormField>
               )},
@@ -338,8 +337,8 @@ export default function CustomerForm({
                     value={form.customer_group}
                     onChange={handleLinkChange("customer_group")}
                     searchFn={(q) => searchLink("Customer Group", q, undefined, [["is_group", "=", 0]]).then((items) => ({ items }))}
-                    docType="customer-group"
-                    placeholder="Begin typing for results."
+                    validate={(v) => validateLink("Customer Group", v)}
+                    docType="Customer Group"
                   />
                 </FormField>
               )},
@@ -351,8 +350,8 @@ export default function CustomerForm({
                     value={form.territory}
                     onChange={handleLinkChange("territory")}
                     searchFn={(q) => searchLink("Territory", q, undefined, [["is_group", "=", 0]]).then((items) => ({ items }))}
-                    docType="territory"
-                    placeholder="Begin typing for results."
+                    validate={(v) => validateLink("Territory", v)}
+                    docType="Territory"
                   />
                 </FormField>
               )},
@@ -362,8 +361,8 @@ export default function CustomerForm({
                     value={form.gender}
                     onChange={handleLinkChange("gender")}
                     searchFn={(q) => searchLink("Gender", q).then((items) => ({ items }))}
-                    docType="gender"
-                    placeholder="Begin typing for results."
+                    validate={(v) => validateLink("Gender", v)}
+                    docType="Gender"
                   />
                 </FormField>
               )},
@@ -373,8 +372,8 @@ export default function CustomerForm({
                     value={form.lead_name}
                     onChange={handleLeadChange}
                     searchFn={(q) => searchLink("Lead", q).then((items) => ({ items }))}
-                    docType="lead"
-                    placeholder="Begin typing for results."
+                    validate={(v) => validateLink("Lead", v)}
+                    docType="Lead"
                   />
                 </FormField>
               )},
@@ -384,8 +383,8 @@ export default function CustomerForm({
                     value={form.opportunity_name}
                     onChange={handleLinkChange("opportunity_name")}
                     searchFn={(q) => searchLink("Opportunity", q).then((items) => ({ items }))}
-                    docType="opportunity"
-                    placeholder="Begin typing for results."
+                    validate={(v) => validateLink("Opportunity", v)}
+                    docType="Opportunity"
                   />
                 </FormField>
               )},
@@ -395,8 +394,8 @@ export default function CustomerForm({
                     value={form.prospect_name}
                     onChange={handleLinkChange("prospect_name")}
                     searchFn={(q) => searchLink("Prospect", q).then((items) => ({ items }))}
-                    docType="prospect"
-                    placeholder="Begin typing for results."
+                    validate={(v) => validateLink("Prospect", v)}
+                    docType="Prospect"
                   />
                 </FormField>
               )},
@@ -406,8 +405,8 @@ export default function CustomerForm({
                     value={form.account_manager}
                     onChange={handleLinkChange("account_manager")}
                     searchFn={(q) => searchLink("User", q).then((items) => ({ items }))}
-                    docType="user"
-                    placeholder="Begin typing for results."
+                    validate={(v) => validateLink("User", v)}
+                    docType="User"
                   />
                 </FormField>
               )},
@@ -437,8 +436,8 @@ export default function CustomerForm({
                 value={form.default_currency}
                 onChange={handleLinkChange("default_currency")}
                 searchFn={(q) => searchLink("Currency", q).then((items) => ({ items }))}
-                docType="currency"
-                placeholder="Begin typing for results."
+                validate={(v) => validateLink("Currency", v)}
+                docType="Currency"
               />
             </FormField>
             <FormField label="Default Price List">
@@ -446,8 +445,8 @@ export default function CustomerForm({
                 value={form.default_price_list}
                 onChange={handleLinkChange("default_price_list")}
                 searchFn={(q) => searchLink("Price List", q, undefined, [["selling", "=", 1]]).then((items) => ({ items }))}
-                docType="price-list"
-                placeholder="Begin typing for results."
+                validate={(v) => validateLink("Price List", v)}
+                docType="Price List"
               />
             </FormField>
             <FormField label="Default Company Bank Account">
@@ -455,8 +454,8 @@ export default function CustomerForm({
                 value={form.default_bank_account}
                 onChange={handleLinkChange("default_bank_account")}
                 searchFn={(q) => searchLink("Bank Account", q, undefined, [["is_company_account", "=", 1]]).then((items) => ({ items }))}
-                docType="bank-account"
-                placeholder="Begin typing for results."
+                validate={(v) => validateLink("Bank Account", v)}
+                docType="Bank Account"
               />
             </FormField>
             <div />
@@ -489,8 +488,8 @@ export default function CustomerForm({
                   value={form.represents_company}
                   onChange={handleLinkChange("represents_company")}
                   searchFn={(q) => searchLink("Company", q).then((items) => ({ items }))}
-                  docType="company"
-                  placeholder="Begin typing for results."
+                  validate={(v) => validateLink("Company", v)}
+                  docType="Company"
                 />
               </FormField>
             )}
@@ -500,7 +499,7 @@ export default function CustomerForm({
                 rows={form.companies ?? []}
                 onChange={(rows) => setForm((prev) => ({ ...prev, companies: rows }))}
                 emptyRow={{ company: "" }}
-                columns={[{ key: "company", label: "Company", type: "link", searchFn: (q) => searchLink("Company", q).then((items) => ({ items })) }] as GridColumn<AllowedCompanyRow>[]}
+                columns={[{ key: "company", label: "Company", type: "link", docType: "Company", searchFn: (q) => searchLink("Company", q).then((items) => ({ items })), validate: (v) => validateLink("Company", v) }] as GridColumn<AllowedCompanyRow>[]}
               />
             )}
           </div>
@@ -519,8 +518,8 @@ export default function CustomerForm({
                   value={form.market_segment}
                   onChange={handleLinkChange("market_segment")}
                   searchFn={(q) => searchLink("Market Segment", q).then((items) => ({ items }))}
-                  docType="market-segment"
-                  placeholder="Begin typing for results."
+                  validate={(v) => validateLink("Market Segment", v)}
+                  docType="Market Segment"
                 />
               </FormField>
               <FormField label="Industry">
@@ -528,8 +527,8 @@ export default function CustomerForm({
                   value={form.industry}
                   onChange={handleLinkChange("industry")}
                   searchFn={(q) => searchLink("Industry Type", q).then((items) => ({ items }))}
-                  docType="industry-type"
-                  placeholder="Begin typing for results."
+                  validate={(v) => validateLink("Industry Type", v)}
+                  docType="Industry Type"
                 />
               </FormField>
               <FormField label="Website">
@@ -546,8 +545,8 @@ export default function CustomerForm({
                   value={form.language}
                   onChange={handleLinkChange("language")}
                   searchFn={(q) => searchLink("Language", q).then((items) => ({ items }))}
-                  docType="language"
-                  placeholder="Begin typing for results."
+                  validate={(v) => validateLink("Language", v)}
+                  docType="Language"
                 />
               </FormField>
             </div>
@@ -621,8 +620,8 @@ export default function CustomerForm({
                     const customerName = customer?.name ?? "";
                     return searchLink("Address", q, "Customer", { customer: customerName, type: "Address" }, "erpnext.selling.doctype.customer.customer.get_customer_primary").then((items) => ({ items }));
                   }}
-                  docType="address"
-                  placeholder="Begin typing for results."
+                  validate={(v) => validateLink("Address", v)}
+                  docType="Address"
                 />
               </FormField>
               <FormField label="Customer Primary Contact" helperText="Reselect, if the chosen contact is edited after save">
@@ -633,8 +632,8 @@ export default function CustomerForm({
                     const customerName = customer?.name ?? "";
                     return searchLink("Contact", q, "Customer", { customer: customerName, type: "Contact" }, "erpnext.selling.doctype.customer.customer.get_customer_primary").then((items) => ({ items }));
                   }}
-                  docType="contact"
-                  placeholder="Begin typing for results."
+                  validate={(v) => validateLink("Contact", v)}
+                  docType="Contact"
                 />
               </FormField>
             </div>
@@ -658,8 +657,8 @@ export default function CustomerForm({
                 value={form.tax_category}
                 onChange={handleLinkChange("tax_category")}
                 searchFn={(q) => searchLink("Tax Category", q).then((items) => ({ items }))}
-                docType="tax-category"
-                placeholder="Begin typing for results."
+                validate={(v) => validateLink("Tax Category", v)}
+                docType="Tax Category"
               />
             </FormField>
             <div />
@@ -668,8 +667,8 @@ export default function CustomerForm({
                 value={form.tax_withholding_category}
                 onChange={handleLinkChange("tax_withholding_category")}
                 searchFn={(q) => searchLink("Tax Withholding Category", q).then((items) => ({ items }))}
-                docType="tax-withholding-category"
-                placeholder="Begin typing for results."
+                validate={(v) => validateLink("Tax Withholding Category", v)}
+                docType="Tax Withholding Category"
               />
             </FormField>
           </div>
@@ -686,8 +685,8 @@ export default function CustomerForm({
                     value={form.payment_terms}
                     onChange={handleLinkChange("payment_terms")}
                     searchFn={(q) => searchLink("Payment Terms Template", q).then((items) => ({ items }))}
-                    docType="payment-terms-template"
-                    placeholder="Begin typing for results."
+                    validate={(v) => validateLink("Payment Terms Template", v)}
+                    docType="Payment Terms Template"
                   />
                 </FormField>
                 <div />
@@ -707,9 +706,9 @@ export default function CustomerForm({
                 }}
                 emptyRow={{ company: "", credit_limit: 0, bypass_credit_limit_check: 0 }}
                 columns={[
-                  { key: "company", label: "Company", type: "link", searchFn: (q) => searchLink("Company", q).then((items) => ({ items })) },
+                  { key: "company", label: "Company", type: "link", docType: "Company", searchFn: (q) => searchLink("Company", q, "Customer Credit Limit").then((items) => ({ items })), validate: (v) => validateLink("Company", v) },
                   { key: "credit_limit", label: "Credit Limit", type: "number" },
-                  { key: "bypass_credit_limit_check", label: "Bypass Check at SO", type: "checkbox" },
+                  { key: "bypass_credit_limit_check", label: "Bypass Credit Limit Check at Sales Order", type: "checkbox" },
                 ] as GridColumn<CreditLimitRow>[]}
               />
             </div>
@@ -717,13 +716,13 @@ export default function CustomerForm({
             <div className={sectionDivider}>
               <ChildTableGrid<PartyAccountRow>
                 title="Default Accounts"
+                description="Mention if non-standard Receivable account"
                 rows={form.accounts ?? []}
                 onChange={(rows) => setForm((prev) => ({ ...prev, accounts: rows }))}
-                emptyRow={{ company: "", account: "", advance_account: "" }}
+                emptyRow={{ company: "", account: "" }}
                 columns={[
-                  { key: "company", label: "Company", type: "link", searchFn: (q) => searchLink("Company", q).then((items) => ({ items })) },
-                  { key: "account", label: "Default Account (Receivable)", type: "link", searchFn: (q) => searchLink("Account", q, undefined, [["account_type", "=", "Receivable"], ["root_type", "=", "Asset"], ["is_group", "=", 0]]).then((items) => ({ items })) },
-                  { key: "advance_account", label: "Advance Account", type: "link", searchFn: (q) => searchLink("Account", q, undefined, [["account_type", "=", "Receivable"], ["root_type", "=", "Liability"], ["is_group", "=", 0]]).then((items) => ({ items })) },
+                  { key: "company", label: "Company", type: "link", docType: "Company", searchFn: (q) => searchLink("Company", q, "Party Account", undefined, undefined, true).then((items) => ({ items })), validate: (v) => validateLink("Company", v) },
+                  { key: "account", label: "Default Account", type: "link", docType: "Account", searchFn: (q) => searchLink("Account", q, undefined, [["account_type", "=", "Receivable"], ["root_type", "=", "Asset"], ["is_group", "=", 0]]).then((items) => ({ items })), validate: (v) => validateLink("Account", v) },
                 ] as GridColumn<PartyAccountRow>[]}
               />
             </div>
@@ -733,18 +732,15 @@ export default function CustomerForm({
                 <span className="mr-1">▸</span>
                 Loyalty Points
               </summary>
-              <div className="mt-3 grid grid-cols-2 gap-4">
+              <div className="mt-3 grid grid-cols-1 gap-4">
                 <FormField label="Loyalty Program">
                   <LinkSearchField
                     value={form.loyalty_program}
                     onChange={handleLoyaltyProgramChange}
                     searchFn={(q) => searchLink("Loyalty Program", q).then((items) => ({ items }))}
-                    docType="loyalty-program"
-                    placeholder="Begin typing for results."
+                    validate={(v) => validateLink("Loyalty Program", v)}
+                    docType="Loyalty Program"
                   />
-                </FormField>
-                <FormField label="Loyalty Program Tier">
-                  <p className="text-sm font-semibold text-heading bg-gray-50 px-3 py-2.5 rounded-[12px]">{customer?.loyalty_program_tier || "—"}</p>
                 </FormField>
               </div>
             </details>
@@ -760,25 +756,21 @@ export default function CustomerForm({
               onChange={(rows) => setForm((prev) => ({ ...prev, sales_team: rows }))}
               emptyRow={{ sales_person: "", contact_no: "", allocated_percentage: 0, incentives: 0 }}
               columns={[
-                { key: "sales_person", label: "Sales Person", type: "link", searchFn: (q) => searchLink("Sales Person", q).then((items) => ({ items })) },
+                { key: "sales_person", label: "Sales Person", type: "link", docType: "Sales Person", searchFn: (q) => searchLink("Sales Person", q).then((items) => ({ items })), validate: (v) => validateLink("Sales Person", v) },
                 { key: "allocated_percentage", label: "Contribution %", type: "number" },
                 { key: "commission_rate", label: "Commission Rate", type: "text" },
               ] as GridColumn<SalesTeamRow>[]}
             />
 
-            <details className={sectionDivider} open={form.sales_team && form.sales_team.length > 0}>
-              <summary className={sectionTitle + " cursor-pointer select-none hover:text-heading"} style={{ listStyle: "none" }}>
-                <span className="mr-1">{form.sales_team && form.sales_team.length > 0 ? "▾" : "▸"}</span>
-                Sales Partner
-              </summary>
-              <div className="mt-3 grid grid-cols-2 gap-4">
+            <div className={sectionDivider}>
+              <div className="grid grid-cols-2 gap-4">
                 <FormField label="Sales Partner">
                   <LinkSearchField
                     value={form.default_sales_partner}
                     onChange={handleLinkWithFetch("default_sales_partner", "Sales Partner", ["commission_rate"], { default_commission_rate: "commission_rate" })}
                     searchFn={(q) => searchLink("Sales Partner", q).then((items) => ({ items }))}
-                    docType="sales-partner"
-                    placeholder="Begin typing for results."
+                    validate={(v) => validateLink("Sales Partner", v)}
+                    docType="Sales Partner"
                   />
                 </FormField>
                 <FormField label="Commission Rate (%)">
@@ -791,7 +783,7 @@ export default function CustomerForm({
                   />
                 </FormField>
               </div>
-            </details>
+            </div>
           </div>
         </TabsContent>
 
@@ -831,25 +823,13 @@ export default function CustomerForm({
             title="Customer Portal Users"
             rows={form.portal_users ?? []}
             onChange={(rows) => setForm((prev) => ({ ...prev, portal_users: rows }))}
-            emptyRow={{ user: "", email: "" }}
+            emptyRow={{ user: "" }}
             columns={[
-              { key: "user", label: "User", type: "link", searchFn: (q) => searchLink("User", q, undefined, [["enabled", "=", 1]]).then((items) => ({ items })) },
-              { key: "email", label: "Email", type: "text" },
+              { key: "user", label: "User", type: "link", docType: "User", searchFn: (q) => searchLink("User", q, "Portal User", { ignore_user_type: true }).then((items) => ({ items })), validate: (v) => validateLink("User", v) },
             ] as GridColumn<PortalUserRow>[]}
           />
         </TabsContent>
       </Tabs>
-
-      {/* Actions */}
-      <div className="flex items-center justify-end gap-3 pt-4 border-t border-border">
-        <Button type="button" variant="outline" onClick={onCancel}>
-          Cancel
-        </Button>
-        <Button type="submit" disabled={saving} loading={saving}>
-          <Save size={16} />
-          {saving ? "Saving..." : isEdit ? "Update Customer" : "Create Customer"}
-        </Button>
-      </div>
     </form>
   );
 }

@@ -23,7 +23,6 @@ const columns: Column<Supplier>[] = [
   {
     key: "email",
     header: "Contact",
-    hideOnMobile: true,
     render: (s) => (
       <div className="space-y-0.5">
         <div className="flex items-center gap-1.5 text-xs text-muted"><Mail size={12} />{s.email}</div>

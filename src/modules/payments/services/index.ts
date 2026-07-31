@@ -51,6 +51,8 @@ export type { PaymentEntry, PaymentEntryListResponse, RecordPaymentData, Payment
 export interface PaymentListFilters {
   page?: number
   pageSize?: number
+  start?: number
+  pageLength?: number
   status?: string
   paymentType?: string
   modeOfPayment?: string
@@ -86,7 +88,8 @@ function buildPaymentFilters(params: PaymentListFilters): unknown[] | undefined 
 export const paymentService = {
   async list(params: PaymentListFilters = {}): Promise<PaymentEntryListResponse> {
     const page = params.page ?? 1
-    const pageSize = params.pageSize ?? 10
+    const pageSize = params.pageLength ?? params.pageSize ?? 10
+    const limit_start = params.start != null ? params.start : (page - 1) * pageSize
     const filters = buildPaymentFilters(params)
 
     const [rows, total] = await Promise.all([
@@ -95,7 +98,7 @@ export const paymentService = {
           fields: LIST_FIELDS,
           filters,
           limit_page_length: pageSize,
-          limit_start: (page - 1) * pageSize,
+          limit_start,
           order_by: "posting_date desc",
         })
       ),

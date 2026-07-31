@@ -70,19 +70,28 @@ export async function fetchFieldOptions(doctype: string, fieldname: string): Pro
   }
 }
 
-export async function searchLink(doctype: string, query: string, referenceDoctype?: string, filters?: unknown[][] | Record<string, string>, customQuery?: string): Promise<{ value: string; label: string; description: string }[]> {
+export async function searchLink(doctype: string, query: string, referenceDoctype?: string, filters?: unknown[][] | Record<string, string | number | boolean>, customQuery?: string, ignoreUserPermissions?: boolean): Promise<{ value: string; label: string; description: string }[]> {
   try {
     const qp = new URLSearchParams()
     qp.set("doctype", doctype)
     qp.set("txt", query)
     if (referenceDoctype) qp.set("reference_doctype", referenceDoctype)
+    if (ignoreUserPermissions) qp.set("ignore_user_permissions", "1")
     if (filters) qp.set("filters", JSON.stringify(filters))
     if (customQuery) qp.set("query", customQuery)
-    qp.set("limit", "10")
+    qp.set("page_length", "10")
     return apiClient(`/method/frappe.desk.search.search_link?${qp.toString()}`)
   } catch {
     return []
   }
+}
+
+export async function validateLink(doctype: string, docname: string): Promise<void> {
+  const qp = new URLSearchParams()
+  qp.set("doctype", doctype)
+  qp.set("docname", docname)
+  qp.set("fields", "[]")
+  await apiClient(`/method/frappe.client.validate_link?${qp.toString()}`)
 }
 
 export async function getPartyDetails(partyType: string, partyName: string): Promise<Record<string, unknown>> {
@@ -388,6 +397,7 @@ export const customerService = {
   createAddress,
   fetchFieldOptions,
   searchLink,
+  validateLink,
   getPartyDetails,
 
   async list(params: {
@@ -587,26 +597,9 @@ export const customerService = {
   },
 
   async delete(name: string): Promise<void> {
-    const [contacts, addrs] = await Promise.all([
-      apiClient<{ name: string }[]>(
-        buildListUrl("Contact", {
-          fields: ["name"],
-          filters: [["Dynamic Link", "link_doctype", "=", "Customer"], ["Dynamic Link", "link_name", "=", name]],
-        })
-      ).catch(() => []),
-      apiClient<{ name: string }[]>(
-        buildListUrl("Address", {
-          fields: ["name"],
-          filters: [["Dynamic Link", "link_doctype", "=", "Customer"], ["Dynamic Link", "link_name", "=", name]],
-        })
-      ).catch(() => []),
-    ])
-    await Promise.all([
-      ...contacts.map((c) => deleteContact(c.name).catch(() => {})),
-      ...addrs.map((a) => deleteAddress(a.name).catch(() => {})),
-    ])
-    return apiClient<void>(`/resource/Customer/${encodeURIComponent(name)}`, {
-      method: "DELETE",
+    await apiClient<void>("/method/frappe.desk.reportview.delete_items", {
+      method: "POST",
+      body: JSON.stringify({ items: JSON.stringify([name]), doctype: "Customer" }),
     })
   },
 

@@ -65,7 +65,6 @@ const columns: Column<Bill>[] = [
   {
     key: "dueDate",
     header: "Due Date",
-    hideOnMobile: true,
     render: (b) => {
       const isOverdue = b.status === "overdue"
       return (

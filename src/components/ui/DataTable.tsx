@@ -8,9 +8,9 @@ export interface Column<T> {
   key: string
   header: string
   render?: (item: T) => React.ReactNode
+  title?: (item: T) => string
   sortable?: boolean
   className?: string
-  hideOnMobile?: boolean
   align?: 'left' | 'right' | 'center'
   width?: string
 }
@@ -86,9 +86,10 @@ export default function DataTable<T>({
 
   const paginatedData = useMemo(() => {
     if (isControlled) return data
+    if (paginationMode === "loadMore") return data
     const start = (internalPage - 1) * pageSize
     return data.slice(start, start + pageSize)
-  }, [data, internalPage, pageSize, isControlled])
+  }, [data, internalPage, pageSize, isControlled, paginationMode])
 
   const displayedData = isControlled ? data : paginatedData
 
@@ -179,7 +180,7 @@ export default function DataTable<T>({
 
       {/* Table */}
       <div className="overflow-x-auto relative">
-        <table className="min-w-full divide-y divide-border">
+        <table className="table-fixed w-full divide-y divide-border">
           <thead>
             <tr className="bg-gray-50/50">
               {selectable && (
@@ -196,17 +197,17 @@ export default function DataTable<T>({
               {columns.map((col) => (
                 <th
                   key={col.key}
+                  title={col.header}
                   className={cn(
-                    "px-6 py-3.5 text-xs font-semibold text-muted uppercase tracking-wider",
+                    "px-4 py-3.5 text-xs font-semibold text-muted uppercase tracking-wider",
                     col.align === "right" ? "text-right" : col.align === "center" ? "text-center" : "text-left",
-                    col.hideOnMobile && "hidden lg:table-cell",
                     col.width,
                     col.className
                   )}
                 >
-                    <div className="inline-flex items-center gap-1.5">
-                    {col.header}
-                    {col.sortable && <ChevronDown size={12} className="text-muted/50" />}
+                  <div className="flex items-center gap-1.5">
+                    <span className="truncate">{col.header}</span>
+                    {col.sortable && <ChevronDown size={12} className="text-muted/50 shrink-0" />}
                   </div>
                 </th>
               ))}
@@ -222,7 +223,7 @@ export default function DataTable<T>({
                     </td>
                   )}
                   {columns.map((col) => (
-                    <td key={col.key} className="px-6 py-4">
+                    <td key={col.key} className="px-4 py-4">
                       <div className="h-5 bg-gray-100 rounded-[8px] w-3/4 animate-pulse" />
                     </td>
                   ))}
@@ -267,22 +268,31 @@ export default function DataTable<T>({
                         />
                       </td>
                     )}
-                    {columns.map((col) => (
-                      <td
-                        key={col.key}
-                        className={cn(
-                          "px-6 py-4 text-sm text-body whitespace-nowrap",
-                          col.align === "right" ? "text-right" : col.align === "center" ? "text-center" : "text-left",
-                          col.hideOnMobile && "hidden lg:table-cell",
-                          col.width,
-                          col.className
-                        )}
-                      >
-                        {col.render
-                          ? col.render(item)
-                          : String((item as any)[col.key] ?? "")}
-                      </td>
-                    ))}
+                    {columns.map((col) => {
+                      const raw = (item as any)?.[col.key];
+                      const cellTitle = col.title
+                        ? col.title(item)
+                        : raw != null && raw !== ""
+                          ? `${col.header}: ${String(raw)}`
+                          : undefined;
+                      return (
+                        <td
+                          key={col.key}
+                          className={cn(
+                            "px-4 py-4 text-sm text-body whitespace-nowrap",
+                            col.align === "right" ? "text-right" : col.align === "center" ? "text-center" : "text-left",
+                            col.width,
+                            col.className
+                          )}
+                        >
+                          <div className="truncate" title={cellTitle}>
+                            {col.render
+                              ? col.render(item)
+                              : String(raw ?? "")}
+                          </div>
+                        </td>
+                      );
+                    })}
                   </motion.tr>
                 )
               })

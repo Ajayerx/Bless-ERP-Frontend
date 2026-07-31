@@ -22,7 +22,6 @@ const columns: Column<Product>[] = [
   {
     key: "stock_uom",
     header: "Unit",
-    hideOnMobile: true,
     render: (p) => <span className="text-sm text-muted">{p.stock_uom}</span>,
   },
   {
@@ -37,7 +36,6 @@ const columns: Column<Product>[] = [
     key: "effective_cost",
     header: "Cost",
     align: "right",
-    hideOnMobile: true,
     render: (p) => (
       <span className="tabular-nums text-muted text-sm">
         {p.effective_cost !== null ? formatCurrency(p.effective_cost) : "—"}
@@ -48,7 +46,6 @@ const columns: Column<Product>[] = [
     key: "stock",
     header: "Stock Qty",
     align: "right",
-    hideOnMobile: true,
     render: (p) => (
       <span className={cn("font-semibold tabular-nums text-sm", stockColorClass(p.stock))}>
         {p.stock}

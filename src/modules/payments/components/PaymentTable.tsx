@@ -41,10 +41,8 @@ function statusIndicator(docstatus: number) {
 }
 
 interface PaymentTableProps {
-  paymentsData: PaymentEntryListResponse | null
+  data: PaymentEntryListResponse | null
   loading: boolean
-  page: number
-  onPageChange: (page: number) => void
   onRowClick?: (payment: PaymentEntry) => void
   unpaidCount?: number
   overdueCount?: number
@@ -71,10 +69,14 @@ interface PaymentTableProps {
   onDateToChange: (v: string) => void
   onResetFilters: () => void
   hasActiveFilters: boolean
+  paginationMode?: "pages" | "loadMore"
+  currentPageLength?: number
+  onPageLengthChange?: (length: number) => void
+  onLoadMore?: () => void
 }
 
 export default function PaymentTable({
-  paymentsData, loading, page, onPageChange, onRowClick,
+  data, loading, onRowClick,
   unpaidCount = 0, overdueCount = 0,
   selectedPayments, onSelectionChange,
   onBulkSubmit, onBulkCancel, onBulkDelete,
@@ -86,6 +88,10 @@ export default function PaymentTable({
   dateFrom, onDateFromChange,
   dateTo, onDateToChange,
   onResetFilters, hasActiveFilters,
+  paginationMode = "loadMore",
+  currentPageLength,
+  onPageLengthChange,
+  onLoadMore,
 }: PaymentTableProps) {
   const [modeOptions, setModeOptions] = useState<string[]>([])
 
@@ -93,33 +99,34 @@ export default function PaymentTable({
     paymentService.getModeOfPaymentList().then(setModeOptions)
   }, [])
 
-  const totalCollected = paymentsData?.items?.reduce((s, p) => s + p.paid_amount, 0) ?? 0
+  const totalCollected = data?.items?.reduce((s, p) => s + p.paid_amount, 0) ?? 0
 
   const paymentColumns: Column<PaymentEntry>[] = [
     {
       key: "party_name",
       header: "Customer",
+      width: "w-[22%]",
+      title: (p) => `Customer: ${p.party_name || p.party} · ${p.name}`,
       render: (p) => (
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-[10px] bg-success-50 text-success-600 flex items-center justify-center shrink-0">
-            <CheckCircle2 size={15} />
-          </div>
-          <div>
-            <p className="font-semibold text-heading">{p.party_name || p.party}</p>
-            <p className="text-xs text-muted">{p.name}</p>
-          </div>
+        <div className="min-w-0">
+          <p className="font-semibold text-heading truncate">{p.party_name || p.party}</p>
+          <p className="text-xs text-muted truncate">{p.name}</p>
         </div>
       ),
     },
     {
       key: "status",
       header: "Status",
+      width: "w-[10%]",
+      title: (p) => `Status: ${p.docstatus === 1 ? "Submitted" : p.docstatus === 2 ? "Cancelled" : "Draft"}`,
       render: (p) => statusIndicator(p.docstatus),
     },
     {
       key: "paid_amount",
       header: "Amount",
       align: "right",
+      width: "w-[13%]",
+      title: (p) => `Amount: ${formatCurrency(p.paid_amount)}`,
       render: (p) => (
         <span className="font-semibold tabular-nums text-success-600">
           {formatCurrency(p.paid_amount)}
@@ -129,7 +136,7 @@ export default function PaymentTable({
     {
       key: "mode_of_payment",
       header: "Method",
-      hideOnMobile: true,
+      width: "w-[14%]",
       render: (p) => (
         <span className="text-sm text-muted">{p.mode_of_payment ?? "—"}</span>
       ),
@@ -137,7 +144,7 @@ export default function PaymentTable({
     {
       key: "reference_no",
       header: "Reference",
-      hideOnMobile: true,
+      width: "w-[16%]",
       render: (p) => (
         <span className="font-mono text-xs text-muted">
           {p.reference_no ?? "—"}
@@ -147,6 +154,7 @@ export default function PaymentTable({
     {
       key: "posting_date",
       header: "Date",
+      width: "w-[11%]",
       render: (p) => (
         <span className="text-sm text-muted">{formatDate(p.posting_date)}</span>
       ),
@@ -154,7 +162,7 @@ export default function PaymentTable({
     {
       key: "actions",
       header: "",
-      width: "w-[140px]",
+      width: "w-[10%]",
       render: (p) => (
         <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
           {p.docstatus === 0 && (
@@ -190,7 +198,7 @@ export default function PaymentTable({
   const selectedSet = new Set(selectedPayments)
 
   const selectedStatuses = new Set(
-    (paymentsData?.items ?? [])
+    (data?.items ?? [])
       .filter((p) => selectedPayments.includes(p.name))
       .map((p) => p.docstatus)
   )
@@ -243,7 +251,7 @@ export default function PaymentTable({
         <SummaryCard
           label="Collected"
           value={formatCurrency(totalCollected)}
-          sub={`${paymentsData?.total ?? 0} payments`}
+          sub={`${data?.total ?? 0} payments`}
           icon={CheckCircle2}
           iconClass="text-success-600"
           iconBg="bg-success-50"
@@ -350,18 +358,20 @@ export default function PaymentTable({
       <section className="space-y-4">
         <DataTable
           columns={paymentColumns}
-          data={paymentsData?.items ?? []}
+          data={data?.items ?? []}
           keyExtractor={(p) => p.name}
           loading={loading}
-          page={page}
-          total={paymentsData?.total}
-          pageSize={10}
-          onPageChange={onPageChange}
+          total={data?.total}
+          pageSize={currentPageLength ?? 20}
           onRowClick={onRowClick}
           selectable
           selectedKeys={selectedSet}
           onSelectionChange={(keys) => onSelectionChange(Array.from(keys))}
           toolbarActions={bulkToolbar}
+          paginationMode={paginationMode}
+          currentPageLength={currentPageLength}
+          onPageLengthChange={onPageLengthChange}
+          onLoadMore={onLoadMore}
           emptyState={
             <div className="flex flex-col items-center gap-2 py-4">
               <DollarSign size={32} className="text-muted opacity-40" />

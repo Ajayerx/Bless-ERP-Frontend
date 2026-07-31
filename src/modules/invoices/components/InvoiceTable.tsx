@@ -62,14 +62,16 @@ function buildColumns(
     {
       key: "name",
       header: "Invoice",
+      width: "w-[23%]",
+      title: (inv) => `Invoice: ${inv.name} · ${formatDate(inv.posting_date)}`,
       render: (inv) => (
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 min-w-0">
           <div className="w-9 h-9 rounded-[10px] bg-primary-50 text-primary-600 flex items-center justify-center shrink-0">
             <FileText size={16} />
           </div>
-          <div>
-            <p className="font-semibold text-heading">{inv.name}</p>
-            <p className="text-xs text-muted">{formatDate(inv.posting_date)}</p>
+          <div className="min-w-0">
+            <p className="font-semibold text-heading truncate">{inv.name}</p>
+            <p className="text-xs text-muted truncate">{formatDate(inv.posting_date)}</p>
           </div>
         </div>
       ),
@@ -77,12 +79,15 @@ function buildColumns(
     {
       key: "customer_name",
       header: "Customer",
+      width: "w-[19%]",
       render: (inv) => <span className="text-sm text-body">{inv.customer_name}</span>,
     },
     {
       key: "grand_total",
       header: "Amount",
       align: "right",
+      width: "w-[12%]",
+      title: (inv) => `Amount: ${formatCurrency(inv.grand_total)}`,
       render: (inv) => (
         <span className="font-semibold tabular-nums text-heading">{formatCurrency(inv.grand_total)}</span>
       ),
@@ -90,6 +95,7 @@ function buildColumns(
     {
       key: "status",
       header: "Status",
+      width: "w-[12%]",
       render: (inv) => (
         <Badge variant={statusVariant[inv.status] ?? "default"}>
           {inv.status}
@@ -99,7 +105,7 @@ function buildColumns(
     {
       key: "due_date",
       header: "Due Date",
-      hideOnMobile: true,
+      width: "w-[14%]",
       render: (inv) => {
         const isOverdue = inv.status === "Overdue"
         return (
@@ -112,6 +118,7 @@ function buildColumns(
     {
       key: "actions",
       header: "",
+      width: "w-[16%]",
       render: (inv) => (
         <div className="flex items-center justify-end gap-2">
           {(inv.status === "Unpaid" || inv.status === "Overdue") && inv.docstatus === 1 && (

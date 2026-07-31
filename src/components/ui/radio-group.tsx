@@ -12,7 +12,7 @@ const RadioGroup = React.forwardRef<
 >(({ className, label, error, ...props }, ref) => (
   <div className="space-y-1.5">
     {label && (
-      <p className="text-sm font-medium text-heading">{label}</p>
+      <p className="text-sm font-normal text-heading">{label}</p>
     )}
     <RadioGroupPrimitive.Root
       className={cn("grid gap-2.5", className)}

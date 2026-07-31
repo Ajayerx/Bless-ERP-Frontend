@@ -7,7 +7,7 @@ import { DollarSign, FileText, BadgeCheck, AlertCircle } from "lucide-react"
 import Topbar from "@/components/layout/Topbar"
 import { Button, Badge, Card, CardContent, ConfirmationDialog } from "@/components/ui"
 import PaymentTable from "../components/PaymentTable"
-import { paymentService, type SalesInvoice, type PaymentEntryListResponse } from "@/services"
+import { paymentService, type SalesInvoice, type PaymentEntry, type PaymentEntryListResponse } from "@/services"
 import type { PaymentListFilters } from "../services"
 import { ApiError } from "@/services/api-client"
 import { formatCurrency, formatDate, cn } from "@/lib/utils"
@@ -19,9 +19,11 @@ export default function Payments() {
 
   const [unpaidInvoices, setUnpaidInvoices] = useState<SalesInvoice[]>([])
   const [paymentsData, setPaymentsData] = useState<PaymentEntryListResponse | null>(null)
+  const [allPayments, setAllPayments] = useState<PaymentEntry[]>([])
   const [loadingUnpaid, setLoadingUnpaid] = useState(true)
   const [loadingPayments, setLoadingPayments] = useState(true)
-  const [paymentPage, setPaymentPage] = useState(1)
+  const [paymentStart, setPaymentStart] = useState(0)
+  const [paymentPageLength, setPaymentPageLength] = useState(20)
 
   const [selectedPayments, setSelectedPayments] = useState<string[]>([])
   const [acting, setActing] = useState(false)
@@ -53,12 +55,12 @@ export default function Payments() {
     }
   }, [])
 
-  const fetchPayments = useCallback(async () => {
+  const fetchPayments = useCallback(async (append = false) => {
     setLoadingPayments(true)
     try {
       const filterParams: PaymentListFilters = {
-        page: paymentPage,
-        pageSize: 10,
+        start: append ? paymentStart : 0,
+        pageLength: paymentPageLength,
       }
       if (activeStatus !== "All") {
         filterParams.status = activeStatus.toLowerCase()
@@ -71,19 +73,27 @@ export default function Payments() {
 
       const paid = await paymentService.list(filterParams)
       setPaymentsData(paid)
+      setAllPayments((prev) => (append ? [...prev, ...paid.items] : paid.items))
+      if (!append) setPaymentStart(paymentPageLength)
+      else setPaymentStart((s) => s + paymentPageLength)
     } catch (err) {
       console.error("[Payments] Failed to fetch payments:", err)
       setPaymentsData(null)
+      setAllPayments([])
     } finally {
       setLoadingPayments(false)
     }
-  }, [paymentPage, activeStatus, paymentTypeFilter, modeFilter, partySearch, dateFrom, dateTo])
+  }, [paymentStart, paymentPageLength, activeStatus, paymentTypeFilter, modeFilter, partySearch, dateFrom, dateTo])
 
-  const fetchData = useCallback(async () => {
-    await Promise.all([fetchUnpaid(), fetchPayments()])
+  const fetchData = useCallback(async (append = false) => {
+    await Promise.all([fetchUnpaid(), fetchPayments(append)])
   }, [fetchUnpaid, fetchPayments])
 
-  useEffect(() => { fetchData() }, [fetchData])
+  useEffect(() => {
+    setPaymentStart(0)
+    setAllPayments([])
+    fetchData(false)
+  }, [activeStatus, paymentTypeFilter, modeFilter, partySearch, dateFrom, dateTo, paymentPageLength])
 
   const overdueCount = unpaidInvoices.filter(
     (inv) => inv.status === "Overdue",
@@ -102,8 +112,18 @@ export default function Payments() {
     setPartySearch("")
     setDateFrom("")
     setDateTo("")
-    setPaymentPage(1)
+    setPaymentStart(0)
   }
+
+  const handleLoadMore = useCallback(() => {
+    fetchPayments(true)
+  }, [fetchPayments])
+
+  const handlePageLengthChange = useCallback((len: number) => {
+    setPaymentStart(0)
+    setAllPayments([])
+    setPaymentPageLength(len)
+  }, [])
 
   // --- Confirmation dialog handling ---
   const getConfirmInfo = () => {
@@ -195,10 +215,8 @@ export default function Payments() {
         )}
 
         <PaymentTable
-          paymentsData={paymentsData}
+          data={paymentsData ? { ...paymentsData, items: allPayments } : null}
           loading={loadingPayments}
-          page={paymentPage}
-          onPageChange={setPaymentPage}
           onRowClick={(payment) => navigate(`/payments/${payment.name}`)}
           unpaidCount={unpaidInvoices.length}
           overdueCount={overdueCount}
@@ -212,19 +230,23 @@ export default function Payments() {
           onDeleteSingle={(name) => setConfirmAction({ type: "single-delete", target: name })}
           onAmendSingle={(name) => setConfirmAction({ type: "single-amend", target: name })}
           activeStatus={activeStatus}
-          onStatusFilterChange={(f) => { setActiveStatus(f); setPaymentPage(1) }}
+          onStatusFilterChange={(f) => { setActiveStatus(f); setPaymentStart(0) }}
           paymentTypeFilter={paymentTypeFilter}
-          onPaymentTypeFilterChange={(v) => { setPaymentTypeFilter(v); setPaymentPage(1) }}
+          onPaymentTypeFilterChange={(v) => { setPaymentTypeFilter(v); setPaymentStart(0) }}
           modeFilter={modeFilter}
-          onModeFilterChange={(v) => { setModeFilter(v); setPaymentPage(1) }}
+          onModeFilterChange={(v) => { setModeFilter(v); setPaymentStart(0) }}
           partySearch={partySearch}
-          onPartySearchChange={(v) => { setPartySearch(v); setPaymentPage(1) }}
+          onPartySearchChange={(v) => { setPartySearch(v); setPaymentStart(0) }}
           dateFrom={dateFrom}
-          onDateFromChange={(v) => { setDateFrom(v); setPaymentPage(1) }}
+          onDateFromChange={(v) => { setDateFrom(v); setPaymentStart(0) }}
           dateTo={dateTo}
-          onDateToChange={(v) => { setDateTo(v); setPaymentPage(1) }}
+          onDateToChange={(v) => { setDateTo(v); setPaymentStart(0) }}
           onResetFilters={resetFilters}
           hasActiveFilters={hasActiveFilters}
+          paginationMode="loadMore"
+          currentPageLength={paymentPageLength}
+          onPageLengthChange={handlePageLengthChange}
+          onLoadMore={handleLoadMore}
         />
 
         <section className="space-y-4">

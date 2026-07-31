@@ -58,10 +58,10 @@ const invoiceColumns: Column<InvoiceRow>[] = [
   { key: "grand_total", header: "Amount", className: "text-right",
     render: (inv) => <span className="font-semibold tabular-nums text-heading">{formatCurrency(inv.grand_total)}</span>,
   },
-  { key: "posting_date", header: "Date", hideOnMobile: true,
+  { key: "posting_date", header: "Date",
     render: (inv) => <span className="text-sm text-muted">{formatDate(inv.posting_date)}</span>,
   },
-  { key: "outstanding_amount", header: "Due", className: "text-right", hideOnMobile: true,
+  { key: "outstanding_amount", header: "Due", className: "text-right",
     render: (inv) => (
       <span className={cn("tabular-nums", inv.outstanding_amount > 0 ? "text-warning-600" : "text-muted")}>
         {inv.outstanding_amount > 0 ? formatCurrency(inv.outstanding_amount) : "�"}

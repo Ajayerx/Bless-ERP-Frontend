@@ -22,7 +22,6 @@ const columns: Column<Vendor>[] = [
   {
     key: "email",
     header: "Contact",
-    hideOnMobile: true,
     render: (v) => (
       <div className="space-y-0.5">
         <div className="flex items-center gap-1.5 text-xs text-muted"><Mail size={12} />{v.email}</div>
@@ -30,9 +29,9 @@ const columns: Column<Vendor>[] = [
       </div>
     ),
   },
-  { key: "taxId", header: "Tax ID", hideOnMobile: true, render: (v) => <span className="text-xs text-muted">{v.taxId || "—"}</span> },
+  { key: "taxId", header: "Tax ID", render: (v) => <span className="text-xs text-muted">{v.taxId || "—"}</span> },
   { key: "status", header: "Status", render: (v) => <Badge variant={v.status === "active" ? "success" : "default"}>{v.status === "active" ? "Active" : "Inactive"}</Badge> },
-  { key: "createdAt", header: "Created", hideOnMobile: true, render: (v) => <span className="text-xs text-muted">{new Date(v.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</span> },
+  { key: "createdAt", header: "Created", render: (v) => <span className="text-xs text-muted">{new Date(v.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</span> },
 ]
 
 interface VendorTableProps {

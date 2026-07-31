@@ -45,7 +45,6 @@ const columns: Column<SalesOrder>[] = [
   {
     key: "deliveryDate",
     header: "Delivery",
-    hideOnMobile: true,
     render: (so) => <span className="text-sm text-muted">{formatDate(so.deliveryDate)}</span>,
   },
   {

@@ -1,15 +1,19 @@
 "use client"
 
+import { useState } from "react"
 import { useNavigate, useLocation } from "react-router-dom"
 import { motion } from "framer-motion"
-import { ArrowLeft } from "lucide-react"
+import { ArrowLeft, Save } from "lucide-react"
 import Topbar from "@/components/layout/Topbar"
 import { Button } from "@/components/ui"
+import { useToast } from "@/components/ui/toast"
 import CustomerForm from "../components/CustomerForm"
 export default function NewCustomer() {
   const navigate = useNavigate()
   const location = useLocation()
   const state = location.state as Record<string, unknown> | null
+  const [saving, setSaving] = useState(false)
+  const { addToast } = useToast()
 
   const initialValues: Partial<import("@/services").CustomerFormData> | undefined =
     state?.customer_name
@@ -48,16 +52,25 @@ export default function NewCustomer() {
               <p className="text-sm text-muted mt-0.5">Add a new customer to your directory.</p>
             </div>
           </div>
-          <Button variant="secondary" onClick={() => navigate("/customers")}>
-            Cancel
-          </Button>
+          <div className="flex items-center gap-3">
+            <Button variant="secondary" onClick={() => navigate("/customers")}>
+              Cancel
+            </Button>
+            <Button type="submit" form="customer-form" disabled={saving} loading={saving}>
+              <Save size={16} />
+              {saving ? "Saving..." : "Create Customer"}
+            </Button>
+          </div>
         </div>
 
         <div className="bg-surface rounded-[16px] border border-border shadow-card p-6">
           <CustomerForm
             initialValues={initialValues}
-            onSaved={() => navigate("/customers")}
-            onCancel={() => navigate("/customers")}
+            onSaved={() => {
+              addToast("Customer created successfully", "success")
+              navigate("/customers")
+            }}
+            onSavingChange={setSaving}
           />
         </div>
       </motion.div>

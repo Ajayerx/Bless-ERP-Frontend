@@ -39,13 +39,11 @@ const columns: Column<Quotation>[] = [
   {
     key: "issueDate",
     header: "Date",
-    hideOnMobile: true,
     render: (q) => <span className="text-sm text-muted">{formatDate(q.issueDate)}</span>,
   },
   {
     key: "validUntil",
     header: "Valid Until",
-    hideOnMobile: true,
     render: (q) => <span className="text-sm text-muted">{formatDate(q.validUntil)}</span>,
   },
   {

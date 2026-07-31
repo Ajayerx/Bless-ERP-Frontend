@@ -912,7 +912,7 @@ export default function InvoiceForm({
                       onCreateNew={() => window.open("/invoices/new", "_blank")}
                       onAdvancedSearch={() => setReturnAgainstSearchOpen(true)}
                       readOnly={!!formData.isReturn}
-                      placeholder="Begin typing for results."
+
                     />
                   </div>
                 )}
@@ -1942,7 +1942,7 @@ export default function InvoiceForm({
                               onChange({ timeSheets: updated })
                             }}
                             searchFn={(q) => invoiceService.searchActivityTypes(q)}
-                            placeholder="Begin typing for results."
+
                           />
                         </td>
                         <td className="py-1.5">

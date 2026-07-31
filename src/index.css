@@ -140,6 +140,14 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+html {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+html::-webkit-scrollbar {
+  display: none;
+}
+
 @layer base {
   h1, h2, h3, h4, h5, h6 {
     color: var(--color-heading);

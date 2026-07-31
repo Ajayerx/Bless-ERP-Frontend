@@ -17,7 +17,7 @@ function FormField({ label, error, helperText, required, htmlFor, className, chi
       {label && (
         <label
           htmlFor={htmlFor}
-          className="block text-sm font-medium text-heading"
+          className="block text-sm font-normal text-heading"
         >
           {label}
           {required && <span className="text-danger-500 ml-0.5">*</span>}

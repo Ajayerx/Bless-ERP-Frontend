@@ -3,8 +3,7 @@ import { useState, useEffect, useRef } from "react"
 import { useNavigate } from "react-router-dom"
 import Modal, { ModalFooter } from "@/components/ui/Modal"
 import { Input, Select, Button, LinkSearchField, useToast } from "@/components/ui"
-import { customerService, searchLink, type Customer } from "@/services"
-import { apiClient } from "@/services/api-client"
+import { customerService, searchLink, validateLink, type Customer } from "@/services"
 
 interface Props {
   open: boolean
@@ -12,25 +11,14 @@ interface Props {
   onCreated?: (customer: Customer) => void
 }
 
-async function fetchCustomerTypeOptions(): Promise<string[]> {
-  try {
-    const doc = await apiClient<{ fields: Array<{ fieldname: string; options?: string }> }>(
-      `/resource/DocType/Customer?fields=["fields.fieldname","fields.options"]`
-    )
-    const field = doc.fields?.find((f) => f.fieldname === "customer_type")
-    if (!field?.options) return []
-    return field.options.split("\n").filter(Boolean)
-  } catch {
-    return []
-  }
-}
+const CUSTOMER_TYPE_OPTIONS = ["Company", "Individual", "Partnership"]
 
 export default function QuickAddCustomerModal({ open, onClose, onCreated }: Props) {
   const navigate = useNavigate()
   const { addToast } = useToast()
 
   const [customerName, setCustomerName] = useState("")
-  const [customerType, setCustomerType] = useState("")
+  const [customerType, setCustomerType] = useState("Company")
   const [firstName, setFirstName] = useState("")
   const [lastName, setLastName] = useState("")
   const [email, setEmail] = useState("")
@@ -43,27 +31,10 @@ export default function QuickAddCustomerModal({ open, onClose, onCreated }: Prop
   const [country, setCountry] = useState("")
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState("")
-  const [customerTypeOptions, setCustomerTypeOptions] = useState<string[]>([])
-
-  useEffect(() => {
-    if (!open) return
-    let cancelled = false
-    ;(async () => {
-      try {
-        const opts = await fetchCustomerTypeOptions()
-        if (cancelled) return
-        setCustomerTypeOptions(opts)
-        if (opts.length > 0) setCustomerType("Company")
-      } catch {
-        if (!cancelled) setError("Failed to load options.")
-      }
-    })()
-    return () => { cancelled = true }
-  }, [open])
 
   const reset = () => {
     setCustomerName("")
-    setCustomerType("")
+    setCustomerType("Company")
     setFirstName("")
     setLastName("")
     setEmail("")
@@ -202,7 +173,7 @@ export default function QuickAddCustomerModal({ open, onClose, onCreated }: Prop
             value={customerType}
             onChange={(e) => setCustomerType(e.target.value)}
           >
-            {customerTypeOptions.map((opt) => (
+            {CUSTOMER_TYPE_OPTIONS.map((opt) => (
               <option key={opt} value={opt}>{opt}</option>
             ))}
           </Select>
@@ -238,9 +209,9 @@ export default function QuickAddCustomerModal({ open, onClose, onCreated }: Prop
               label="Country"
               value={country}
               onChange={(v) => setCountry(v ?? "")}
-              searchFn={(q) => searchLink("Country", q).then((items) => ({ items }))}
-              docType="country"
-              placeholder="Begin typing for results."
+              searchFn={(q) => searchLink("Country", q, "Customer").then((items) => ({ items }))}
+              validate={(v) => validateLink("Country", v)}
+              docType="Country"
             />
           </div>
         </div>

@@ -33,7 +33,6 @@ const columns: Column<Lead>[] = [
   {
     key: "contact",
     header: "Contact",
-    hideOnMobile: true,
     render: (l) => (
       <div className="space-y-0.5">
         <div className="flex items-center gap-1.5 text-sm text-muted"><Mail size={12} /> {l.email}</div>

@@ -50,7 +50,6 @@ const warehouseColumns: Column<{ warehouse: string; actual_qty: number; valuatio
     key: "valuation_rate",
     header: "Unit Cost",
     className: "text-right",
-    hideOnMobile: true,
     render: (w) => <span className="tabular-nums text-muted">{w.valuation_rate > 0 ? formatCurrency(w.valuation_rate) : "—"}</span>,
   },
   {
