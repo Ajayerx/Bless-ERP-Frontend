@@ -151,6 +151,13 @@ interface InvoiceTableProps {
   onResetFilters: () => void
   hasActiveFilters: boolean
   toolbarActions?: React.ReactNode
+  selectable?: boolean
+  selectedKeys?: Set<string>
+  onSelectionChange?: (keys: Set<string>) => void
+  paginationMode?: "pages" | "loadMore"
+  currentPageLength?: number
+  onPageLengthChange?: (size: number) => void
+  onLoadMore?: () => void
 }
 
 export default function InvoiceTable({
@@ -171,6 +178,13 @@ export default function InvoiceTable({
   onResetFilters,
   hasActiveFilters,
   toolbarActions,
+  selectable,
+  selectedKeys,
+  onSelectionChange,
+  paginationMode,
+  currentPageLength,
+  onPageLengthChange,
+  onLoadMore,
 }: InvoiceTableProps) {
   const allItems = data?.items ?? []
   const totalAmount = allItems.reduce((s, i) => s + i.grand_total, 0)
@@ -288,6 +302,13 @@ export default function InvoiceTable({
         onPageChange={onPageChange}
         onRowClick={onRowClick}
         toolbarActions={toolbarActions}
+        selectable={selectable}
+        selectedKeys={selectedKeys}
+        onSelectionChange={onSelectionChange}
+        paginationMode={paginationMode}
+        currentPageLength={currentPageLength}
+        onPageLengthChange={onPageLengthChange}
+        onLoadMore={onLoadMore}
         emptyState={
           <div className="flex flex-col items-center gap-2 py-4">
             <FileText size={32} className="text-muted opacity-40" />

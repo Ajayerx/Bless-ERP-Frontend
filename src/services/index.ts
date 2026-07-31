@@ -13,7 +13,7 @@ export type { NotificationItem } from "@/modules/dashboard/services/notification
 export { eventService } from "@/modules/dashboard/services/event.service"
 export type { CalendarEvent } from "@/modules/dashboard/services/event.service"
 
-export { customerService } from "@/modules/customers/services"
+export { customerService, fetchFieldOptions, searchLink, getPartyDetails } from "@/modules/customers/services"
 export type {
   Customer, CustomerFormData, CustomerListResponse, CustomerDetail, TransactionCounts,
   AddressInput, AllowedCompanyRow, CreditLimitRow, PartyAccountRow, SalesTeamRow, PortalUserRow, SupplierNumberRow,

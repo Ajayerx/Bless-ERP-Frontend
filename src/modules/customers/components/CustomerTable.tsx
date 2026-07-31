@@ -12,7 +12,15 @@ const columns: Column<Customer>[] = [
     header: "Customer",
     render: (c) => (
       <div className="flex items-center gap-3">
-        <Avatar name={c.customer_name} size="sm" />
+        {c.image ? (
+          <img
+            src={c.image.startsWith("http") ? c.image : `/api/method/frappe.utils.file_manager.get_file?name=${encodeURIComponent(c.image)}`}
+            alt=""
+            className="w-8 h-8 rounded-lg object-cover shrink-0"
+          />
+        ) : (
+          <Avatar name={c.customer_name} size="sm" />
+        )}
         <div>
           <p className="font-semibold text-heading">{c.customer_name}</p>
           <p className="text-xs text-muted">{c.customer_type}</p>
@@ -35,6 +43,22 @@ const columns: Column<Customer>[] = [
           {c.mobile_no || "—"}
         </div>
       </div>
+    ),
+  },
+  {
+    key: "customer_group",
+    header: "Group",
+    hideOnMobile: true,
+    render: (c) => (
+      <span className="text-sm text-muted">{c.customer_group || "—"}</span>
+    ),
+  },
+  {
+    key: "territory",
+    header: "Territory",
+    hideOnMobile: true,
+    render: (c) => (
+      <span className="text-sm text-muted">{c.territory || "—"}</span>
     ),
   },
   {
@@ -61,20 +85,6 @@ const columns: Column<Customer>[] = [
       </Badge>
     ),
   },
-  {
-    key: "creation",
-    header: "Created",
-    hideOnMobile: true,
-    render: (c) => (
-      <span className="text-xs text-muted">
-        {new Date(c.creation).toLocaleDateString("en-US", {
-          month: "short",
-          day: "numeric",
-          year: "numeric",
-        })}
-      </span>
-    ),
-  },
 ];
 
 interface CustomerTableProps {
@@ -82,13 +92,15 @@ interface CustomerTableProps {
   loading: boolean;
   search: string;
   onSearch: (q: string) => void;
-  page: number;
-  onPageChange: (page: number) => void;
   toolbarActions?: React.ReactNode;
   onRowClick?: (customer: Customer) => void;
   selectable?: boolean;
   selectedKeys?: Set<string>;
   onSelectionChange?: (keys: Set<string>) => void;
+  paginationMode?: "pages" | "loadMore";
+  currentPageLength?: number;
+  onPageLengthChange?: (size: number) => void;
+  onLoadMore?: () => void;
 }
 
 export default function CustomerTable({
@@ -96,13 +108,15 @@ export default function CustomerTable({
   loading,
   search,
   onSearch,
-  page,
-  onPageChange,
   toolbarActions,
   onRowClick,
   selectable,
   selectedKeys,
   onSelectionChange,
+  paginationMode = "loadMore",
+  currentPageLength,
+  onPageLengthChange,
+  onLoadMore,
 }: CustomerTableProps) {
   return (
     <div className="space-y-6">
@@ -123,20 +137,19 @@ export default function CustomerTable({
         searchable
         searchPlaceholder="Search customers..."
         searchQuery={search}
-        onSearch={(q) => {
-          onSearch(q);
-          onPageChange(1);
-        }}
+        onSearch={onSearch}
         loading={loading}
-        page={page}
         total={data?.total}
-        pageSize={10}
-        onPageChange={onPageChange}
-        toolbarActions={toolbarActions}
+        pageSize={currentPageLength ?? 20}
         onRowClick={onRowClick}
+        toolbarActions={toolbarActions}
         selectable={selectable}
         selectedKeys={selectedKeys}
         onSelectionChange={onSelectionChange}
+        paginationMode={paginationMode}
+        currentPageLength={currentPageLength}
+        onPageLengthChange={onPageLengthChange}
+        onLoadMore={onLoadMore}
       />
     </div>
   );

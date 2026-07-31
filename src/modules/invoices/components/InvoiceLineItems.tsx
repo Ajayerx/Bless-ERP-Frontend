@@ -5,6 +5,7 @@ import { Plus, Trash2, ChevronDown, ChevronRight, ScanBarcode, Search, X } from 
 import { type Product } from "@/services"
 import { formatCurrency } from "@/lib/utils"
 import { invoiceService } from "../services"
+import LinkSearchField from "@/components/ui/LinkSearchField"
 
 export interface LineItemForm {
   id: string
@@ -31,6 +32,13 @@ export interface LineItemForm {
   totalWeight?: number
   grantCommission?: boolean
   pageBreak?: boolean
+  stockUom?: string
+  conversionFactor?: number
+  priceListRate?: number
+  netRate?: number
+  netAmount?: number
+  baseRate?: number
+  baseAmount?: number
   incomeAccount?: string
   costCenter?: string
 }
@@ -50,6 +58,16 @@ interface InvoiceLineItemsProps {
   onAddItemWithQty?: (product: Product, qty: number) => void
   onProductDropdownChange?: (id: string, dropdown: { open: boolean; search: string }) => void
   onSelectProduct?: (lineId: string, product: Product) => void
+  itemDetailsContext?: {
+    currency?: string;
+    conversion_rate?: number;
+    selling_price_list?: string;
+    price_list_currency?: string;
+    plc_conversion_rate?: number;
+    customer?: string;
+    is_pos?: number;
+    is_return?: number;
+  }
 }
 
 const inputClass =
@@ -70,7 +88,10 @@ export default function InvoiceLineItems({
   onAddItemWithQty,
   onProductDropdownChange,
   onSelectProduct,
+  itemDetailsContext,
 }: InvoiceLineItemsProps) {
+  const MARGIN_TYPE_OPTIONS: string[] = ["Percentage", "Amount"];
+
   if (readOnly) {
     return (
       <table className="w-full text-sm">
@@ -171,6 +192,7 @@ export default function InvoiceLineItems({
                   accounts={accounts}
                   costCenters={costCenters}
                   itemTaxTemplates={itemTaxTemplates}
+                   marginTypeOptions={MARGIN_TYPE_OPTIONS}
                   onUpdate={onUpdate}
                   onRemove={onRemove}
                   onProductDropdownChange={onProductDropdownChange}
@@ -188,7 +210,7 @@ export default function InvoiceLineItems({
         >
           <Plus size={14} /> Add Row
         </button>
-        <AddMultipleModal items={items} onAddItemWithQty={onAddItemWithQty} />
+        <AddMultipleModal items={items} onAddItemWithQty={onAddItemWithQty} itemDetailsContext={itemDetailsContext} />
       </div>
     </div>
   )
@@ -199,9 +221,20 @@ type SearchResultItem = { value: string; label: string; description: string }
 function AddMultipleModal({
   items,
   onAddItemWithQty,
+  itemDetailsContext,
 }: {
   items: LineItemForm[]
   onAddItemWithQty?: (product: Product, qty: number) => void
+  itemDetailsContext?: {
+    currency?: string;
+    conversion_rate?: number;
+    selling_price_list?: string;
+    price_list_currency?: string;
+    plc_conversion_rate?: number;
+    customer?: string;
+    is_pos?: number;
+    is_return?: number;
+  }
 }) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState("")
@@ -249,14 +282,14 @@ function AddMultipleModal({
   const handleSetQty = async () => {
     if (!qtyPrompt || !onAddItemWithQty) return
     const { item, qty } = qtyPrompt
-    const details = await invoiceService.getItemDetails(item.value)
+    const details = await invoiceService.getItemDetails(item.value, itemDetailsContext)
     const product: Product = {
       name: item.value,
       item_code: item.value,
       item_name: (details?.item_name as string) || item.label,
       item_group: (details?.item_group as string) || "",
       stock_uom: (details?.stock_uom as string) || "Nos",
-      standard_rate: (details?.standard_rate as number) || 0,
+      standard_rate: (details?.price_list_rate as number) || (details?.standard_rate as number) || 0,
       effective_cost: null,
       stock: 0,
       stock_value: 0,
@@ -393,6 +426,7 @@ function LineItemRow({
   accounts,
   costCenters,
   itemTaxTemplates,
+  marginTypeOptions,
   onUpdate,
   onRemove,
   onProductDropdownChange,
@@ -408,6 +442,7 @@ function LineItemRow({
   accounts?: string[]
   costCenters?: string[]
   itemTaxTemplates?: string[]
+  marginTypeOptions?: string[]
   onUpdate?: (id: string, updates: Partial<LineItemForm>) => void
   onRemove?: (id: string) => void
   onProductDropdownChange?: (id: string, dropdown: { open: boolean; search: string }) => void
@@ -425,38 +460,28 @@ function LineItemRow({
           <span className="text-xs text-muted">{rowIndex}</span>
         </td>
         <td className="px-3 py-2.5">
-          <div className="relative">
-            <input
-              type="text"
-              value={line.productName}
-              onChange={(e) => {
-                onUpdate?.(line.id, { productName: e.target.value, productId: "", sku: "" })
-                onProductDropdownChange?.(line.id, { open: true, search: e.target.value })
-              }}
-              onFocus={() => onProductDropdownChange?.(line.id, { open: true, search: line.productName ?? "" })}
-              placeholder="Search product..."
-              className="w-full px-3 py-2 text-sm border border-border rounded-[10px] focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 transition-all"
-            />
-            {dropdown?.open && (
-              <div className="absolute z-10 mt-1 w-full bg-surface border border-border rounded-[12px] shadow-xl max-h-40 overflow-y-auto">
-                {filteredProducts?.length === 0 ? (
-                  <p className="px-3 py-2 text-sm text-muted">No products found</p>
-                ) : (
-                  filteredProducts?.map((p) => (
-                    <button
-                      key={p.name}
-                      type="button"
-                      onClick={() => onSelectProduct?.(line.id, p)}
-                      className="w-full text-left px-3 py-2 text-sm hover:bg-primary-50 text-body transition-colors"
-                    >
-                      <span className="font-medium">{p.item_name}</span>
-                      <span className="text-xs text-muted ml-2">{p.item_code}</span>
-                    </button>
-                  ))
-                )}
-              </div>
-            )}
-          </div>
+          <LinkSearchField
+            value={line.productName}
+            onChange={(val) => {
+              if (val) {
+                onSelectProduct?.(line.id, {
+                  name: val,
+                  item_code: val,
+                  item_name: val,
+                  stock_uom: "Nos",
+                  standard_rate: 0,
+                  effective_cost: null,
+                  stock: 0,
+                  stock_value: 0,
+                })
+              } else {
+                onUpdate?.(line.id, { productName: "", productId: "", sku: "" })
+              }
+            }}
+            searchFn={(q) => invoiceService.searchItems(q, 0, 20)}
+            placeholder="Search product..."
+            inputClassName="px-3 py-2 text-sm"
+          />
         </td>
         <td className="px-3 py-2.5">
           <input
@@ -528,25 +553,21 @@ function LineItemRow({
               </div>
               <div>
                 <label className="block text-xs font-semibold text-muted mb-1">UOM</label>
-                <input
-                  type="text"
-                  value={line.uom ?? "Nos"}
-                  onChange={(e) => onUpdate?.(line.id, { uom: e.target.value || undefined })}
-                  className={inputClass}
+                <LinkSearchField
+                  value={line.uom}
+                  onChange={(val) => onUpdate?.(line.id, { uom: val || undefined })}
+                  searchFn={(q) => invoiceService.searchUOMs(q)}
+                  placeholder="Nos"
                 />
               </div>
               <div>
                 <label className="block text-xs font-semibold text-muted mb-1">Warehouse</label>
-                <select
-                  value={line.warehouse ?? ""}
-                  onChange={(e) => onUpdate?.(line.id, { warehouse: e.target.value || undefined })}
-                  className={inputClass}
-                >
-                  <option value="">{selectedProduct?.default_warehouse ? `${selectedProduct.default_warehouse} (default)` : "Select warehouse…"}</option>
-                  {warehouses?.filter((w) => w !== selectedProduct?.default_warehouse).map((w) => (
-                    <option key={w} value={w}>{w}</option>
-                  ))}
-                </select>
+                <LinkSearchField
+                  value={line.warehouse}
+                  onChange={(val) => onUpdate?.(line.id, { warehouse: val || undefined })}
+                  searchFn={(q) => invoiceService.searchWarehouses(q)}
+                  placeholder="Select warehouse…"
+                />
               </div>
               <div>
                 <label className="block text-xs font-semibold text-muted mb-1">Discount %</label>
@@ -589,8 +610,9 @@ function LineItemRow({
                   className={inputClass}
                 >
                   <option value="">None</option>
-                  <option value="Percentage">Percentage</option>
-                  <option value="Amount">Amount</option>
+                  {(marginTypeOptions ?? ["Percentage", "Amount"]).map((opt) => (
+                    <option key={opt} value={opt}>{opt}</option>
+                  ))}
                 </select>
               </div>
               <div>
@@ -607,16 +629,78 @@ function LineItemRow({
               </div>
               <div>
                 <label className="block text-xs font-semibold text-muted mb-1">Item Tax Template</label>
-                <select
-                  value={line.itemTaxTemplate ?? ""}
-                  onChange={(e) => onUpdate?.(line.id, { itemTaxTemplate: e.target.value || undefined })}
+                <LinkSearchField
+                  value={line.itemTaxTemplate}
+                  onChange={(val) => onUpdate?.(line.id, { itemTaxTemplate: val || undefined })}
+                  searchFn={(q) => invoiceService.searchItemTaxTemplates(q)}
+                  placeholder="None"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-muted mb-1">Stock UOM</label>
+                <input
+                  type="text"
+                  value={line.stockUom ?? ""}
+                  readOnly
+                  className={`${inputClass} bg-gray-100`}
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-muted mb-1">Conversion Factor</label>
+                <input
+                  type="number"
+                  min={0}
+                  step="any"
+                  value={line.conversionFactor ?? 1}
+                  onChange={(e) => onUpdate?.(line.id, { conversionFactor: parseFloat(e.target.value) || 1 })}
                   className={inputClass}
-                >
-                  <option value="">None</option>
-                  {itemTaxTemplates?.map((t) => (
-                    <option key={t} value={t}>{t}</option>
-                  ))}
-                </select>
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-muted mb-1">Price List Rate</label>
+                <input
+                  type="number"
+                  value={line.priceListRate ?? ""}
+                  readOnly
+                  className={`${inputClass} bg-gray-100`}
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-muted mb-1">Net Rate</label>
+                <input
+                  type="number"
+                  value={line.netRate ?? ""}
+                  readOnly
+                  className={`${inputClass} bg-gray-100`}
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-muted mb-1">Net Amount</label>
+                <input
+                  type="number"
+                  value={line.netAmount ?? ""}
+                  readOnly
+                  className={`${inputClass} bg-gray-100`}
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-muted mb-1">Base Rate</label>
+                <input
+                  type="number"
+                  value={line.baseRate ?? ""}
+                  readOnly
+                  className={`${inputClass} bg-gray-100`}
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-muted mb-1">Base Amount</label>
+                <input
+                  type="number"
+                  value={line.baseAmount ?? ""}
+                  readOnly
+                  className={`${inputClass} bg-gray-100`}
+                />
               </div>
 
               {(hasBatch || hasSerial) && (
@@ -695,29 +779,21 @@ function LineItemRow({
 
               <div>
                 <label className="block text-xs font-semibold text-muted mb-1">Income Account</label>
-                <select
-                  value={line.incomeAccount ?? ""}
-                  onChange={(e) => onUpdate?.(line.id, { incomeAccount: e.target.value || undefined })}
-                  className={inputClass}
-                >
-                  <option value="">Select account…</option>
-                  {accounts?.map((a) => (
-                    <option key={a} value={a}>{a}</option>
-                  ))}
-                </select>
+                <LinkSearchField
+                  value={line.incomeAccount}
+                  onChange={(val) => onUpdate?.(line.id, { incomeAccount: val || undefined })}
+                  searchFn={(q) => invoiceService.searchAccounts(q)}
+                  placeholder="Select account…"
+                />
               </div>
               <div>
                 <label className="block text-xs font-semibold text-muted mb-1">Cost Center</label>
-                <select
-                  value={line.costCenter ?? ""}
-                  onChange={(e) => onUpdate?.(line.id, { costCenter: e.target.value || undefined })}
-                  className={inputClass}
-                >
-                  <option value="">Select cost center…</option>
-                  {costCenters?.map((c) => (
-                    <option key={c} value={c}>{c}</option>
-                  ))}
-                </select>
+                <LinkSearchField
+                  value={line.costCenter}
+                  onChange={(val) => onUpdate?.(line.id, { costCenter: val || undefined })}
+                  searchFn={(q) => invoiceService.searchCostCenters(q)}
+                  placeholder="Select cost center…"
+                />
               </div>
             </div>
           </td>

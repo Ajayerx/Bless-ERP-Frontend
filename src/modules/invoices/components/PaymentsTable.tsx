@@ -2,6 +2,8 @@
 
 import { Plus, Trash2 } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
+import LinkSearchField from "@/components/ui/LinkSearchField";
+import { invoiceService } from "../services";
 
 export interface PaymentRow {
   id: string;
@@ -22,6 +24,7 @@ interface PaymentsTableProps {
   accounts: string[];
   grandTotal?: number;
   readOnly?: boolean;
+  company?: string;
   onChange: (payments: PaymentRow[]) => void;
 }
 
@@ -31,6 +34,7 @@ export default function PaymentsTable({
   accounts,
   grandTotal,
   readOnly = false,
+  company,
   onChange,
 }: PaymentsTableProps) {
   const addRow = () => {
@@ -93,22 +97,20 @@ export default function PaymentsTable({
                     {readOnly ? (
                       <span className="text-heading">{row.mode_of_payment}</span>
                     ) : (
-                      <select
+                      <LinkSearchField
                         value={row.mode_of_payment}
-                        onChange={(e) =>
-                          updateRow(row.id, {
-                            mode_of_payment: e.target.value,
-                          })
-                        }
-                        className={`${inputClass} text-xs py-1.5`}
-                      >
-                        <option value="">Select mode</option>
-                        {modes.map((m) => (
-                          <option key={m} value={m}>
-                            {m}
-                          </option>
-                        ))}
-                      </select>
+                        onChange={(val) => {
+                          const mop = val || ""
+                          updateRow(row.id, { mode_of_payment: mop })
+                          if (mop && company) {
+                            invoiceService.getBankCashAccount(mop, company).then((acc) => {
+                              if (acc) updateRow(row.id, { account: acc })
+                            })
+                          }
+                        }}
+                        searchFn={(q) => invoiceService.searchModesOfPayment(q)}
+                        placeholder="Select mode"
+                      />
                     )}
                   </td>
                   <td className="py-1.5">
@@ -138,22 +140,16 @@ export default function PaymentsTable({
                     {readOnly ? (
                       <span className="text-heading">{row.account || ""}</span>
                     ) : (
-                      <select
-                        value={row.account ?? ""}
-                        onChange={(e) =>
+                      <LinkSearchField
+                        value={row.account}
+                        onChange={(val) =>
                           updateRow(row.id, {
-                            account: e.target.value || undefined,
+                            account: val || undefined,
                           })
                         }
-                        className={`${inputClass} text-xs py-1.5`}
-                      >
-                        <option value="">Select account</option>
-                        {accounts.map((a) => (
-                          <option key={a} value={a}>
-                            {a}
-                          </option>
-                        ))}
-                      </select>
+                        searchFn={(q) => invoiceService.searchAccounts(q)}
+                        placeholder="Select account"
+                      />
                     )}
                   </td>
                   {!readOnly && (

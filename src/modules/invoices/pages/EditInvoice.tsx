@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { ArrowLeft, Save } from "lucide-react";
@@ -32,7 +32,7 @@ import InvoiceLineItems, {
 import InvoiceTotals from "../components/InvoiceTotals";
 import {
   validateInvoice,
-  getValidationSummary,
+  getErrorMessages,
 } from "../validation";
 
 function calcTotal(qty: number, price: number): number {
@@ -47,14 +47,20 @@ function invToFormData(inv: SalesInvoice): InvoiceFormData {
     issueDate: inv.posting_date?.slice(0, 10) ?? "",
     dueDate: inv.due_date?.slice(0, 10) ?? "",
     postingTime: inv.posting_time,
-    setPostingTime: inv.set_posting_time,
+    setPostingTime: !!inv.set_posting_time,
     updateStock: !!inv.update_stock,
     setWarehouse: inv.set_warehouse,
     setTargetWarehouse: inv.set_target_warehouse,
     customerAddress: inv.customer_address,
+    addressDisplay: inv.address_display,
     shippingAddressName: inv.shipping_address_name,
+    shippingAddress: inv.shipping_address,
     contactPerson: inv.contact_person,
+    contactDisplay: inv.contact_display,
+    contactEmail: inv.contact_email,
+    contactMobile: inv.contact_mobile,
     dispatchAddressName: inv.dispatch_address_name,
+    dispatchAddress: inv.dispatch_address,
     poNo: inv.po_no,
     poDate: inv.po_date?.slice(0, 10),
     paymentTermsTemplate: inv.payment_terms_template,
@@ -66,12 +72,12 @@ function invToFormData(inv: SalesInvoice): InvoiceFormData {
     discountAmount: inv.discount_amount,
     additionalDiscountPercentage: inv.additional_discount_percentage,
     couponCode: inv.coupon_code,
-    isCashOrNonTradeDiscount: inv.is_cash_or_non_trade_discount,
+    isCashOrNonTradeDiscount: !!inv.is_cash_or_non_trade_discount,
     discountAccount: inv.additional_discount_account,
     writeOffAmount: inv.write_off_amount,
     writeOffAccount: inv.write_off_account,
     writeOffCostCenter: inv.write_off_cost_center,
-    disableRoundedTotal: inv.disable_rounded_total,
+    disableRoundedTotal: !!inv.disable_rounded_total,
     useCompanyDefaultCostCenterForRoundOff:
       inv.use_company_roundoff_cost_center,
     costCenter: inv.cost_center,
@@ -87,21 +93,26 @@ function invToFormData(inv: SalesInvoice): InvoiceFormData {
       commission_rate: m.commission_rate,
       incentives: m.incentives,
     })),
-    redeemLoyaltyPoints: inv.redeem_loyalty_points,
+    redeemLoyaltyPoints: !!inv.redeem_loyalty_points,
     loyaltyProgram: inv.loyalty_program,
     loyaltyPoints: inv.loyalty_points,
     loyaltyAmount: inv.loyalty_amount,
-    redemptionAccount: inv.redemption_account,
-    redemptionCostCenter: inv.redemption_cost_center,
+    loyaltyRedemptionAccount: inv.loyalty_redemption_account,
+    loyaltyRedemptionCostCenter: inv.loyalty_redemption_cost_center,
     letterHead: inv.letter_head,
     groupSameItems: inv.group_same_items,
     selectPrintHeading: inv.select_print_heading,
     language: inv.language,
     tcName: inv.tc_name,
     terms: inv.terms,
-    isReturn: inv.is_return,
+    paymentScheduleRows: inv.payment_schedule?.map((ps) => ({
+      id: crypto.randomUUID(),
+      due_date: ps.due_date?.slice(0, 10) ?? "",
+      payment_amount: ps.payment_amount ?? 0,
+    })),
+    isReturn: !!inv.is_return,
     returnAgainst: inv.return_against,
-    isDebitNote: inv.is_debit_note,
+    isDebitNote: !!inv.is_debit_note,
     updateBilledAmountInSalesOrder: inv.update_billed_amount_in_sales_order,
     updateBilledAmountInDeliveryNote: inv.update_billed_amount_in_delivery_note,
     updateOutstandingForSelf: inv.update_outstanding_for_self,
@@ -112,9 +123,9 @@ function invToFormData(inv: SalesInvoice): InvoiceFormData {
       advance_amount: a.advance_amount,
       allocated_amount: a.allocated_amount,
     })),
-    allocateAdvancesAutomatically: inv.allocate_advances_automatically,
+    allocateAdvancesAutomatically: !!inv.allocate_advances_automatically,
     onlyIncludeAllocatedPayments: inv.only_include_allocated_payments,
-    isPos: inv.is_pos,
+    isPos: !!inv.is_pos,
     posProfile: inv.pos_profile,
     accountForChangeAmount: inv.account_for_change_amount,
     subscription: inv.subscription,
@@ -140,7 +151,7 @@ function invToFormData(inv: SalesInvoice): InvoiceFormData {
     baseTotalTaxesAndCharges: inv.base_total_taxes_and_charges,
     baseRoundingAdjustment: inv.base_rounding_adjustment,
     baseRoundedTotal: inv.base_rounded_total,
-    inWords: inv.base_in_words,
+    inWords: inv.in_words,
     totalNetWeight: inv.total_net_weight,
     netTotal: inv.net_total,
     totalTaxesAndCharges: inv.total_taxes_and_charges,
@@ -181,6 +192,7 @@ export default function EditInvoice() {
   const [lineItems, setLineItems] = useState<LineItemForm[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [errorMessages, setErrorMessages] = useState<string[]>([]);
   const [fieldErrors, setFieldErrors] = useState<InvoiceFieldErrors>({});
   const [productDropdowns, setProductDropdowns] = useState<
     Record<string, { open: boolean; search: string }>
@@ -202,6 +214,12 @@ export default function EditInvoice() {
   const [conversionRate, setConversionRate] = useState<number>(1);
   const [plcConversionRate, setPlcConversionRate] = useState<number>(1);
   const [editableTaxRows, setEditableTaxRows] = useState<EditableTaxRow[]>([]);
+
+  // Refs to always read latest state in async handlers (avoids stale closures)
+  const formDataRef = useRef(formData);
+  formDataRef.current = formData;
+  const lineItemsRef = useRef(lineItems);
+  lineItemsRef.current = lineItems;
 
   useEffect(() => {
     if (!id) return;
@@ -247,6 +265,14 @@ export default function EditInvoice() {
           conversionRate: inv.conversion_rate ?? 1,
           plcConversionRate: inv.plc_conversion_rate ?? 1,
         }));
+        if (inv.taxes_and_charges) {
+          invoiceService
+            .getTaxTemplateDetails(inv.taxes_and_charges)
+            .then((td) => {
+              if (td) setTaxTemplate(td);
+            })
+            .catch(() => {});
+        }
         setLineItems(
           (inv.items ?? []).map((item: SalesInvoiceItem) => ({
             id: crypto.randomUUID(),
@@ -357,6 +383,49 @@ export default function EditInvoice() {
       prev.length > 1 ? prev.filter((l) => l.id !== lineId) : prev,
     );
 
+  const handleAddItems = (fetchedItems: Array<Record<string, unknown>>) => {
+    if (!fetchedItems.length) return
+    setLineItems((prev) => {
+      const newItems = fetchedItems.map((item) => ({
+        id: crypto.randomUUID(),
+        productId: (item.item_code as string) || (item.item_code as string),
+        productName: (item.item_name as string) || "",
+        description: (item.description as string) || undefined,
+        sku: item.item_code as string,
+        quantity: Number(item.qty ?? item.stock_qty ?? 1),
+        price: Number(item.rate ?? 0),
+        total: Number(item.amount ?? 0),
+        uom: (item.uom as string) || (item.stock_uom as string) || "Nos",
+        warehouse: (item.warehouse as string) || (item.t_warehouse as string) || "",
+        discountPercentage: item.discount_percentage ? Number(item.discount_percentage) : undefined,
+        discountAmount: item.discount_amount ? Number(item.discount_amount) : undefined,
+        marginType: item.margin_type as "Percentage" | "Amount" | undefined,
+        marginRateOrAmount: item.margin_rate_or_amount ? Number(item.margin_rate_or_amount) : undefined,
+        itemTaxTemplate: (item.item_tax_template as string) || undefined,
+        batchNo: (item.batch_no as string) || undefined,
+        serialNo: (item.serial_no as string) || undefined,
+        enableDeferredRevenue: item.enable_deferred_revenue === 1 || item.enable_deferred_revenue === true,
+        serviceStartDate: (item.service_start_date as string) || undefined,
+        serviceEndDate: (item.service_end_date as string) || undefined,
+        weightPerUnit: item.weight_per_unit ? Number(item.weight_per_unit) : undefined,
+        totalWeight: item.total_weight ? Number(item.total_weight) : undefined,
+        incomeAccount: (item.income_account as string) || companyDefaults?.defaultIncomeAccount || "",
+        costCenter: (item.cost_center as string) || companyDefaults?.defaultCostCenter || "",
+        stockUom: (item.stock_uom as string) || undefined,
+        conversionFactor: item.conversion_factor ? Number(item.conversion_factor) : undefined,
+        priceListRate: item.price_list_rate ? Number(item.price_list_rate) : undefined,
+        netRate: item.net_rate ? Number(item.net_rate) : undefined,
+        netAmount: item.net_amount ? Number(item.net_amount) : undefined,
+        baseRate: item.base_rate ? Number(item.base_rate) : undefined,
+        baseAmount: item.base_amount ? Number(item.base_amount) : undefined,
+      }))
+      if (prev.length === 1 && !prev[0].productId && prev[0].quantity === 1 && prev[0].price === 0) {
+        return newItems
+      }
+      return [...prev, ...newItems]
+    })
+  }
+
   const updateLine = (lineId: string, updates: Partial<LineItemForm>) =>
     setLineItems((prev) =>
       prev.map((l) => {
@@ -367,19 +436,40 @@ export default function EditInvoice() {
       }),
     );
 
-  const selectProduct = (lineId: string, product: Product) => {
+  const selectProduct = async (lineId: string, product: Product) => {
+    let incomeAccount = product.income_account || companyDefaults?.defaultIncomeAccount || "";
+    let costCenter = product.cost_center || companyDefaults?.defaultCostCenter || "";
+    let itemDetails: Record<string, unknown> | null = null;
+    try {
+      itemDetails = await invoiceService.getItemDetails(product.item_code, {
+        currency: formData.currency || companyDefaults?.currency,
+        conversion_rate: formData.conversionRate ?? conversionRate,
+        selling_price_list: formData.sellingPriceList || companyDefaults?.defaultSellingPriceList,
+        price_list_currency: formData.priceListCurrency || companyDefaults?.currency,
+        plc_conversion_rate: formData.plcConversionRate ?? plcConversionRate,
+        customer: formData.customer,
+        is_pos: formData.isPos ? 1 : 0,
+        is_return: formData.isReturn ? 1 : 0,
+        name: id,
+      });
+      if (itemDetails) {
+        incomeAccount = (itemDetails.income_account as string) || incomeAccount;
+        costCenter = (itemDetails.cost_center as string) || costCenter;
+      }
+    } catch {
+      // fall back to product/company defaults
+    }
+    const rate = (itemDetails?.price_list_rate as number) || product.standard_rate;
     updateLine(lineId, {
       productId: product.item_code,
       productName: product.item_name,
       description: product.description || undefined,
       sku: product.item_code,
-      price: product.standard_rate,
-      uom: product.stock_uom || "Nos",
-      warehouse: product.default_warehouse || "",
-      incomeAccount:
-        product.income_account || companyDefaults?.defaultIncomeAccount || "",
-      costCenter:
-        product.cost_center || companyDefaults?.defaultCostCenter || "",
+      price: rate,
+      uom: (itemDetails?.uom as string) || product.stock_uom || "Nos",
+      warehouse: (itemDetails?.warehouse as string) || product.default_warehouse || "",
+      incomeAccount,
+      costCenter,
       discountPercentage: undefined,
       discountAmount: undefined,
       marginType: undefined,
@@ -431,140 +521,149 @@ export default function EditInvoice() {
 
   const handleSave = async () => {
     if (!id) return;
-    const errors = validateInvoice(formData, lineItems, companyDefaults);
+    const fd = formDataRef.current;
+    const li = lineItemsRef.current;
+    const errors = validateInvoice(fd, li, companyDefaults);
     setFieldErrors(errors);
-    const msg = getValidationSummary(errors);
-    if (msg) {
-      setError(msg);
+    const msgs = getErrorMessages(errors);
+    if (msgs.length > 0) {
+      setErrorMessages(msgs);
       return;
     }
     setSaving(true);
     setError("");
+    setErrorMessages([]);
     setFieldErrors({});
-    // Excluded from payload (ERPNext uses company defaults): posting_time, cost_center, project
+    // Excluded from payload (ERPNext uses company defaults): project
     try {
       await invoiceService.update(id, {
-        customer: formData.customer,
+        customer: fd.customer,
         company: companyDefaults?.company || "",
-        posting_date: formData.issueDate,
-        due_date: formData.dueDate,
-        currency: formData.currency || companyDefaults?.currency || "",
-        conversion_rate: formData.conversionRate ?? conversionRate,
+        posting_date: fd.issueDate,
+        due_date: fd.dueDate,
+        currency: fd.currency || companyDefaults?.currency || "",
+        conversion_rate: fd.conversionRate ?? conversionRate,
         selling_price_list:
-          formData.sellingPriceList ||
+          fd.sellingPriceList ||
           companyDefaults?.defaultSellingPriceList ||
           "",
         price_list_currency:
-          formData.priceListCurrency || companyDefaults?.currency || "",
-        plc_conversion_rate: formData.plcConversionRate ?? plcConversionRate,
-        ignore_pricing_rule: formData.ignorePricingRule,
-        update_stock: formData.updateStock,
-        set_warehouse: formData.setWarehouse || undefined,
-        set_target_warehouse: formData.setTargetWarehouse || undefined,
+          fd.priceListCurrency || companyDefaults?.currency || "",
+        plc_conversion_rate: fd.plcConversionRate ?? plcConversionRate,
+        ignore_pricing_rule: fd.ignorePricingRule,
+        update_stock: fd.updateStock,
+        set_warehouse: fd.setWarehouse || undefined,
+        set_target_warehouse: fd.setTargetWarehouse || undefined,
         debit_to: companyDefaults?.defaultReceivableAccount || "",
-        customer_address: formData.customerAddress || undefined,
-        shipping_address_name: formData.shippingAddressName || undefined,
-        contact_person: formData.contactPerson || undefined,
-        po_no: formData.poNo || undefined,
-        po_date: formData.poDate || undefined,
-        payment_terms_template: formData.paymentTermsTemplate || undefined,
-        apply_discount_on: formData.applyDiscountOn || undefined,
-        discount_amount: formData.discountAmount,
-        additional_discount_percentage: formData.additionalDiscountPercentage,
-        coupon_code: formData.couponCode || undefined,
-        is_cash_or_non_trade_discount: formData.isCashOrNonTradeDiscount,
-        additional_discount_account: formData.discountAccount || undefined,
-        write_off_amount: formData.writeOffAmount,
-        write_off_account: formData.writeOffAccount || undefined,
-        write_off_cost_center: formData.writeOffCostCenter || undefined,
+        customer_address: fd.customerAddress || undefined,
+        shipping_address_name: fd.shippingAddressName || undefined,
+        contact_person: fd.contactPerson || undefined,
+        po_no: fd.poNo || undefined,
+        po_date: fd.poDate || undefined,
+        payment_terms_template: fd.paymentTermsTemplate || null,
+        apply_discount_on: fd.applyDiscountOn || undefined,
+        discount_amount: fd.discountAmount,
+        additional_discount_percentage: fd.additionalDiscountPercentage,
+        coupon_code: fd.couponCode || undefined,
+        is_cash_or_non_trade_discount: fd.isCashOrNonTradeDiscount,
+        additional_discount_account: fd.discountAccount || undefined,
+        write_off_amount: fd.writeOffAmount,
+        write_off_account: fd.writeOffAccount || undefined,
+        write_off_cost_center: fd.writeOffCostCenter || undefined,
         write_off_outstanding_amount_automatically:
-          formData.writeOffOutstandingAmountAutomatically,
-        disable_rounded_total: formData.disableRoundedTotal,
+          fd.writeOffOutstandingAmountAutomatically,
+        disable_rounded_total: fd.disableRoundedTotal,
         use_company_roundoff_cost_center:
-          formData.useCompanyDefaultCostCenterForRoundOff,
-        tax_category: formData.taxCategory || undefined,
+          fd.useCompanyDefaultCostCenterForRoundOff,
+        tax_category: fd.taxCategory || undefined,
         tax_withholding_category: undefined, // ERPNext-managed
-        shipping_rule: formData.shippingRule || undefined,
-        incoterm: formData.incoterm || undefined,
-        named_place: formData.namedPlace || undefined,
-        apply_tds: formData.applyTds,
+        shipping_rule: fd.shippingRule || undefined,
+        incoterm: fd.incoterm || undefined,
+        named_place: fd.namedPlace || undefined,
+        // apply_tds removed — not a Sales Invoice field
         // Sales Team
-        sales_partner: formData.salesPartner || undefined,
-        commission_rate: formData.commissionRate,
-        sales_team: formData.salesTeam?.map((m) => ({
+        sales_partner: fd.salesPartner || undefined,
+        commission_rate: fd.commissionRate,
+        sales_team: fd.salesTeam?.map((m) => ({
           sales_person: m.sales_person,
           allocated_percentage: m.allocated_percentage,
           commission_rate: m.commission_rate,
           incentives: m.incentives,
         })),
         // Loyalty
-        redeem_loyalty_points: formData.redeemLoyaltyPoints,
-        loyalty_program: formData.loyaltyProgram || undefined,
-        loyalty_points: formData.loyaltyPoints,
-        loyalty_amount: formData.loyaltyAmount,
-        redemption_account: formData.redemptionAccount || undefined,
-        redemption_cost_center: formData.redemptionCostCenter || undefined,
+        redeem_loyalty_points: fd.redeemLoyaltyPoints,
+        loyalty_program: fd.loyaltyProgram || undefined,
+        loyalty_points: fd.loyaltyPoints,
+        loyalty_amount: fd.loyaltyAmount,
+        loyalty_redemption_account: fd.loyaltyRedemptionAccount || undefined,
+        loyalty_redemption_cost_center: fd.loyaltyRedemptionCostCenter || undefined,
         // Print
-        letter_head: formData.letterHead || undefined,
-        group_same_items: formData.groupSameItems,
-        select_print_heading: formData.selectPrintHeading || undefined,
-        language: formData.language || undefined,
+        letter_head: fd.letterHead || undefined,
+        group_same_items: fd.groupSameItems,
+        select_print_heading: fd.selectPrintHeading || undefined,
+        language: fd.language || undefined,
         // Terms
-        tc_name: formData.tcName || undefined,
-        terms: formData.terms || undefined,
+        tc_name: fd.tcName || undefined,
+        terms: fd.terms || undefined,
         // Returns
-        is_return: formData.isReturn,
-        return_against: formData.returnAgainst || undefined,
-        is_debit_note: formData.isDebitNote,
+        is_return: fd.isReturn ? 1 : 0,
+        return_against: fd.returnAgainst || undefined,
+        is_debit_note: fd.isDebitNote ? 1 : 0,
         update_billed_amount_in_sales_order:
-          formData.updateBilledAmountInSalesOrder,
+          fd.updateBilledAmountInSalesOrder,
         update_billed_amount_in_delivery_note:
-          formData.updateBilledAmountInDeliveryNote,
-        update_outstanding_for_self: formData.updateOutstandingForSelf,
+          fd.updateBilledAmountInDeliveryNote,
+        update_outstanding_for_self: fd.updateOutstandingForSelf,
         // Advances
-        allocate_advances_automatically: formData.allocateAdvancesAutomatically,
-        only_include_allocated_payments: formData.onlyIncludeAllocatedPayments,
-        advances: formData.advances?.map((a) => ({
+        allocate_advances_automatically: fd.allocateAdvancesAutomatically,
+        only_include_allocated_payments: fd.onlyIncludeAllocatedPayments,
+        advances: fd.advances?.map((a) => ({
           reference_type: a.reference_type,
           reference_name: a.reference_name,
           advance_amount: a.advance_amount,
           allocated_amount: a.allocated_amount,
         })),
         // POS
-        is_pos: formData.isPos,
-        pos_profile: formData.posProfile || undefined,
-        account_for_change_amount: formData.accountForChangeAmount || undefined,
-        cash_bank_account: formData.cashBankAccount || undefined,
-        payments: formData.payments?.map((p) => ({
+        is_pos: fd.isPos ? 1 : 0,
+        pos_profile: fd.posProfile || undefined,
+        account_for_change_amount: fd.accountForChangeAmount || undefined,
+        cash_bank_account: fd.cashBankAccount || undefined,
+        payments: fd.payments?.map((p) => ({
           mode_of_payment: p.mode_of_payment,
           amount: p.amount,
           account: p.account || undefined,
         })),
         // Subscription
-        subscription: formData.subscription || undefined,
-        from_date: formData.fromDate || undefined,
-        to_date: formData.toDate || undefined,
-        auto_repeat: formData.autoRepeat || undefined,
-        remarks: formData.remarks || undefined,
-        campaign: formData.campaign || undefined,
-        source: formData.source || undefined,
+        subscription: fd.subscription || undefined,
+        from_date: fd.fromDate || undefined,
+        to_date: fd.toDate || undefined,
+        auto_repeat: fd.autoRepeat || undefined,
+        remarks: fd.remarks || undefined,
+        campaign: fd.campaign || undefined,
+        source: fd.source || undefined,
         // Address & Contact
-        dispatch_address_name: formData.dispatchAddressName || undefined,
-        company_address: formData.companyAddress || undefined,
+        dispatch_address_name: fd.dispatchAddressName || undefined,
+        company_address: fd.companyAddress || undefined,
+        company_contact_person: fd.companyContactPerson || undefined,
         // fetch_from fields
-        tax_id: formData.taxId || undefined,
-        company_tax_id: formData.companyTaxId || undefined,
-        is_internal_customer: formData.isInternalCustomer,
-        represents_company: formData.representsCompany || undefined,
-        title: formData.title || undefined,
+        tax_id: fd.taxId || undefined,
+        company_tax_id: fd.companyTaxId || undefined,
+        is_internal_customer: fd.isInternalCustomer ? 1 : 0,
+        represents_company: fd.representsCompany || undefined,
+        inter_company_invoice_reference: fd.interCompanyInvoiceReference || undefined,
+        is_discounted: fd.isDiscounted ? 1 : 0,
+        is_opening: fd.isOpening || undefined,
+        customer_group: fd.customerGroup || undefined,
+        title: fd.title || undefined,
         naming_series: undefined, // ERPNext-managed
-        set_posting_time: formData.setPostingTime,
-        posting_time: formData.postingTime || undefined,
+        set_posting_time: 1,
+        posting_time: fd.postingTime || undefined,
         // Accounting Details
-        unrealized_profit_loss_account: formData.unrealizedProfitLossAccount || undefined,
-        against_income_account: formData.againstIncomeAccount || undefined,
+        cost_center: fd.costCenter || null,
+        unrealized_profit_loss_account: fd.unrealizedProfitLossAccount || undefined,
+        against_income_account: fd.againstIncomeAccount || undefined,
         // Tax template
-        taxes_and_charges: formData.taxesAndCharges || undefined,
+        taxes_and_charges: fd.taxesAndCharges || undefined,
         taxes: taxRows.map((r) => ({
           charge_type: r.charge_type,
           account_head: r.account_head,
@@ -572,40 +671,45 @@ export default function EditInvoice() {
           description: r.description,
           included_in_print_rate: r.included_in_print_rate,
         })),
-        items: lineItems.map((li) => {
-          const amt = li.quantity * li.price;
+        items: li.map((item) => {
+          const amt = item.quantity * item.price;
+          const rate = fd.conversionRate ?? conversionRate ?? 1;
           return {
-            item_code: li.sku || li.productName,
-            item_name: li.productName,
-            description: li.description || undefined,
-            qty: li.quantity,
-            uom: li.uom,
-            conversion_factor: 1,
-            rate: li.price,
+            item_code: item.sku || item.productName,
+            item_name: item.productName,
+            description: item.description || undefined,
+            qty: item.quantity,
+            uom: item.uom,
+            conversion_factor: item.conversionFactor ?? 1,
+            rate: item.price,
             amount: amt,
-            base_rate: li.price,
-            base_amount: amt,
-            warehouse: li.warehouse || undefined,
-            discount_percentage: li.discountPercentage ?? 0,
-            discount_amount: li.discountAmount ?? 0,
-            margin_type: li.marginType || undefined,
-            margin_rate_or_amount: li.marginRateOrAmount ?? 0,
-            item_tax_template: li.itemTaxTemplate || undefined,
-            batch_no: li.batchNo || undefined,
-            serial_no: li.serialNo || undefined,
-            enable_deferred_revenue: li.enableDeferredRevenue ?? false,
-            service_start_date: li.serviceStartDate || undefined,
-            service_end_date: li.serviceEndDate || undefined,
-            grant_commission: li.grantCommission !== false,
-            page_break_before: li.pageBreak ?? false,
+            base_rate: item.price * rate,
+            base_amount: amt * rate,
+            warehouse: item.warehouse || undefined,
+            discount_percentage: item.discountPercentage ?? 0,
+            discount_amount: item.discountAmount ?? 0,
+            margin_type: item.marginType || undefined,
+            margin_rate_or_amount: item.marginRateOrAmount ?? 0,
+            item_tax_template: item.itemTaxTemplate || undefined,
+            batch_no: item.batchNo || undefined,
+            serial_no: item.serialNo || undefined,
+            enable_deferred_revenue: item.enableDeferredRevenue ?? false,
+            service_start_date: item.serviceStartDate || undefined,
+            service_end_date: item.serviceEndDate || undefined,
+            grant_commission: item.grantCommission !== false,
+            page_break: item.pageBreak ?? false,
             income_account:
-              li.incomeAccount ||
+              item.incomeAccount ||
               companyDefaults?.defaultIncomeAccount ||
               undefined,
             cost_center:
-              li.costCenter || companyDefaults?.defaultCostCenter || undefined,
+              item.costCenter || companyDefaults?.defaultCostCenter || undefined,
           };
         }),
+        payment_schedule: fd.paymentScheduleRows?.map((ps) => ({
+          due_date: ps.due_date || fd.dueDate,
+          payment_amount: ps.payment_amount,
+        })),
       });
       navigate(`/invoices/${id}`);
     } catch (e) {
@@ -653,6 +757,17 @@ export default function EditInvoice() {
           </div>
         </div>
 
+        {errorMessages.length > 0 && (
+          <div className="p-4 bg-red-50 border border-red-200 rounded-[14px] text-sm text-red-700">
+            <p className="font-semibold mb-1">Please fix the following:</p>
+            <ul className="list-disc list-inside space-y-0.5">
+              {errorMessages.map((msg, i) => (
+                <li key={i}>{msg}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+
         {error && (
           <div className="p-4 bg-red-50 border border-red-200 rounded-[14px] text-sm text-red-700">
             {error}
@@ -670,7 +785,15 @@ export default function EditInvoice() {
               customers={customers}
               formData={formData}
               onChange={(updates) => {
-                setFormData((prev) => ({ ...prev, ...updates }));
+                setFormData((prev) => {
+                  const next = { ...prev, ...updates };
+                  if ("isReturn" in updates) {
+                    next.namingSeries = updates.isReturn
+                      ? "ACC-SINV-RET-.YYYY.-"
+                      : "ACC-SINV-.YYYY.-";
+                  }
+                  return next;
+                });
                 if (fieldErrors) {
                   const cleared = { ...fieldErrors };
                   for (const key of Object.keys(updates)) {
@@ -680,7 +803,9 @@ export default function EditInvoice() {
                       issueDate: "postingDate",
                       dueDate: "dueDate",
                       currency: "currency",
+                      conversionRate: "conversionRate",
                       sellingPriceList: "sellingPriceList",
+                      plcConversionRate: "plcConversionRate",
                       debitTo: "debitTo",
                       returnAgainst: "returnAgainst",
                     };
@@ -690,7 +815,7 @@ export default function EditInvoice() {
                     }
                   }
                   setFieldErrors(cleared);
-                  if (Object.keys(cleared).length === 0) setError("");
+                  if (Object.keys(cleared).length === 0) { setError(""); setErrorMessages([]); }
                 }
               }}
               fieldErrors={fieldErrors}
@@ -707,11 +832,12 @@ export default function EditInvoice() {
               grandTotal={grandTotal}
               subtotal={subtotal}
               totalTaxesAndCharges={totalTaxesAndCharges}
-              totalQuantity={lineItems.reduce(
-                (sum, l) => sum + (l.quantity ?? 0),
-                0,
-              )}
-              lineItems={
+            totalQuantity={lineItems.reduce(
+              (sum, l) => sum + (l.quantity ?? 0),
+              0,
+            )}
+            onAddItems={handleAddItems}
+            lineItems={
                 <InvoiceLineItems
                   items={lineItems}
                   products={products}
@@ -725,6 +851,16 @@ export default function EditInvoice() {
                     setProductDropdowns((prev) => ({ ...prev, [lid]: dd }))
                   }
                   onSelectProduct={selectProduct}
+                  itemDetailsContext={{
+                    currency: formData.currency || companyDefaults?.currency,
+                    conversion_rate: formData.conversionRate ?? conversionRate,
+                    selling_price_list: formData.sellingPriceList || companyDefaults?.defaultSellingPriceList,
+                    price_list_currency: formData.priceListCurrency || companyDefaults?.currency,
+                    plc_conversion_rate: formData.plcConversionRate ?? plcConversionRate,
+                    customer: formData.customer,
+                    is_pos: formData.isPos ? 1 : 0,
+                    is_return: formData.isReturn ? 1 : 0,
+                  }}
                 />
               }
               totals={

@@ -1,12 +1,14 @@
 "use client";
 
 import { Trash2, Plus } from "lucide-react";
+import LinkSearchField from "./LinkSearchField";
 
 export interface GridColumn<T> {
   key: keyof T;
   label: string;
   type: "link" | "text" | "number" | "checkbox" | "readonly";
   options?: string[];
+  searchFn?: (query: string) => Promise<{ items: { value: string; label: string; description: string }[] }>;
 }
 
 interface ChildTableGridProps<T> {
@@ -69,7 +71,18 @@ export default function ChildTableGrid<T extends object>({
                 >
                   {columns.map((col) => (
                     <td key={String(col.key)} className="py-2 pr-3 align-top">
-                      {col.type === "link" && (
+                      {col.type === "link" && col.searchFn ? (
+                        <div className="w-40">
+                          <LinkSearchField
+                            value={(row[col.key] as string) ?? ""}
+                            onChange={(v) => updateCell(idx, col.key, v ?? "")}
+                            searchFn={col.searchFn}
+                            docType={String(col.key)}
+                            placeholder="Search..."
+                            inputClassName="text-xs px-2 py-1.5"
+                          />
+                        </div>
+                      ) : col.type === "link" ? (
                         <select
                           value={(row[col.key] as string) ?? ""}
                           onChange={(e) =>
@@ -84,8 +97,7 @@ export default function ChildTableGrid<T extends object>({
                             </option>
                           ))}
                         </select>
-                      )}
-                      {col.type === "text" && (
+                      ) : col.type === "text" ? (
                         <input
                           value={(row[col.key] as string) ?? ""}
                           onChange={(e) =>
@@ -93,8 +105,7 @@ export default function ChildTableGrid<T extends object>({
                           }
                           className={cellInputClass}
                         />
-                      )}
-                      {col.type === "number" && (
+                      ) : col.type === "number" ? (
                         <input
                           type="number"
                           value={(row[col.key] as number) ?? 0}
@@ -103,8 +114,7 @@ export default function ChildTableGrid<T extends object>({
                           }
                           className={cellInputClass}
                         />
-                      )}
-                      {col.type === "checkbox" && (
+                      ) : col.type === "checkbox" ? (
                         <input
                           type="checkbox"
                           checked={!!row[col.key]}
@@ -113,8 +123,7 @@ export default function ChildTableGrid<T extends object>({
                           }
                           className="h-4 w-4 rounded border-border"
                         />
-                      )}
-                      {col.type === "readonly" && (
+                      ) : (
                         <span className="text-xs text-muted">
                           {(row[col.key] as string | number) ?? "—"}
                         </span>

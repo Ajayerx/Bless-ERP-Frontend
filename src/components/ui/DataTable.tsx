@@ -34,7 +34,13 @@ interface DataTableProps<T> {
   selectable?: boolean
   selectedKeys?: Set<string>
   onSelectionChange?: (keys: Set<string>) => void
+  paginationMode?: "pages" | "loadMore"
+  currentPageLength?: number
+  onPageLengthChange?: (size: number) => void
+  onLoadMore?: () => void
 }
+
+const PAGE_SIZE_OPTIONS = [20, 100, 500, 2500]
 
 export default function DataTable<T>({
   columns,
@@ -55,6 +61,10 @@ export default function DataTable<T>({
   selectable = false,
   selectedKeys,
   onSelectionChange,
+  paginationMode = "pages",
+  currentPageLength,
+  onPageLengthChange,
+  onLoadMore,
 }: DataTableProps<T>) {
   const [internalPage, setInternalPage] = useState(1)
   const [internalSearch, setInternalSearch] = useState("")
@@ -125,10 +135,12 @@ export default function DataTable<T>({
     lastClickedIndex.current = index
   }
 
+  const hasMore = total != null ? displayedData.length < total : false
+
   return (
     <div className="bg-surface rounded-[16px] border border-border shadow-card overflow-hidden">
       {/* Toolbar */}
-      {(searchable || toolbarActions) && (
+      {(searchable || toolbarActions || paginationMode === "loadMore") && (
         <div className="flex items-center justify-between gap-4 px-6 py-4 border-b border-border">
           {searchable && (
             <div className="relative max-w-xs w-full">
@@ -153,12 +165,20 @@ export default function DataTable<T>({
               />
             </div>
           )}
-          {toolbarActions && <div className="flex items-center gap-2">{toolbarActions}</div>}
+          <div className="flex items-center gap-4 ml-auto">
+            {paginationMode === "loadMore" && total != null && (
+              <span className="text-xs text-muted whitespace-nowrap">
+                <span className="font-semibold text-body">{displayedData.length}</span> of{" "}
+                <span className="font-semibold text-body">{total}</span>
+              </span>
+            )}
+            {toolbarActions && <div className="flex items-center gap-2">{toolbarActions}</div>}
+          </div>
         </div>
       )}
 
       {/* Table */}
-      <div className="overflow-x-auto">
+      <div className="overflow-x-auto relative">
         <table className="min-w-full divide-y divide-border">
           <thead>
             <tr className="bg-gray-50/50">
@@ -193,7 +213,7 @@ export default function DataTable<T>({
             </tr>
           </thead>
           <tbody className="divide-y divide-border/50">
-            {loading ? (
+            {loading && displayedData.length === 0 ? (
               [...Array(5)].map((_, i) => (
                 <tr key={i}>
                   {selectable && (
@@ -269,10 +289,47 @@ export default function DataTable<T>({
             )}
           </tbody>
         </table>
+        {loading && displayedData.length > 0 && (
+          <div className="absolute inset-0 bg-white/60 flex items-center justify-center z-10 pointer-events-none">
+            <div className="flex items-center gap-3 px-4 py-2 bg-surface border border-border rounded-lg shadow-sm">
+              <div className="w-5 h-5 border-2 border-primary-600 border-t-transparent rounded-full animate-spin" />
+              <span className="text-xs font-semibold text-muted">Loading…</span>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Pagination */}
-      {totalPages > 1 && (
+      {paginationMode === "loadMore" ? (
+        <div className="flex items-center justify-between px-6 py-3.5 border-t border-border bg-gray-50/30">
+          <div className="flex items-center gap-1">
+            {PAGE_SIZE_OPTIONS.map((size) => (
+              <button
+                key={size}
+                onClick={() => onPageLengthChange?.(size)}
+                className={cn(
+                  "px-3 py-1.5 text-xs font-semibold transition-colors",
+                  "border border-border first:rounded-l-lg last:rounded-r-lg -ml-px first:ml-0",
+                  size === (currentPageLength || pageSize)
+                    ? "bg-surface text-body border-border z-10"
+                    : "bg-gray-50 text-muted hover:text-body hover:bg-gray-100",
+                )}
+              >
+                {size}
+              </button>
+            ))}
+          </div>
+          {hasMore && (
+            <button
+              onClick={onLoadMore}
+              disabled={loading}
+              className="px-4 py-1.5 text-xs font-semibold text-body bg-surface border border-border rounded-lg hover:bg-gray-100 transition-colors disabled:opacity-50"
+            >
+              Load More
+            </button>
+          )}
+        </div>
+      ) : totalPages > 1 ? (
         <div className="flex items-center justify-between px-6 py-3.5 border-t border-border bg-gray-50/30">
           <p className="text-xs text-muted">
             Showing{" "}
@@ -321,7 +378,7 @@ export default function DataTable<T>({
             </button>
           </div>
         </div>
-      )}
+      ) : null}
     </div>
   )
 }

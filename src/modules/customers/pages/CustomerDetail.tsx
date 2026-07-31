@@ -361,9 +361,11 @@ export default function CustomerDetail() {
   const counts = customer.transaction_counts
 
   const createActions = [
+    { label: "Quotation", icon: FileText, href: `/quotations/new?customer=${id}` },
     { label: "Sales Order", icon: ShoppingCart, href: `/sales-orders/new?customer=${id}` },
     { label: "Payment Entry", icon: DollarSign, href: `/payments/new?party=Customer&party_name=${id}` },
     { label: "Opportunity", icon: TrendingUp, href: `/opportunities/new?customer=${id}` },
+    { label: "Pricing Rule", icon: DollarSign, href: `/pricing-rules/new?customer=${id}` },
   ]
 
   return (
@@ -415,6 +417,14 @@ export default function CustomerDetail() {
             >
               <BarChart3 size={14} /> AR <ExternalLink size={12} />
             </a>
+            <a
+              href={`/api/method/frappe.desk.query_report.run?report_name=General%20Ledger&filters=${encodeURIComponent(JSON.stringify({party: customer.name, party_type: "Customer"}))}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-semibold text-muted bg-surface border border-border rounded-[10px] hover:bg-gray-50 transition-colors"
+            >
+              <FileText size={14} /> GL <ExternalLink size={12} />
+            </a>
             <Button variant="secondary" size="sm" onClick={() => navigate(`/customers/${id}/edit`)}>
               <Pencil size={14} /> Edit
             </Button>
@@ -454,6 +464,7 @@ export default function CustomerDetail() {
         <Tabs value={tab} onValueChange={setTab}>
           <TabsList>
             <TabsTrigger value="overview"><FileText size={14} className="mr-1.5" /> Overview</TabsTrigger>
+            <TabsTrigger value="dashboard"><BarChart3 size={14} className="mr-1.5" /> Dashboard</TabsTrigger>
             <TabsTrigger value="activity"><Clock size={14} className="mr-1.5" /> Activity</TabsTrigger>
             <TabsTrigger value="notes"><StickyNote size={14} className="mr-1.5" /> Notes</TabsTrigger>
             <TabsTrigger value="addresses-contacts"><MapPin size={14} className="mr-1.5" /> Addresses &amp; Contacts</TabsTrigger>
@@ -550,6 +561,92 @@ export default function CustomerDetail() {
                 }
               />
             </div>
+          </TabsContent>
+
+          {/* -- Dashboard -- */}
+          <TabsContent value="dashboard" className="space-y-6">
+            <h2 className="text-lg font-bold text-heading">Transaction Dashboard</h2>
+            <div className="grid grid-cols-2 gap-4">
+              {[
+                { title: "Pre Sales", icon: TrendingUp, color: "bg-blue-50 text-blue-600", links: [
+                  { label: "Opportunities", count: counts?.opportunities ?? 0, href: `/opportunities?customer=${id}` },
+                  { label: "Quotations", count: counts?.quotations ?? 0, href: `/quotations?customer=${id}` },
+                ]},
+                { title: "Orders", icon: ShoppingCart, color: "bg-purple-50 text-purple-600", links: [
+                  { label: "Sales Orders", count: counts?.sales_orders ?? 0, href: `/sales-orders?customer=${id}` },
+                  { label: "Delivery Notes", count: counts?.delivery_notes ?? 0, href: `/inventory/transfers?customer=${id}` },
+                  { label: "Sales Invoices", count: counts?.sales_invoices ?? 0, href: `/invoices?customer=${id}` },
+                ]},
+                { title: "Payments", icon: DollarSign, color: "bg-green-50 text-green-600", links: [
+                  { label: "Payment Entries", count: counts?.payment_entries ?? 0, href: `/payments?customer=${id}` },
+                  { label: "Bank Accounts", count: counts?.bank_accounts ?? 0, href: `/bank-accounts?customer=${id}` },
+                  { label: "Dunnings", count: counts?.dunnings ?? 0, href: `/dunnings?customer=${id}` },
+                ]},
+                { title: "Support", icon: HelpCircle, color: "bg-orange-50 text-orange-600", links: [
+                  { label: "Issues", count: counts?.issues ?? 0, href: `/issues?customer=${id}` },
+                  { label: "Installation Notes", count: counts?.installation_notes ?? 0, href: `/installation-notes?customer=${id}` },
+                  { label: "Warranty Claims", count: counts?.warranty_claims ?? 0, href: `/warranty-claims?customer=${id}` },
+                ]},
+              ].map((group) => (
+                <Card key={group.title}>
+                  <CardContent className="space-y-3">
+                    <div className="flex items-center gap-2">
+                      <div className={`w-8 h-8 rounded-[10px] flex items-center justify-center ${group.color}`}>
+                        <group.icon size={16} />
+                      </div>
+                      <p className="font-semibold text-heading">{group.title}</p>
+                    </div>
+                    <div className="space-y-2">
+                      {group.links.map((link) => (
+                        <Link
+                          key={link.label}
+                          to={link.href}
+                          className="flex items-center justify-between text-sm text-body hover:text-primary-600 transition-colors"
+                        >
+                          <span>{link.label}</span>
+                          <Badge variant="default" className="tabular-nums">{link.count}</Badge>
+                        </Link>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+
+            {customer.credit_limits && customer.credit_limits.length > 0 && (
+              <Card>
+                <CardContent>
+                  <h3 className="text-base font-bold text-heading mb-4">Credit Utilization</h3>
+                  <div className="space-y-3">
+                    {customer.credit_limits.map((cl, idx) => {
+                      const companyOutstanding = invoices
+                        .filter((inv) => inv.outstanding_amount > 0)
+                        .reduce((s, inv) => s + inv.outstanding_amount, 0);
+                      const pct = cl.credit_limit > 0 ? Math.min(100, (companyOutstanding / cl.credit_limit) * 100) : 0;
+                      return (
+                        <div key={cl.name ?? idx}>
+                          <div className="flex items-center justify-between text-sm mb-1">
+                            <span className="font-medium text-body">{cl.company}</span>
+                            <span className="text-muted tabular-nums">
+                              {formatCurrency(companyOutstanding)} / {formatCurrency(cl.credit_limit)}
+                            </span>
+                          </div>
+                          <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
+                            <div
+                              className={cn(
+                                "h-full rounded-full transition-all duration-500",
+                                pct >= 90 ? "bg-danger-500" : pct >= 70 ? "bg-warning-500" : "bg-success-500"
+                              )}
+                              style={{ width: `${pct}%` }}
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
           </TabsContent>
 
           {/* -- Activity Timeline -- */}

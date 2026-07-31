@@ -1,16 +1,20 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Search, ChevronDown, Plus, Trash2 } from "lucide-react";
 import {
   CollapsibleSection,
 } from "@/components/ui";
+import LinkSearchField from "@/components/ui/LinkSearchField";
+import ReturnAgainstSearchModal from "./ReturnAgainstSearchModal";
+import GetItemsFromModal from "./GetItemsFromModal";
 import { type Customer } from "@/services";
 import { invoiceService } from "@/services";
 import { cn, formatCurrency } from "@/lib/utils";
 import type { EditableTaxRow, ChargeType } from "../types";
 import type { AccountInfo } from "../services";
 import { createEmptyTaxRow } from "../services";
+import PaymentsTable from "./PaymentsTable";
 
 export interface InvoiceFormData {
   customer: string;
@@ -31,6 +35,8 @@ export interface InvoiceFormData {
   dispatchAddress?: string;
   contactPerson?: string;
   contactDisplay?: string;
+  contactMobile?: string;
+  contactEmail?: string;
   poNo?: string;
   poDate?: string;
   paymentTermsTemplate?: string;
@@ -64,7 +70,7 @@ export interface InvoiceFormData {
   shippingRule?: string;
   incoterm?: string;
   namedPlace?: string;
-  applyTds?: boolean;
+  // applyTds removed — does not exist on Sales Invoice
   salesPartner?: string;
   commissionRate?: number;
   totalCommission?: number;
@@ -79,8 +85,8 @@ export interface InvoiceFormData {
   loyaltyProgram?: string;
   loyaltyPoints?: number;
   loyaltyAmount?: number;
-  redemptionAccount?: string;
-  redemptionCostCenter?: string;
+  loyaltyRedemptionAccount?: string;
+  loyaltyRedemptionCostCenter?: string;
   letterHead?: string;
   groupSameItems?: boolean;
   selectPrintHeading?: string;
@@ -207,6 +213,11 @@ interface InvoiceFormProps {
     payment_amount: number;
     outstanding: number;
   }>;
+  paymentScheduleRows?: Array<{
+    id: string;
+    due_date: string;
+    payment_amount: number;
+  }>;
   lineItems?: React.ReactNode;
   totals?: React.ReactNode;
   taxRows?: Array<{
@@ -236,13 +247,35 @@ interface InvoiceFormProps {
   totalQuantity?: number;
   totalAdvance?: number;
   outstandingAmount?: number;
+  onAddItems?: (items: Array<Record<string, unknown>>) => void;
 }
 
+const GET_ITEMS_SOURCES = [
+  {
+    key: "Sales Order",
+    doctype: "Sales Order",
+    method: "erpnext.selling.doctype.sales_order.sales_order.make_sales_invoice",
+    childFieldname: "items",
+  },
+  {
+    key: "Quotation",
+    doctype: "Quotation",
+    method: "erpnext.selling.doctype.quotation.quotation.make_sales_invoice",
+    childFieldname: "items",
+  },
+  {
+    key: "Delivery Note",
+    doctype: "Delivery Note",
+    method: "erpnext.stock.doctype.delivery_note.delivery_note.make_sales_invoice",
+    childFieldname: "items",
+  },
+] as const;
+
 const inputClass =
-  "w-full px-3 py-2.5 bg-white border border-border rounded-[12px] text-sm text-body placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 transition-all duration-200";
+  "w-full px-3 py-2.5 bg-white border border-border rounded-lg text-sm text-body placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 transition-all duration-200";
 
 const labelClass =
-  "block text-xs font-semibold text-muted mb-1.5 uppercase tracking-wider";
+  "block text-xs font-semibold text-muted mb-1.5";
 
 const errCls = (error?: string) =>
   error
@@ -313,6 +346,7 @@ export default function InvoiceForm({
   totalQuantity,
   totalAdvance,
   outstandingAmount,
+  onAddItems,
 }: InvoiceFormProps) {
   const [search, setSearch] = useState(formData.customerName || "");
   const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -342,38 +376,115 @@ export default function InvoiceForm({
   const [campaigns, setCampaigns] = useState<string[]>([]);
   const [sources, setSources] = useState<string[]>([]);
   const [projects, setProjects] = useState<string[]>([]);
+  const [namingSeriesOptions, setNamingSeriesOptions] = useState<string[]>(["ACC-SINV-.YYYY.-", "ACC-SINV-RET-.YYYY.-"]);
+  const [applyDiscountOnOptions, setApplyDiscountOnOptions] = useState<string[]>(["Grand Total", "Net Total"]);
+  const [isOpeningOptions, setIsOpeningOptions] = useState<string[]>(["No", "Yes"]);
+  const [chargeTypeOptions, setChargeTypeOptions] = useState<string[]>([
+    "Actual", "On Net Total", "On Previous Row Amount",
+    "On Previous Row Total", "On Item Quantity",
+  ]);
+  const [activeGetItemsSource, setActiveGetItemsSource] = useState<typeof GET_ITEMS_SOURCES[number] | null>(null);
   const [activeTab, setActiveTab] = useState("details");
   const [addresses, setAddresses] = useState<string[]>([]);
   const [contacts, setContacts] = useState<string[]>([]);
   const [loadingAddresses, setLoadingAddresses] = useState(false);
   const [companyAddresses, setCompanyAddresses] = useState<string[]>([]);
+  const [companyContacts, setCompanyContacts] = useState<string[]>([]);
+  const [returnAgainstSearchOpen, setReturnAgainstSearchOpen] = useState(false);
+  const [loadingAdvances, setLoadingAdvances] = useState(false);
 
   useEffect(() => {
     setSearch(formData.customerName || "");
   }, [formData.customerName]);
 
   useEffect(() => {
+    if (costCenters.length > 0 && formData.costCenter && !costCenters.includes(formData.costCenter)) {
+      onChange({ costCenter: "" });
+    }
+  }, [costCenters]);
+
+  useEffect(() => {
     if (!formData.customer) {
       setAddresses([]);
       setContacts([]);
       setCompanyAddresses([]);
+      setCompanyContacts([]);
       return;
     }
     setLoadingAddresses(true);
+    const company = companyDefaults?.company;
     Promise.all([
       invoiceService.lookups.addresses(formData.customer),
       invoiceService.lookups.contacts(formData.customer),
+      company ? invoiceService.lookups.companyAddresses(company) : Promise.resolve([]),
+      company ? invoiceService.lookups.companyContacts(company) : Promise.resolve([]),
     ])
-      .then(([addrs, ctrs]) => {
+      .then(([addrs, ctrs, coAddrs, coCtrs]) => {
         setAddresses(addrs.map((a: { name: string }) => a.name));
         setContacts(ctrs.map((c: { name: string }) => c.name));
+        setCompanyAddresses(coAddrs.map((a: { name: string }) => a.name));
+        setCompanyContacts(coCtrs.map((c: { name: string }) => c.name));
       })
       .catch(() => {
         setAddresses([]);
         setContacts([]);
+        setCompanyAddresses([]);
+        setCompanyContacts([]);
       })
       .finally(() => setLoadingAddresses(false));
-  }, [formData.customer]);
+  }, [formData.customer, companyDefaults?.company]);
+
+  const prevCustomerAddress = useRef(formData.customerAddress);
+  useEffect(() => {
+    if (formData.customerAddress && formData.customerAddress !== prevCustomerAddress.current) {
+      invoiceService.getAddressDisplay(formData.customerAddress).then((display) => {
+        if (display) onChange({ addressDisplay: display });
+      });
+    } else if (!formData.customerAddress) {
+      onChange({ addressDisplay: undefined });
+    }
+    prevCustomerAddress.current = formData.customerAddress;
+  }, [formData.customerAddress]);
+
+  const prevShippingAddress = useRef(formData.shippingAddressName);
+  useEffect(() => {
+    if (formData.shippingAddressName && formData.shippingAddressName !== prevShippingAddress.current) {
+      invoiceService.getAddressDisplay(formData.shippingAddressName).then((display) => {
+        if (display) onChange({ shippingAddress: display });
+      });
+    } else if (!formData.shippingAddressName) {
+      onChange({ shippingAddress: undefined });
+    }
+    prevShippingAddress.current = formData.shippingAddressName;
+  }, [formData.shippingAddressName]);
+
+  const prevContactPerson = useRef(formData.contactPerson);
+  useEffect(() => {
+    if (formData.contactPerson && formData.contactPerson !== prevContactPerson.current) {
+      invoiceService.getContactDetails(formData.contactPerson).then((details) => {
+        onChange({
+          contactDisplay: details.contact_display,
+          contactEmail: details.contact_email,
+          contactMobile: details.contact_mobile,
+        });
+      });
+    } else if (!formData.contactPerson) {
+      onChange({ contactDisplay: undefined, contactEmail: undefined, contactMobile: undefined });
+    }
+    prevContactPerson.current = formData.contactPerson;
+  }, [formData.contactPerson]);
+
+  const prevCompanyAddress = useRef(formData.companyAddress);
+  useEffect(() => {
+    if (formData.companyAddress && formData.companyAddress !== prevCompanyAddress.current) {
+      invoiceService.getAddressDisplay(formData.companyAddress).then((display) => {
+        if (display) onChange({ companyAddressDisplay: display });
+      });
+    } else if (!formData.companyAddress) {
+      onChange({ companyAddressDisplay: undefined });
+    }
+    prevCompanyAddress.current = formData.companyAddress;
+  }, [formData.companyAddress]);
 
   useEffect(() => {
     setLoadingLookups(true);
@@ -460,6 +571,51 @@ export default function InvoiceForm({
     [onChange],
   );
 
+  const handleProjectChange = useCallback(async (value: string) => {
+    onChange({ project: value || undefined } as unknown as Partial<InvoiceFormData>)
+    if (!value) return
+    const project = await invoiceService.getProject(value)
+    if (project?.is_auto_fetch_timesheet_enabled) {
+      const timesheetData = await invoiceService.fetchTimesheetData({ project: value, from_time: "", to_time: "" })
+      if (Array.isArray(timesheetData) && timesheetData.length > 0) {
+        const mapped = timesheetData.map((ts) => ({
+          id: crypto.randomUUID(),
+          activity_type: (ts.activity_type as string) || "",
+          description: (ts.description as string) || "",
+          billing_hours: (ts.billing_hours as number) || 0,
+          billing_amount: (ts.billing_amount as number) || 0,
+        }))
+        onChange({ timeSheets: mapped })
+      }
+    }
+  }, [onChange])
+
+  const handleGetAdvances = useCallback(async () => {
+    if (!formData.customer || !companyDefaults?.company) return
+    setLoadingAdvances(true)
+    try {
+      const advances = await invoiceService.getUnallocatedAdvances(
+        formData.customer,
+        companyDefaults.company,
+        formData.issueDate,
+      )
+      if (advances.length > 0) {
+        const mapped = advances.map((a) => ({
+          id: crypto.randomUUID(),
+          reference_type: a.reference_type,
+          reference_name: a.reference_name,
+          advance_amount: a.advance_amount,
+          allocated_amount: a.allocated_amount,
+        }))
+        onChange({ advances: mapped })
+      }
+    } catch {
+      // silent
+    } finally {
+      setLoadingAdvances(false)
+    }
+  }, [formData.customer, formData.issueDate, companyDefaults, onChange])
+
   const salesTeam = formData.salesTeam ?? [];
 
   const addSalesTeamMember = () => {
@@ -494,13 +650,13 @@ export default function InvoiceForm({
     <div className="space-y-4">
       {/* Tab bar */}
       <div className="flex border-b border-border gap-0">
-        {[
-          { id: "details", label: "Details" },
-          { id: "addressContact", label: "Address & Contact" },
-          { id: "payments", label: "Payments" },
-          { id: "terms", label: "Terms" },
-          { id: "moreInfo", label: "More Info" },
-        ].map((tab) => (
+          {[
+            { id: "details", label: "Details" },
+            { id: "payments", label: "Payments" },
+            { id: "addressContact", label: "Address & Contact" },
+            { id: "terms", label: "Terms" },
+            { id: "moreInfo", label: "More Info" },
+          ].map((tab) => (
           <button
             key={tab.id}
             type="button"
@@ -520,19 +676,30 @@ export default function InvoiceForm({
       {activeTab === "details" && (
         <div className="space-y-4">
           {/* Section 1: Header — 2-column matching ERPNext Desk */}
-          <CollapsibleSection title="Header" defaultOpen>
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {/* Section 1: Header — always visible, not collapsible */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
               {/* Col 1: Party / Company */}
               <div className="space-y-3">
                 <div>
-                  <label className={labelClass}>Series</label>
+                  <label className={labelClass}>Series *</label>
                   <select
-                    value={formData.namingSeries ?? "ACC-SINV-.YYYY.-"}
+                    value={formData.namingSeries ?? namingSeriesOptions[0] ?? ""}
                     onChange={(e) => onChange({ namingSeries: e.target.value })}
                     className={inputClass}
                   >
-                    <option value="ACC-SINV-.YYYY.-">ACC-SINV-.YYYY.-</option>
+                    {namingSeriesOptions.map((opt) => (
+                      <option key={opt} value={opt}>{opt}</option>
+                    ))}
                   </select>
+                </div>
+                <div>
+                  <label className={labelClass}>Company *</label>
+                  <input
+                    type="text"
+                    value={companyDefaults?.company ?? formData.company ?? ""}
+                    className={`${inputClass} bg-gray-50`}
+                    readOnly
+                  />
                 </div>
                 <div>
                   <label className={labelClass}>Customer *</label>
@@ -551,7 +718,7 @@ export default function InvoiceForm({
                           : "Search customer..."
                       }
                       disabled={loadingPartyDetails}
-                      className={`w-full pl-10 pr-10 py-2.5 bg-white border border-border rounded-[14px] text-sm text-body placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 transition-all disabled:bg-gray-50 disabled:opacity-70 ${errCls(fieldErrors?.customer)}`}
+                      className={`w-full pl-10 pr-10 py-2.5 bg-white border border-border rounded-lg text-sm text-body placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 transition-all disabled:bg-gray-50 disabled:opacity-70 ${errCls(fieldErrors?.customer)}`}
                     />
                     <Search
                       size={15}
@@ -562,7 +729,7 @@ export default function InvoiceForm({
                       className="absolute right-3.5 top-1/2 -translate-y-1/2 text-muted"
                     />
                     {dropdownOpen && (
-                      <div className="absolute z-10 mt-1.5 w-full bg-surface border border-border rounded-[14px] shadow-xl max-h-48 overflow-y-auto">
+                      <div className="absolute z-10 mt-1.5 w-full bg-surface border border-border rounded-lg shadow-xl max-h-48 overflow-y-auto">
                         {filtered.length === 0 ? (
                           <p className="px-4 py-3 text-sm text-muted">
                             No customers found
@@ -607,6 +774,17 @@ export default function InvoiceForm({
                     />
                   </div>
                 )}
+                {formData.customer && (
+                  <div>
+                    <label className={labelClass}>Company Tax ID</label>
+                    <input
+                      type="text"
+                      value={formData.companyTaxId ?? ""}
+                      className={`${inputClass} bg-gray-50`}
+                      readOnly
+                    />
+                  </div>
+                )}
               </div>
 
               {/* Col 2: Dates + Flags (matching ERPNext right column) */}
@@ -617,7 +795,8 @@ export default function InvoiceForm({
                     type="date"
                     value={formData.issueDate}
                     onChange={(e) => onChange({ issueDate: e.target.value })}
-                    className={`${inputClass} ${errCls(fieldErrors?.postingDate)}`}
+                    readOnly={!formData.setPostingTime}
+                    className={`${inputClass} ${!formData.setPostingTime ? "bg-gray-50" : ""} ${errCls(fieldErrors?.postingDate)}`}
                   />
                   {fieldErrors?.postingDate && (
                     <p className="text-xs text-danger-500 mt-1">{fieldErrors.postingDate}</p>
@@ -629,8 +808,8 @@ export default function InvoiceForm({
                     type="time"
                     value={formData.postingTime ?? ""}
                     onChange={(e) => onChange({ postingTime: e.target.value })}
-                    disabled={!formData.setPostingTime}
-                    className={`${inputClass} ${!formData.setPostingTime ? "bg-gray-50 opacity-60" : ""}`}
+                    readOnly={!formData.setPostingTime}
+                    className={`${inputClass} ${!formData.setPostingTime ? "bg-gray-50" : ""}`}
                   />
                 </div>
                 <div className="flex items-center gap-2">
@@ -710,23 +889,29 @@ export default function InvoiceForm({
                     type="checkbox"
                     id="isReturn"
                     checked={!!formData.isReturn}
-                    onChange={(e) => onChange({ isReturn: e.target.checked })}
+                    onChange={(e) => {
+                      const checked = e.target.checked;
+                      onChange({
+                        isReturn: checked,
+                        isDebitNote: checked ? false : formData.isDebitNote,
+                      });
+                    }}
                     className="h-4 w-4 rounded border-border"
                   />
                   <label htmlFor="isReturn" className="text-sm text-body">
                     Is Return (Credit Note)
                   </label>
                 </div>
-                {(!!formData.returnAgainst || !!formData.isDebitNote) && (
+                {(!!formData.returnAgainst || !!formData.isDebitNote || !!formData.isReturn) && (
                   <div>
-                    <label className={labelClass}>Return Against</label>
-                    <input
-                      type="text"
-                      value={formData.returnAgainst ?? ""}
-                      onChange={(e) =>
-                        onChange({ returnAgainst: e.target.value || undefined })
-                      }
-                      className={inputClass}
+                    <LinkSearchField
+                      label={formData.isDebitNote ? "Adjustment Against" : "Return Against"}
+                      value={formData.returnAgainst}
+                      onChange={(val) => onChange({ returnAgainst: val || undefined })}
+                      searchFn={(q) => invoiceService.searchSalesInvoices(q, formData.customer ? { customer: formData.customer } : undefined)}
+                      onCreateNew={() => window.open("/invoices/new", "_blank")}
+                      onAdvancedSearch={() => setReturnAgainstSearchOpen(true)}
+                      readOnly={!!formData.isReturn}
                       placeholder="Begin typing for results."
                     />
                   </div>
@@ -801,9 +986,13 @@ export default function InvoiceForm({
                     type="checkbox"
                     id="isDebitNote"
                     checked={!!formData.isDebitNote}
-                    onChange={(e) =>
-                      onChange({ isDebitNote: e.target.checked })
-                    }
+                    onChange={(e) => {
+                      const checked = e.target.checked;
+                      onChange({
+                        isDebitNote: checked,
+                        isReturn: checked ? false : formData.isReturn,
+                      });
+                    }}
                     className="h-4 w-4 rounded border-border"
                   />
                   <label
@@ -815,10 +1004,8 @@ export default function InvoiceForm({
                 </div>
               </div>
             </div>
-          </CollapsibleSection>
-
-          {/* Section 2: Accounting Dimensions — 2-column */}
-          <CollapsibleSection title="Accounting Dimensions">
+          {/* Section 2: Accounting Dimensions — 2-column, always visible */}
+          {formData.customer && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
               <div>
                 <label className={labelClass}>Cost Center</label>
@@ -838,12 +1025,12 @@ export default function InvoiceForm({
                   value={formData.project}
                   options={projects}
                   placeholder="Optional"
-                  onChange={handleSelectChange}
+                  onChange={(_, val) => handleProjectChange(val)}
                   loading={loadingLookups}
                 />
               </div>
             </div>
-          </CollapsibleSection>
+          )}
 
           {/* Section 3: Currency and Price List — 2-column, dep:customer */}
           {formData.customer && (
@@ -864,93 +1051,115 @@ export default function InvoiceForm({
                     <p className="text-xs text-danger-500 mt-1">{fieldErrors.currency}</p>
                   )}
                 </div>
-                <div>
-                  <label className={labelClass}>Price List *</label>
-                  <input
-                    type="text"
-                    value={
-                      formData.sellingPriceList ??
-                      companyDefaults?.defaultSellingPriceList ??
-                      ""
-                    }
-                    onChange={(e) =>
-                      onChange({ sellingPriceList: e.target.value || undefined })
-                    }
-                    className={`${inputClass} ${errCls(fieldErrors?.sellingPriceList)}`}
-                    placeholder={
-                      companyDefaults?.defaultSellingPriceList ??
-                      "Standard Selling"
-                    }
-                  />
-                  {fieldErrors?.sellingPriceList && (
-                    <p className="text-xs text-danger-500 mt-1">{fieldErrors.sellingPriceList}</p>
-                  )}
-                </div>
-                <div>
-                  <label className={labelClass}>Exchange Rate *</label>
-                  <input
-                    type="number"
-                    min={0}
-                    step={0.00000001}
-                    value={formData.conversionRate ?? 1}
-                    onChange={(e) =>
-                      onChange({ conversionRate: parseFloat(e.target.value) || 1 })
-                    }
-                    className={`${inputClass} ${errCls(fieldErrors?.conversionRate)}`}
-                  />
-                  {fieldErrors?.conversionRate && (
-                    <p className="text-xs text-danger-500 mt-1">{fieldErrors.conversionRate}</p>
-                  )}
-                </div>
-                <div>
-                  <label className={labelClass}>Price List Currency</label>
-                  <input
-                    type="text"
-                    value={
-                      formData.priceListCurrency ??
-                      companyDefaults?.currency ??
-                      ""
-                    }
-                    readOnly
-                    className={`${inputClass} bg-gray-50`}
-                  />
-                </div>
-                <div>
-                  <label className={labelClass}>Price List Exchange Rate *</label>
-                  <input
-                    type="number"
-                    min={0}
-                    step={0.00000001}
-                    value={formData.plcConversionRate ?? 1}
-                    onChange={(e) =>
-                      onChange({ plcConversionRate: parseFloat(e.target.value) || 1 })
-                    }
-                    className={`${inputClass} ${errCls(fieldErrors?.plcConversionRate)}`}
-                  />
-                  {fieldErrors?.plcConversionRate && (
-                    <p className="text-xs text-danger-500 mt-1">{fieldErrors.plcConversionRate}</p>
-                  )}
-                </div>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    id="ignorePricingRule"
-                    checked={!!formData.ignorePricingRule}
-                    onChange={(e) =>
-                      onChange({ ignorePricingRule: e.target.checked })
-                    }
-                    className="h-4 w-4 rounded border-border"
-                  />
-                  <label htmlFor="ignorePricingRule" className="text-sm text-body">
-                    Ignore Pricing Rule
-                  </label>
-                </div>
+                {(() => {
+                  const effectiveCurrency = formData.currency ?? companyDefaults?.currency ?? "";
+                  const effectiveCompanyCurrency = companyDefaults?.currency ?? "";
+                  const showConversionRate = effectiveCurrency.length > 0 && effectiveCurrency !== effectiveCompanyCurrency;
+                  const effectivePlcCurrency = formData.priceListCurrency ?? effectiveCompanyCurrency;
+                  const showPlcRate = effectivePlcCurrency.length > 0 && effectivePlcCurrency !== effectiveCompanyCurrency;
+                  return (
+                    <>
+                      {showConversionRate && (
+                        <div>
+                          <label className={labelClass}>Exchange Rate *</label>
+                          <input
+                            type="number"
+                            min={0}
+                            step={0.00000001}
+                            value={formData.conversionRate ?? 1}
+                            onChange={(e) =>
+                              onChange({ conversionRate: parseFloat(e.target.value) || 1 })
+                            }
+                            className={`${inputClass} ${errCls(fieldErrors?.conversionRate)}`}
+                          />
+                          {fieldErrors?.conversionRate && (
+                            <p className="text-xs text-danger-500 mt-1">{fieldErrors.conversionRate}</p>
+                          )}
+                          <p className="text-xs text-muted mt-1">
+                            1 {effectiveCurrency} = {formData.conversionRate ?? 1} {effectiveCompanyCurrency}
+                          </p>
+                        </div>
+                      )}
+                      <div>
+                        <label className={labelClass}>Price List *</label>
+                        <input
+                          type="text"
+                          value={
+                            formData.sellingPriceList ??
+                            companyDefaults?.defaultSellingPriceList ??
+                            ""
+                          }
+                          onChange={(e) =>
+                            onChange({ sellingPriceList: e.target.value || undefined })
+                          }
+                          className={`${inputClass} ${errCls(fieldErrors?.sellingPriceList)}`}
+                          placeholder={
+                            companyDefaults?.defaultSellingPriceList ??
+                            "Standard Selling"
+                          }
+                        />
+                        {fieldErrors?.sellingPriceList && (
+                          <p className="text-xs text-danger-500 mt-1">{fieldErrors.sellingPriceList}</p>
+                        )}
+                      </div>
+                      <div>
+                        <label className={labelClass}>Price List Currency</label>
+                        <input
+                          type="text"
+                          value={
+                            formData.priceListCurrency ??
+                            companyDefaults?.currency ??
+                            ""
+                          }
+                          readOnly
+                          className={`${inputClass} bg-gray-50`}
+                        />
+                      </div>
+                      {showPlcRate && (
+                        <div>
+                          <label className={labelClass}>Price List Exchange Rate *</label>
+                          <input
+                            type="number"
+                            min={0}
+                            step={0.00000001}
+                            value={formData.plcConversionRate ?? 1}
+                            onChange={(e) =>
+                              onChange({ plcConversionRate: parseFloat(e.target.value) || 1 })
+                            }
+                            className={`${inputClass} ${errCls(fieldErrors?.plcConversionRate)}`}
+                          />
+                          {fieldErrors?.plcConversionRate && (
+                            <p className="text-xs text-danger-500 mt-1">{fieldErrors.plcConversionRate}</p>
+                          )}
+                          <p className="text-xs text-muted mt-1">
+                            1 {effectivePlcCurrency} = {formData.plcConversionRate ?? 1} {effectiveCompanyCurrency}
+                          </p>
+                        </div>
+                      )}
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          id="ignorePricingRule"
+                          checked={!!formData.ignorePricingRule}
+                          onChange={(e) =>
+                            onChange({ ignorePricingRule: e.target.checked })
+                          }
+                          className="h-4 w-4 rounded border-border"
+                        />
+                        <label htmlFor="ignorePricingRule" className="text-sm text-body">
+                          Ignore Pricing Rule
+                        </label>
+                      </div>
+                    </>
+                  );
+                })()}
               </div>
             </CollapsibleSection>
           )}
 
-          {/* Section 4: Items */}
-          <CollapsibleSection title="Items" defaultOpen>
+          {/* Section 4: Items — always visible (not collapsible, matching ERPNext) */}
+          <div className="space-y-3">
+            <h3 className="text-base font-bold text-heading">Items</h3>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-3">
               <div className="space-y-3">
                 <div>
@@ -1016,35 +1225,110 @@ export default function InvoiceForm({
                 )}
               </div>
             </div>
+            {/* Get Items From buttons — matching ERPNext */}
+            <div className="flex items-center gap-2 mb-3 flex-wrap">
+              <span className="text-xs font-semibold text-muted">Get Items From:</span>
+              {GET_ITEMS_SOURCES.map((source) => (
+                <button
+                  key={source.key}
+                  type="button"
+                  onClick={() => setActiveGetItemsSource(source)}
+                  className="px-3 py-1.5 text-xs font-semibold text-primary-600 border border-primary-200 rounded-lg hover:bg-primary-50 transition-colors"
+                >
+                  {source.key}
+                </button>
+              ))}
+            </div>
+
+            {activeGetItemsSource && (
+              <GetItemsFromModal
+                open={!!activeGetItemsSource}
+                onOpenChange={(open) => { if (!open) setActiveGetItemsSource(null) }}
+                sourceDoctype={activeGetItemsSource.doctype}
+                method={activeGetItemsSource.method}
+                title={`Get Items from ${activeGetItemsSource.key}`}
+                childFieldname={activeGetItemsSource.childFieldname}
+                customer={formData.customer}
+                company={formData.company}
+                formData={formData as unknown as Record<string, unknown>}
+                onItemsFetched={(fetchedItems) => {
+                  onAddItems?.(fetchedItems)
+                  setActiveGetItemsSource(null)
+                }}
+              />
+            )}
             {lineItems}
-            {/* Items footer: 2-column */}
+            {/* Items footer: 2-column matching ERPNext */}
             {subtotal != null && (
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-3 pt-3 border-t border-border/50">
-                <div>
-                  <label className={labelClass}>Total Quantity</label>
-                  <input
-                    type="text"
-                    value={totalQuantity ?? ""}
-                    className={`${inputClass} bg-gray-50`}
-                    readOnly
-                  />
+                <div className="space-y-3">
+                  <div>
+                    <label className={labelClass}>Total Quantity</label>
+                    <input
+                      type="text"
+                      value={totalQuantity ?? ""}
+                      className={`${inputClass} bg-gray-50`}
+                      readOnly
+                    />
+                  </div>
+                  <div>
+                    <label className={labelClass}>Base Net Total ({companyDefaults?.currency ?? "CAD"})</label>
+                    <input
+                      type="text"
+                      value={formatCurrency(formData.baseNetTotal ?? subtotal ?? 0)}
+                      className={`${inputClass} bg-gray-50`}
+                      readOnly
+                    />
+                  </div>
                 </div>
-                <div>
-                  <label className={labelClass}>Total ({formData.currency ?? "CAD"})</label>
-                  <input
-                    type="text"
-                    value={formatCurrency(subtotal ?? 0)}
-                    className={`${inputClass} bg-gray-50`}
-                    readOnly
-                  />
+                <div className="space-y-3">
+                  <div>
+                    <label className={labelClass}>Net Total ({formData.currency ?? "CAD"})</label>
+                    <input
+                      type="text"
+                      value={formatCurrency(subtotal ?? 0)}
+                      className={`${inputClass} bg-gray-50`}
+                      readOnly
+                    />
+                  </div>
+                  <div>
+                    <label className={labelClass}>Total ({formData.currency ?? "CAD"})</label>
+                    <input
+                      type="text"
+                      value={formatCurrency(subtotal ?? 0)}
+                      className={`${inputClass} bg-gray-50`}
+                      readOnly
+                    />
+                  </div>
                 </div>
               </div>
             )}
-          </CollapsibleSection>
+          </div>
 
-          {/* Section 5: Taxes and Charges */}
-          <CollapsibleSection title="Taxes and Charges" defaultOpen>
-            {/* Row 1: Tax Category | Shipping Rule | Incoterm — 3-column */}
+          {/* Section 5: Taxes and Charges — always visible (not collapsible, matching ERPNext) */}
+          <div className="space-y-3">
+            <h3 className="text-base font-bold text-heading">Taxes and Charges</h3>
+            {/* Row 1: Sales Taxes and Charges Template — full width (first, matching ERPNext) */}
+            <div className="mb-3">
+              <label className={labelClass}>
+                Sales Taxes and Charges Template
+              </label>
+              <select
+                value={taxesAndChargesTemplate ?? ""}
+                onChange={(e) => onTaxTemplateChange?.(e.target.value)}
+                className={inputClass}
+              >
+                <option value="">Select template…</option>
+                {taxesAndChargesTemplates?.map((t) => (
+                  <option key={t} value={t}>
+                    {t}
+                  </option>
+                ))}
+              </select>
+            </div>
+            {/* Apply TDS removed — field does not exist on Sales Invoice.
+                Use tax_withholding_category instead if TDS on sales is needed. */}
+            {/* Row 2: Tax Category | Shipping Rule | Incoterm — 3-column */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-3">
               <div>
                 <label className={labelClass}>Tax Category</label>
@@ -1080,24 +1364,6 @@ export default function InvoiceForm({
                 />
               </div>
             </div>
-            {/* Row 2: Sales Taxes and Charges Template — full width */}
-            <div className="mb-3">
-              <label className={labelClass}>
-                Sales Taxes and Charges Template
-              </label>
-              <select
-                value={taxesAndChargesTemplate ?? ""}
-                onChange={(e) => onTaxTemplateChange?.(e.target.value)}
-                className={inputClass}
-              >
-                <option value="">Select template…</option>
-                {taxesAndChargesTemplates?.map((t) => (
-                  <option key={t} value={t}>
-                    {t}
-                  </option>
-                ))}
-              </select>
-            </div>
             {/* Named Place (conditional on Incoterm) */}
             {formData.incoterm && (
               <div className="mb-3">
@@ -1128,10 +1394,7 @@ export default function InvoiceForm({
                 : (editableTaxRows ?? [])
               const isEditable = !!onTaxRowsChange
               const currency = formData.currency ?? "CAD"
-              const chargeTypes: ChargeType[] = [
-                "Actual", "On Net Total", "On Previous Row Amount",
-                "On Previous Row Total", "On Item Quantity",
-              ]
+              const chargeTypes = chargeTypeOptions as ChargeType[]
 
               const updateRow = (idx: number, patch: Partial<EditableTaxRow>) => {
                 if (!onTaxRowsChange) return
@@ -1203,57 +1466,26 @@ export default function InvoiceForm({
                                 </td>
                                 <td className="px-2 py-2">
                                   {isEditable ? (
-                                    <div className="relative">
-                                      {!row.account_head ? (
-                                        <>
-                                          {row.charge_type ? (
-                                            <input
-                                              type="text"
-                                              defaultValue=""
-                                              list={`account-head-list-${i}`}
-                                              onChange={(e) => {
-                                                const val = e.target.value
-                                                const match = (taxAccounts ?? []).find((a) => a.name === val)
-                                                if (match) {
-                                                  handleAccountSelect(i, match)
-                                                } else {
-                                                  updateRow(i, { account_head: val })
-                                                }
-                                              }}
-                                              className="w-full px-2 py-1.5 text-sm border border-border rounded-[8px] focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 bg-white"
-                                              placeholder="Select account…"
-                                            />
-                                          ) : (
-                                            <input
-                                              type="text"
-                                              readOnly
-                                              value=""
-                                              className="w-full px-2 py-1.5 text-sm border border-border rounded-[8px] bg-gray-50 text-muted cursor-not-allowed"
-                                              placeholder="Select Charge Type first"
-                                            />
-                                          )}
-                                          <datalist id={`account-head-list-${i}`}>
-                                            {(taxAccounts ?? []).map((a) => (
-                                              <option key={a.name} value={a.name}>{a.account_name || a.name}</option>
-                                            ))}
-                                          </datalist>
-                                        </>
-                                      ) : (
-                                        <div className="flex items-center gap-1.5">
-                                          <span className="text-sm text-heading truncate flex-1" title={row.account_head}>
-                                            {row.account_head}
-                                          </span>
-                                          <button
-                                            type="button"
-                                            onClick={() => updateRow(i, { account_head: "", description: "", rate: 0 })}
-                                            className="p-0.5 rounded text-muted hover:text-danger-600 hover:bg-danger-50 transition-colors flex-shrink-0"
-                                            title="Clear account"
-                                          >
-                                            <Trash2 size={11} />
-                                          </button>
-                                        </div>
-                                      )}
-                                    </div>
+                                    <LinkSearchField
+                                      value={row.account_head}
+                                      onChange={(val) => {
+                                        if (val) {
+                                          updateRow(i, { account_head: val, description: val })
+                                          if (rows[i]?.charge_type !== "Actual") {
+                                            invoiceService.getTaxRate(val).then((result) => {
+                                              if (result.tax_rate > 0) {
+                                                updateRow(i, { rate: result.tax_rate, description: result.account_name || val })
+                                              }
+                                            })
+                                          }
+                                        } else {
+                                          updateRow(i, { account_head: "", description: "", rate: 0 })
+                                        }
+                                      }}
+                                      searchFn={(q) => invoiceService.searchAccounts(q)}
+                                      placeholder={row.charge_type ? "Select account…" : "Select Charge Type first"}
+                                      disabled={!row.charge_type}
+                                    />
                                   ) : (
                                     <span className="text-sm text-heading">{row.account_head || "—"}</span>
                                   )}
@@ -1339,10 +1571,11 @@ export default function InvoiceForm({
                 </div>
               </div>
             )}
-          </CollapsibleSection>
+          </div>
 
-          {/* Section 6: Totals — 2-column matching ERPNext */}
-          <CollapsibleSection title="Totals" defaultOpen>
+          {/* Section 6: Totals — always visible (not collapsible, matching ERPNext) */}
+          <div className="space-y-3">
+            <h3 className="text-base font-bold text-heading">Totals</h3>
             {totals}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-3">
               {/* Left: Invoice currency */}
@@ -1365,6 +1598,17 @@ export default function InvoiceForm({
                     readOnly
                   />
                 </div>
+                {formData.totalNetWeight != null && formData.totalNetWeight > 0 && (
+                  <div>
+                    <label className={labelClass}>Total Net Weight</label>
+                    <input
+                      type="text"
+                      value={formData.totalNetWeight}
+                      className={`${inputClass} bg-gray-50`}
+                      readOnly
+                    />
+                  </div>
+                )}
                 <div>
                   <label className={labelClass}>Grand Total ({formData.currency ?? "CAD"})</label>
                   <input
@@ -1519,7 +1763,7 @@ export default function InvoiceForm({
                 )}
               </div>
             </div>
-          </CollapsibleSection>
+          </div>
 
           {/* Section 7: Additional Discount — 2-column */}
           <CollapsibleSection title="Additional Discount">
@@ -1528,19 +1772,15 @@ export default function InvoiceForm({
                 <div>
                   <label className={labelClass}>Apply Additional Discount On</label>
                   <select
-                    value={formData.applyDiscountOn ?? "Grand Total"}
+                    value={formData.applyDiscountOn ?? applyDiscountOnOptions[0] ?? ""}
                     onChange={(e) =>
-                      onChange({
-                        applyDiscountOn: (e.target.value || undefined) as
-                          | "Grand Total"
-                          | "Net Total"
-                          | undefined,
-                      })
+                      onChange({ applyDiscountOn: e.target.value || undefined })
                     }
                     className={inputClass}
                   >
-                    <option value="Grand Total">Grand Total</option>
-                    <option value="Net Total">Net Total</option>
+                    {applyDiscountOnOptions.map((opt) => (
+                      <option key={opt} value={opt}>{opt}</option>
+                    ))}
                   </select>
                 </div>
                 {formData.applyDiscountOn === "Grand Total" && (
@@ -1576,9 +1816,7 @@ export default function InvoiceForm({
               </div>
               <div className="space-y-3">
                 <div>
-                  <label className={labelClass}>
-                    Additional Discount Percentage
-                  </label>
+                  <label className={labelClass}>Additional Discount Percentage</label>
                   <input
                     type="number"
                     min={0}
@@ -1614,62 +1852,96 @@ export default function InvoiceForm({
                     placeholder="0.00"
                   />
                 </div>
+                <div>
+                  <label className={labelClass}>Coupon Code</label>
+                  <input
+                    type="text"
+                    value={formData.couponCode ?? ""}
+                    onChange={(e) =>
+                      onChange({ couponCode: e.target.value || undefined })
+                    }
+                    className={inputClass}
+                    placeholder="Optional"
+                  />
+                </div>
               </div>
             </div>
           </CollapsibleSection>
 
-          {/* Section 10: Time Sheet List */}
+
+
+          {/* Section 8: Tax Breakup — collapsed, read-only */}
+          <CollapsibleSection title="Tax Breakup">
+            {(() => {
+              const rows = taxRows && taxRows.length > 0
+                ? taxRows
+                : (editableTaxRows ?? [])
+              const currency = formData.currency ?? "CAD"
+              if (rows.length === 0) {
+                return <p className="text-xs text-muted">No tax data available.</p>
+              }
+              return (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-gray-100">
+                        <th className="text-left py-2 text-xs font-semibold text-muted">#</th>
+                        <th className="text-left py-2 text-xs font-semibold text-muted">Account Head</th>
+                        <th className="text-right py-2 text-xs font-semibold text-muted">Rate (%)</th>
+                        <th className="text-right py-2 text-xs font-semibold text-muted">Tax Amount ({currency})</th>
+                        <th className="text-right py-2 text-xs font-semibold text-muted">Total ({currency})</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rows.map((row, i) => (
+                        <tr key={i} className="border-b border-gray-50">
+                          <td className="py-2 text-muted">{i + 1}</td>
+                          <td className="py-2 text-heading">{row.account_head || "—"}</td>
+                          <td className="py-2 text-right text-heading tabular-nums">{row.rate}</td>
+                          <td className="py-2 text-right text-heading tabular-nums">{formatCurrency(row.tax_amount ?? 0)}</td>
+                          <td className="py-2 text-right text-heading tabular-nums">{formatCurrency(row.total ?? 0)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )
+            })()}
+          </CollapsibleSection>
+
+          {/* Section 9: Time Sheets — collapsible, in Main body (ERPNext) */}
           <CollapsibleSection title="Time Sheet List">
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-gray-100">
-                    <th className="text-left py-2 text-xs font-semibold text-muted uppercase tracking-wider">
-                      No.
-                    </th>
-                    <th className="text-left py-2 text-xs font-semibold text-muted uppercase tracking-wider">
-                      Activity Type
-                    </th>
-                    <th className="text-left py-2 text-xs font-semibold text-muted uppercase tracking-wider">
-                      Description
-                    </th>
-                    <th className="text-right py-2 text-xs font-semibold text-muted uppercase tracking-wider">
-                      Billing Hours
-                    </th>
-                    <th className="text-right py-2 text-xs font-semibold text-muted uppercase tracking-wider">
-                      Billing Amount
-                    </th>
+                    <th className="text-left py-2 text-xs font-semibold text-muted uppercase tracking-wider">No.</th>
+                    <th className="text-left py-2 text-xs font-semibold text-muted uppercase tracking-wider">Activity Type</th>
+                    <th className="text-left py-2 text-xs font-semibold text-muted uppercase tracking-wider">Description</th>
+                    <th className="text-right py-2 text-xs font-semibold text-muted uppercase tracking-wider">Billing Hours</th>
+                    <th className="text-right py-2 text-xs font-semibold text-muted uppercase tracking-wider">Billing Amount</th>
                     <th className="w-10"></th>
                   </tr>
                 </thead>
                 <tbody>
                   {(formData.timeSheets ?? []).length === 0 ? (
                     <tr>
-                      <td
-                        colSpan={6}
-                        className="py-8 text-center text-muted text-xs"
-                      >
-                        No Data
-                      </td>
+                      <td colSpan={6} className="py-8 text-center text-muted text-xs">No Data</td>
                     </tr>
                   ) : (
                     (formData.timeSheets ?? []).map((ts, i) => (
                       <tr key={ts.id} className="border-b border-gray-50">
                         <td className="py-1.5 text-muted">{i + 1}</td>
                         <td className="py-1.5">
-                          <input
-                            type="text"
+                          <LinkSearchField
                             value={ts.activity_type}
-                            onChange={(e) => {
+                            onChange={(val) => {
                               const updated = (formData.timeSheets ?? []).map(
-                                (r) =>
-                                  r.id === ts.id
-                                    ? { ...r, activity_type: e.target.value }
-                                    : r,
-                              );
-                              onChange({ timeSheets: updated });
+                                (r) => r.id === ts.id ? { ...r, activity_type: val || "" } : r,
+                              )
+                              onChange({ timeSheets: updated })
                             }}
-                            className={`${inputClass} text-xs py-1.5`}
+                            searchFn={(q) => invoiceService.searchActivityTypes(q)}
                             placeholder="Begin typing for results."
                           />
                         </td>
@@ -1679,12 +1951,9 @@ export default function InvoiceForm({
                             value={ts.description}
                             onChange={(e) => {
                               const updated = (formData.timeSheets ?? []).map(
-                                (r) =>
-                                  r.id === ts.id
-                                    ? { ...r, description: e.target.value }
-                                    : r,
-                              );
-                              onChange({ timeSheets: updated });
+                                (r) => r.id === ts.id ? { ...r, description: e.target.value } : r,
+                              )
+                              onChange({ timeSheets: updated })
                             }}
                             className={`${inputClass} text-xs py-1.5`}
                             placeholder="Description"
@@ -1698,17 +1967,11 @@ export default function InvoiceForm({
                             value={ts.billing_hours || ""}
                             onChange={(e) => {
                               const updated = (formData.timeSheets ?? []).map(
-                                (r) =>
-                                  r.id === ts.id
-                                    ? {
-                                        ...r,
-                                        billing_hours: e.target.value
-                                          ? parseFloat(e.target.value)
-                                          : 0,
-                                      }
-                                    : r,
-                              );
-                              onChange({ timeSheets: updated });
+                                (r) => r.id === ts.id
+                                  ? { ...r, billing_hours: e.target.value ? parseFloat(e.target.value) : 0 }
+                                  : r,
+                              )
+                              onChange({ timeSheets: updated })
                             }}
                             className={`${inputClass} text-xs py-1.5 text-right`}
                             placeholder="0"
@@ -1722,17 +1985,11 @@ export default function InvoiceForm({
                             value={ts.billing_amount || ""}
                             onChange={(e) => {
                               const updated = (formData.timeSheets ?? []).map(
-                                (r) =>
-                                  r.id === ts.id
-                                    ? {
-                                        ...r,
-                                        billing_amount: e.target.value
-                                          ? parseFloat(e.target.value)
-                                          : 0,
-                                      }
-                                    : r,
-                              );
-                              onChange({ timeSheets: updated });
+                                (r) => r.id === ts.id
+                                  ? { ...r, billing_amount: e.target.value ? parseFloat(e.target.value) : 0 }
+                                  : r,
+                              )
+                              onChange({ timeSheets: updated })
                             }}
                             className={`${inputClass} text-xs py-1.5 text-right`}
                             placeholder="0.00"
@@ -1742,10 +1999,8 @@ export default function InvoiceForm({
                           <button
                             type="button"
                             onClick={() => {
-                              const updated = (
-                                formData.timeSheets ?? []
-                              ).filter((r) => r.id !== ts.id);
-                              onChange({ timeSheets: updated });
+                              const updated = (formData.timeSheets ?? []).filter((r) => r.id !== ts.id)
+                              onChange({ timeSheets: updated })
                             }}
                             className="p-1.5 text-muted hover:text-danger-600 transition-colors"
                           >
@@ -1761,25 +2016,20 @@ export default function InvoiceForm({
             <button
               type="button"
               onClick={() => {
-                const entries = formData.timeSheets ?? [];
+                const entries = formData.timeSheets ?? []
                 onChange({
                   timeSheets: [
                     ...entries,
-                    {
-                      id: crypto.randomUUID(),
-                      activity_type: "",
-                      description: "",
-                      billing_hours: 0,
-                      billing_amount: 0,
-                    },
+                    { id: crypto.randomUUID(), activity_type: "", description: "", billing_hours: 0, billing_amount: 0 },
                   ],
-                });
+                })
               }}
               className="text-xs font-semibold text-primary-600 hover:text-primary-700 transition-colors flex items-center gap-1 mt-2"
             >
               <Plus size={12} /> Add Row
             </button>
           </CollapsibleSection>
+
         </div>
       )}
 
@@ -1788,9 +2038,10 @@ export default function InvoiceForm({
         <div className="space-y-4">
           {formData.customer ? (
             <>
-              {/* Section 1: Billing Address — 2-column */}
+              {/* Section 1: Billing Address — matches ERPNext layout exactly */}
               <CollapsibleSection title="Billing Address" defaultOpen>
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  {/* Left column: Address link + display */}
                   <div className="space-y-3">
                     <div>
                       <label className={labelClass}>Customer Address</label>
@@ -1814,17 +2065,16 @@ export default function InvoiceForm({
                         ))}
                       </select>
                     </div>
-                    {formData.addressDisplay && (
-                      <div>
-                        <label className={labelClass}>Address</label>
-                        <textarea
-                          value={formData.addressDisplay ?? ""}
-                          className={`${inputClass} bg-gray-50`}
-                          readOnly
-                          rows={3}
-                        />
-                      </div>
-                    )}
+                    <div>
+                      <label className={labelClass}>Address</label>
+                      <textarea
+                        value={formData.addressDisplay ?? ""}
+                        className={`${inputClass} bg-gray-50`}
+                        readOnly
+                        rows={3}
+                        placeholder="Address display"
+                      />
+                    </div>
                     <div>
                       <label className={labelClass}>Territory</label>
                       <LinkSelect
@@ -1837,6 +2087,7 @@ export default function InvoiceForm({
                       />
                     </div>
                   </div>
+                  {/* Right column: Contact link + display */}
                   <div className="space-y-3">
                     <div>
                       <label className={labelClass}>Contact Person</label>
@@ -1858,27 +2109,27 @@ export default function InvoiceForm({
                         ))}
                       </select>
                     </div>
-                    {formData.contactDisplay && (
-                      <div>
-                        <label className={labelClass}>Contact</label>
-                        <textarea
-                          value={formData.contactDisplay ?? ""}
-                          className={`${inputClass} bg-gray-50`}
-                          readOnly
-                          rows={3}
-                        />
-                      </div>
-                    )}
+                    <div>
+                      <label className={labelClass}>Contact</label>
+                      <textarea
+                        value={formData.contactDisplay ?? ""}
+                        className={`${inputClass} bg-gray-50`}
+                        readOnly
+                        rows={3}
+                        placeholder="Contact display"
+                      />
+                    </div>
                   </div>
                 </div>
               </CollapsibleSection>
 
-              {/* Section 2: Shipping Address — 2-column */}
+              {/* Section 2: Shipping Address — matches ERPNext layout */}
               <CollapsibleSection title="Shipping Address">
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  {/* Left column: Shipping address */}
                   <div className="space-y-3">
                     <div>
-                      <label className={labelClass}>Shipping Address</label>
+                      <label className={labelClass}>Shipping Address Name</label>
                       <select
                         value={formData.shippingAddressName ?? ""}
                         onChange={(e) =>
@@ -1899,10 +2150,21 @@ export default function InvoiceForm({
                         ))}
                       </select>
                     </div>
+                    <div>
+                      <label className={labelClass}>Shipping Address</label>
+                      <textarea
+                        value={formData.shippingAddress ?? ""}
+                        className={`${inputClass} bg-gray-50`}
+                        readOnly
+                        rows={3}
+                        placeholder="Shipping address display"
+                      />
+                    </div>
                   </div>
+                  {/* Right column: Dispatch address (filtered by Company, not Customer) */}
                   <div className="space-y-3">
                     <div>
-                      <label className={labelClass}>Dispatch Address</label>
+                      <label className={labelClass}>Dispatch Address Name</label>
                       <select
                         value={formData.dispatchAddressName ?? ""}
                         onChange={(e) =>
@@ -1916,48 +2178,66 @@ export default function InvoiceForm({
                         <option value="">
                           {loadingAddresses ? "Loading…" : "Select address…"}
                         </option>
-                        {addresses.map((a) => (
+                        {companyAddresses.map((a) => (
                           <option key={a} value={a}>
                             {a}
                           </option>
                         ))}
                       </select>
                     </div>
+                    <div>
+                      <label className={labelClass}>Dispatch Address</label>
+                      <textarea
+                        value={formData.dispatchAddress ?? ""}
+                        className={`${inputClass} bg-gray-50`}
+                        readOnly
+                        rows={3}
+                        placeholder="Dispatch address display"
+                      />
+                    </div>
                   </div>
                 </div>
               </CollapsibleSection>
 
-              {/* Section 3: Company Address — 2-column */}
+              {/* Section 3: Company Address — matches ERPNext layout */}
               <CollapsibleSection title="Company Address">
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                  <div>
-                    <label className={labelClass}>Company Address</label>
-                    <select
-                      value={formData.companyAddress ?? ""}
-                      onChange={(e) =>
-                        onChange({
-                          companyAddress: e.target.value || undefined,
-                        })
-                      }
-                      className={inputClass}
-                      disabled={loadingAddresses}
-                    >
-                      <option value="">
-                        {loadingAddresses ? "Loading…" : "Select address…"}
-                      </option>
-                      {companyAddresses.length > 0
-                        ? companyAddresses.map((a) => (
-                            <option key={a} value={a}>
-                              {a}
-                            </option>
-                          ))
-                        : addresses.map((a) => (
-                            <option key={a} value={a}>
-                              {a}
-                            </option>
-                          ))}
-                    </select>
+                  {/* Left column: Company address (filtered by Company) */}
+                  <div className="space-y-3">
+                    <div>
+                      <label className={labelClass}>Company Address Name</label>
+                      <select
+                        value={formData.companyAddress ?? ""}
+                        onChange={(e) =>
+                          onChange({
+                            companyAddress: e.target.value || undefined,
+                          })
+                        }
+                        className={inputClass}
+                        disabled={loadingAddresses}
+                      >
+                        <option value="">
+                          {loadingAddresses ? "Loading…" : "Select address…"}
+                        </option>
+                        {companyAddresses.map((a) => (
+                          <option key={a} value={a}>
+                            {a}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className={labelClass}>Company Address</label>
+                      <textarea
+                        value={formData.companyAddressDisplay ?? ""}
+                        className={`${inputClass} bg-gray-50`}
+                        readOnly
+                        rows={3}
+                        placeholder="Company address display"
+                      />
+                    </div>
                   </div>
+                  {/* Right column: Company contact (filtered by Company) */}
                   <div>
                     <label className={labelClass}>Company Contact Person</label>
                     <select
@@ -1973,7 +2253,7 @@ export default function InvoiceForm({
                       <option value="">
                         {loadingAddresses ? "Loading…" : "Select contact…"}
                       </option>
-                      {contacts.map((c) => (
+                      {companyContacts.map((c) => (
                         <option key={c} value={c}>
                           {c}
                         </option>
@@ -1992,6 +2272,20 @@ export default function InvoiceForm({
       {/* ==================== PAYMENTS TAB ==================== */}
       {activeTab === "payments" && (
         <div className="space-y-4">
+          {/* POS Payments Table */}
+          {formData.isPos && (
+            <CollapsibleSection title="Payments">
+              <PaymentsTable
+                payments={formData.payments ?? []}
+                modes={_modeOfPayments}
+                accounts={accounts}
+                grandTotal={grandTotal}
+                company={companyDefaults?.company}
+                onChange={(rows) => onChange({ payments: rows })}
+              />
+            </CollapsibleSection>
+          )}
+
           {/* Paid Amount */}
           {(formData.isPos || formData.redeemLoyaltyPoints) && (
             <CollapsibleSection title="Paid Amount">
@@ -2057,54 +2351,9 @@ export default function InvoiceForm({
             </CollapsibleSection>
           )}
 
-          {/* Advance Payments */}
-          <CollapsibleSection title="Advances">
-            <div className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                id="allocateAdvances"
-                checked={!!formData.allocateAdvancesAutomatically}
-                onChange={(e) =>
-                  onChange({ allocateAdvancesAutomatically: e.target.checked })
-                }
-                className="h-4 w-4 rounded border-border"
-              />
-              <label htmlFor="allocateAdvances" className="text-sm text-body">
-                Allocate Advances Automatically
-              </label>
-            </div>
-            {!formData.allocateAdvancesAutomatically && (
-              <div className="mt-2">
-                <button
-                  type="button"
-                  className="px-3 py-2 text-xs font-semibold text-primary-600 border border-primary-200 rounded-[10px] hover:bg-primary-50 transition-colors"
-                  disabled
-                >
-                  Get Advances Received
-                </button>
-              </div>
-            )}
-            {formData.allocateAdvancesAutomatically && (
-              <div className="flex items-center gap-2 mt-2">
-                <input
-                  type="checkbox"
-                  id="onlyAllocated"
-                  checked={!!formData.onlyIncludeAllocatedPayments}
-                  onChange={(e) =>
-                    onChange({ onlyIncludeAllocatedPayments: e.target.checked })
-                  }
-                  className="h-4 w-4 rounded border-border"
-                />
-                <label htmlFor="onlyAllocated" className="text-sm text-body">
-                  Only Include Allocated Payments
-                </label>
-              </div>
-            )}
-          </CollapsibleSection>
-
-          {/* Write Off — 2-column, dep:is_pos */}
+          {/* Write Off — depends_on: is_pos (ERPNext Payments tab) */}
           {formData.isPos && (
-            <CollapsibleSection title="Write Off">
+            <CollapsibleSection title="Write Off Amount">
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 <div className="space-y-3">
                   <div>
@@ -2138,7 +2387,7 @@ export default function InvoiceForm({
                   <div className="flex items-center gap-2">
                     <input
                       type="checkbox"
-                      id="writeOffAuto"
+                      id="writeOffAutoPayments"
                       checked={!!formData.writeOffOutstandingAmountAutomatically}
                       onChange={(e) =>
                         onChange({
@@ -2147,7 +2396,7 @@ export default function InvoiceForm({
                       }
                       className="h-4 w-4 rounded border-border"
                     />
-                    <label htmlFor="writeOffAuto" className="text-sm text-body">
+                    <label htmlFor="writeOffAutoPayments" className="text-sm text-body">
                       Write Off Outstanding Amount
                     </label>
                   </div>
@@ -2180,85 +2429,133 @@ export default function InvoiceForm({
             </CollapsibleSection>
           )}
 
-          {/* Loyalty Points Redemption — 2-column */}
+          {/* Loyalty Points Redemption */}
           <CollapsibleSection title="Loyalty Points Redemption">
             <div className="flex items-center gap-2">
               <input
                 type="checkbox"
-                id="redeemLoyalty"
+                id="redeemLoyaltyPayments"
                 checked={!!formData.redeemLoyaltyPoints}
                 onChange={(e) =>
                   onChange({ redeemLoyaltyPoints: e.target.checked })
                 }
                 className="h-4 w-4 rounded border-border"
               />
-              <label htmlFor="redeemLoyalty" className="text-sm text-body">
+              <label htmlFor="redeemLoyaltyPayments" className="text-sm text-body">
                 Redeem Loyalty Points
               </label>
             </div>
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-3">
-              <div className="space-y-3">
-                <div>
-                  <label className={labelClass}>Loyalty Points</label>
-                  <input
-                    type="number"
-                    min={0}
-                    value={formData.loyaltyPoints ?? ""}
-                    onChange={(e) =>
-                      onChange({
-                        loyaltyPoints: e.target.value
-                          ? parseInt(e.target.value)
-                          : undefined,
-                      })
-                    }
-                    className={inputClass}
-                    placeholder="0"
-                  />
+            {formData.redeemLoyaltyPoints && (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-3">
+                <div className="space-y-3">
+                  <div>
+                    <label className={labelClass}>Loyalty Points</label>
+                    <input
+                      type="number"
+                      min={0}
+                      value={formData.loyaltyPoints ?? ""}
+                      onChange={(e) =>
+                        onChange({
+                          loyaltyPoints: e.target.value
+                            ? parseInt(e.target.value)
+                            : undefined,
+                        })
+                      }
+                      className={inputClass}
+                      placeholder="0"
+                    />
+                  </div>
+                  <div>
+                    <label className={labelClass}>Loyalty Amount</label>
+                    <input
+                      type="text"
+                      value={formatCurrency(formData.loyaltyAmount ?? 0)}
+                      className={`${inputClass} bg-gray-50`}
+                      readOnly
+                    />
+                  </div>
                 </div>
-                <div>
-                  <label className={labelClass}>Loyalty Amount</label>
-                  <input
-                    type="text"
-                    value={formatCurrency(formData.loyaltyAmount ?? 0)}
-                    className={`${inputClass} bg-gray-50`}
-                    readOnly
-                  />
+                <div className="space-y-3">
+                  <div>
+                    <label className={labelClass}>Loyalty Program</label>
+                    <input
+                      type="text"
+                      value={formData.loyaltyProgram ?? ""}
+                      className={`${inputClass} bg-gray-50`}
+                      readOnly
+                    />
+                  </div>
+                  <div>
+                    <label className={labelClass}>Redemption Account</label>
+                    <LinkSelect
+                      name="loyaltyRedemptionAccount"
+                      value={formData.loyaltyRedemptionAccount}
+                      options={accounts}
+                      placeholder="Select account…"
+                      onChange={handleSelectChange}
+                      loading={loadingLookups}
+                    />
+                  </div>
+                  <div>
+                    <label className={labelClass}>Redemption Cost Center</label>
+                    <LinkSelect
+                      name="loyaltyRedemptionCostCenter"
+                      value={formData.loyaltyRedemptionCostCenter}
+                      options={costCenters}
+                      placeholder="Select cost center…"
+                      onChange={handleSelectChange}
+                      loading={loadingLookups}
+                    />
+                  </div>
                 </div>
               </div>
-              <div className="space-y-3">
-                <div>
-                  <label className={labelClass}>Loyalty Program</label>
-                  <input
-                    type="text"
-                    value={formData.loyaltyProgram ?? ""}
-                    className={`${inputClass} bg-gray-50`}
-                    readOnly
-                  />
-                </div>
-                <div>
-                  <label className={labelClass}>Redemption Account</label>
-                  <LinkSelect
-                    name="redemptionAccount"
-                    value={formData.redemptionAccount}
-                    options={accounts}
-                    placeholder="Select account…"
-                    onChange={handleSelectChange}
-                    loading={loadingLookups}
-                  />
-                </div>
-                <div>
-                  <label className={labelClass}>Redemption Cost Center</label>
-                  <LinkSelect
-                    name="redemptionCostCenter"
-                    value={formData.redemptionCostCenter}
-                    options={costCenters}
-                    placeholder="Select cost center…"
-                    onChange={handleSelectChange}
-                    loading={loadingLookups}
-                  />
-                </div>
-              </div>
+            )}
+          </CollapsibleSection>
+
+          {/* Advance Payments */}
+          <CollapsibleSection title="Advance Payments">
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="allocateAdvancesPayments"
+                checked={!!formData.allocateAdvancesAutomatically}
+                onChange={(e) =>
+                  onChange({ allocateAdvancesAutomatically: e.target.checked })
+                }
+                className="h-4 w-4 rounded border-border"
+              />
+              <label htmlFor="allocateAdvancesPayments" className="text-sm text-body">
+                Allocate Advances Automatically
+              </label>
             </div>
+            {!formData.allocateAdvancesAutomatically && (
+              <div className="mt-2">
+                <button
+                  type="button"
+                  onClick={handleGetAdvances}
+                  disabled={loadingAdvances}
+                  className="px-3 py-2 text-xs font-semibold text-primary-600 border border-primary-200 rounded-[10px] hover:bg-primary-50 transition-colors disabled:opacity-50"
+                >
+                  {loadingAdvances ? "Loading…" : "Get Advances Received"}
+                </button>
+              </div>
+            )}
+            {formData.allocateAdvancesAutomatically && (
+              <div className="flex items-center gap-2 mt-2">
+                <input
+                  type="checkbox"
+                  id="onlyAllocatedPayments"
+                  checked={!!formData.onlyIncludeAllocatedPayments}
+                  onChange={(e) =>
+                    onChange({ onlyIncludeAllocatedPayments: e.target.checked })
+                  }
+                  className="h-4 w-4 rounded border-border"
+                />
+                <label htmlFor="onlyAllocatedPayments" className="text-sm text-body">
+                  Only Include Allocated Payments
+                </label>
+              </div>
+            )}
           </CollapsibleSection>
         </div>
       )}
@@ -2293,6 +2590,7 @@ export default function InvoiceForm({
                 />
               </CollapsibleSection>
 
+              {/* Read-only Payment Schedule (from loaded invoice, not editable) */}
               {paymentSchedule && paymentSchedule.length > 0 && (
                 <CollapsibleSection title="Payment Schedule">
                   <table className="w-full text-sm">
@@ -2325,6 +2623,87 @@ export default function InvoiceForm({
                       ))}
                     </tbody>
                   </table>
+                </CollapsibleSection>
+              )}
+              {/* Editable Payment Schedule (from form data) */}
+              {formData.paymentScheduleRows && (
+                <CollapsibleSection title="Payment Schedule">
+                  <div className="space-y-2">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-gray-100">
+                          <th className="text-left py-2 text-xs font-semibold text-muted uppercase tracking-wider">
+                            Due Date
+                          </th>
+                          <th className="text-right py-2 text-xs font-semibold text-muted uppercase tracking-wider">
+                            Amount
+                          </th>
+                          <th className="w-10"></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {formData.paymentScheduleRows.map((row, i) => (
+                          <tr key={row.id} className="border-b border-gray-50">
+                            <td className="py-1.5 pr-2">
+                              <input
+                                type="date"
+                                value={row.due_date}
+                                onChange={(e) => {
+                                  const updated = [...formData.paymentScheduleRows!]
+                                  updated[i] = { ...updated[i], due_date: e.target.value }
+                                  onChange({ paymentScheduleRows: updated })
+                                }}
+                                className="w-full px-2 py-1.5 bg-white border border-border rounded-[8px] text-sm text-body"
+                              />
+                            </td>
+                            <td className="py-1.5 pr-2">
+                              <input
+                                type="number"
+                                min={0}
+                                step={0.01}
+                                value={row.payment_amount || ""}
+                                onChange={(e) => {
+                                  const updated = [...formData.paymentScheduleRows!]
+                                  updated[i] = {
+                                    ...updated[i],
+                                    payment_amount: e.target.value ? parseFloat(e.target.value) : 0,
+                                  }
+                                  onChange({ paymentScheduleRows: updated })
+                                }}
+                                className="w-full px-2 py-1.5 bg-white border border-border rounded-[8px] text-sm text-body text-right"
+                                placeholder="0.00"
+                              />
+                            </td>
+                            <td className="py-1.5">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const updated = formData.paymentScheduleRows!.filter((_, idx) => idx !== i)
+                                  onChange({ paymentScheduleRows: updated })
+                                }}
+                                className="p-1.5 text-muted hover:text-danger-600 transition-colors"
+                              >
+                                <Trash2 size={12} />
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const dueDate = formData.dueDate || formData.issueDate || new Date().toISOString().slice(0, 10)
+                        const newRow = { id: crypto.randomUUID(), due_date: dueDate, payment_amount: 0 }
+                        onChange({
+                          paymentScheduleRows: [...(formData.paymentScheduleRows || []), newRow],
+                        })
+                      }}
+                      className="flex items-center gap-1 text-xs font-semibold text-primary-600 hover:text-primary-700 transition-colors"
+                    >
+                      <Plus size={12} /> Add Row
+                    </button>
+                  </div>
                 </CollapsibleSection>
               )}
             </>
@@ -2414,33 +2793,20 @@ export default function InvoiceForm({
                     <div>
                       <label className={labelClass}>Is Opening Entry</label>
                       <select
-                        value={formData.isOpening ?? "No"}
+                        value={formData.isOpening ?? isOpeningOptions[0] ?? ""}
                         onChange={(e) => onChange({ isOpening: e.target.value })}
                         className={inputClass}
                         disabled
                       >
-                        <option value="No">No</option>
-                        <option value="Yes">Yes</option>
+                        {isOpeningOptions.map((opt) => (
+                          <option key={opt} value={opt}>{opt}</option>
+                        ))}
                       </select>
-                    </div>
-                    <div>
-                      <label className={labelClass}>Remarks</label>
-                      <textarea
-                        value={formData.remarks ?? ""}
-                        onChange={(e) =>
-                          onChange({ remarks: e.target.value || undefined })
-                        }
-                        rows={3}
-                        className={inputClass}
-                        placeholder="Remarks…"
-                      />
                     </div>
                   </div>
                   <div className="space-y-3">
                     <div>
-                      <label className={labelClass}>
-                        Unrealized Profit / Loss Account
-                      </label>
+                      <label className={labelClass}>Unrealized Profit / Loss Account</label>
                       <LinkSelect
                         name="unrealizedProfitLossAccount"
                         value={formData.unrealizedProfitLossAccount}
@@ -2454,7 +2820,22 @@ export default function InvoiceForm({
                 </div>
               </CollapsibleSection>
 
-              {/* Section 3: Commission — 2-column */}
+              {/* Section 3: Remarks */}
+              <CollapsibleSection title="Remarks">
+                <div>
+                  <textarea
+                    value={formData.remarks ?? ""}
+                    onChange={(e) =>
+                      onChange({ remarks: e.target.value || undefined })
+                    }
+                    rows={3}
+                    className={inputClass}
+                    placeholder="Remarks…"
+                  />
+                </div>
+              </CollapsibleSection>
+
+              {/* Section 4: Commission — 2-column */}
               <CollapsibleSection
                 title="Commission"
                 defaultOpen={!!formData.salesPartner}
@@ -2519,7 +2900,65 @@ export default function InvoiceForm({
                 </div>
               </CollapsibleSection>
 
-              {/* Section 4: Sales Team */}
+              {/* Section 5: Print Settings */}
+              <CollapsibleSection title="Print Settings">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <div className="space-y-3">
+                    <div>
+                      <label className={labelClass}>Letter Head</label>
+                      <LinkSelect
+                        name="letterHead"
+                        value={formData.letterHead}
+                        options={letterHeads}
+                        placeholder="Default…"
+                        onChange={handleSelectChange}
+                        loading={loadingLookups}
+                      />
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        id="groupSameItemsMoreInfo"
+                        checked={!!formData.groupSameItems}
+                        onChange={(e) => onChange({ groupSameItems: e.target.checked })}
+                        className="h-4 w-4 rounded border-border"
+                      />
+                      <label htmlFor="groupSameItemsMoreInfo" className="text-sm text-body">
+                        Group Same Items
+                      </label>
+                    </div>
+                  </div>
+                  <div className="space-y-3">
+                    <div>
+                      <label className={labelClass}>Print Heading</label>
+                      <LinkSelect
+                        name="selectPrintHeading"
+                        value={formData.selectPrintHeading}
+                        options={printHeadings}
+                        placeholder="Default…"
+                        onChange={handleSelectChange}
+                        loading={loadingLookups}
+                      />
+                    </div>
+                    <div>
+                      <label className={labelClass}>Print Language</label>
+                      <input
+                        type="text"
+                        value={formData.language ?? ""}
+                        onChange={(e) =>
+                          onChange({ language: e.target.value || undefined })
+                        }
+                        className={inputClass}
+                        placeholder="en"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </CollapsibleSection>
+
+
+
+              {/* Section 6: Sales Team */}
               <CollapsibleSection
                 title="Sales Team"
                 defaultOpen={salesTeam.length > 0}
@@ -2543,22 +2982,16 @@ export default function InvoiceForm({
                         key={m.id}
                         className="grid grid-cols-[1fr_70px_70px_auto] gap-1.5 items-start"
                       >
-                        <select
+                        <LinkSearchField
                           value={m.sales_person}
-                          onChange={(e) =>
+                          onChange={(val) =>
                             updateSalesTeamMember(m.id, {
-                              sales_person: e.target.value,
+                              sales_person: val || "",
                             })
                           }
-                          className={`${inputClass} text-xs py-1.5`}
-                        >
-                          <option value="">Select person</option>
-                          {salesPersons.map((sp) => (
-                            <option key={sp} value={sp}>
-                              {sp}
-                            </option>
-                          ))}
-                        </select>
+                          searchFn={(q) => invoiceService.searchSalesPersons(q)}
+                          placeholder="Select person"
+                        />
                         <input
                           type="number"
                           min={0}
@@ -2603,63 +3036,7 @@ export default function InvoiceForm({
                 )}
               </CollapsibleSection>
 
-              {/* Section 5: Print Settings — 2-column */}
-              <CollapsibleSection title="Print Settings">
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                  <div className="space-y-3">
-                    <div>
-                      <label className={labelClass}>Letter Head</label>
-                      <LinkSelect
-                        name="letterHead"
-                        value={formData.letterHead}
-                        options={letterHeads}
-                        placeholder="Default…"
-                        onChange={handleSelectChange}
-                        loading={loadingLookups}
-                      />
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="checkbox"
-                        id="groupSameItems"
-                        checked={!!formData.groupSameItems}
-                        onChange={(e) => onChange({ groupSameItems: e.target.checked })}
-                        className="h-4 w-4 rounded border-border"
-                      />
-                      <label htmlFor="groupSameItems" className="text-sm text-body">
-                        Group Same Items
-                      </label>
-                    </div>
-                  </div>
-                  <div className="space-y-3">
-                    <div>
-                      <label className={labelClass}>Print Heading</label>
-                      <LinkSelect
-                        name="selectPrintHeading"
-                        value={formData.selectPrintHeading}
-                        options={printHeadings}
-                        placeholder="Default…"
-                        onChange={handleSelectChange}
-                        loading={loadingLookups}
-                      />
-                    </div>
-                    <div>
-                      <label className={labelClass}>Print Language</label>
-                      <input
-                        type="text"
-                        value={formData.language ?? ""}
-                        onChange={(e) =>
-                          onChange({ language: e.target.value || undefined })
-                        }
-                        className={inputClass}
-                        placeholder="en"
-                      />
-                    </div>
-                  </div>
-                </div>
-              </CollapsibleSection>
-
-              {/* Section 6: Subscription — 2-column */}
+              {/* Section 7: Subscription — 2-column */}
               <CollapsibleSection title="Subscription">
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                   <div className="space-y-3">
@@ -2717,29 +3094,18 @@ export default function InvoiceForm({
                 </div>
               </CollapsibleSection>
 
-              {/* Section 7: Additional Info — 2-column, dep:customer */}
+              {/* Section 8: Additional Info — 2-column, dep:customer */}
               <CollapsibleSection title="Additional Info">
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                   <div className="space-y-3">
                     <div>
                       <label className={labelClass}>Status</label>
-                      <select
+                      <input
+                        type="text"
                         value={formData.status ?? "Draft"}
                         className={`${inputClass} bg-gray-50`}
-                        disabled
-                      >
-                        <option value="Draft">Draft</option>
-                        <option value="Submitted">Submitted</option>
-                        <option value="Cancelled">Cancelled</option>
-                        <option value="Return">Return</option>
-                        <option value="Credit Note Issued">Credit Note Issued</option>
-                        <option value="Consolidated">Consolidated</option>
-                        <option value="Paid">Paid</option>
-                        <option value="Partly Paid">Partly Paid</option>
-                        <option value="Unpaid">Unpaid</option>
-                        <option value="Unpaid and Overdue">Unpaid and Overdue</option>
-                        <option value="Overdue">Overdue</option>
-                      </select>
+                        readOnly
+                      />
                     </div>
                     <div>
                       <label className={labelClass}>
@@ -2838,6 +3204,14 @@ export default function InvoiceForm({
           )}
         </div>
       )}
+      <ReturnAgainstSearchModal
+        open={returnAgainstSearchOpen}
+        onOpenChange={setReturnAgainstSearchOpen}
+        onSelect={(name) => onChange({ returnAgainst: name })}
+        onCreateNew={() => window.open("/invoices/new", "_blank")}
+        customer={formData.customer}
+        company={formData.company}
+      />
     </div>
   );
 }

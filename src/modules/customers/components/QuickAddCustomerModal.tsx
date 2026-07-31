@@ -1,21 +1,36 @@
 "use client"
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { useNavigate } from "react-router-dom"
-import { Loader2 } from "lucide-react"
 import Modal, { ModalFooter } from "@/components/ui/Modal"
-import { customerService } from "@/modules/customers/services"
+import { Input, Select, Button, LinkSearchField, useToast } from "@/components/ui"
+import { customerService, searchLink, type Customer } from "@/services"
+import { apiClient } from "@/services/api-client"
 
 interface Props {
   open: boolean
   onClose: () => void
+  onCreated?: (customer: Customer) => void
 }
 
-export default function QuickAddCustomerModal({ open, onClose }: Props) {
+async function fetchCustomerTypeOptions(): Promise<string[]> {
+  try {
+    const doc = await apiClient<{ fields: Array<{ fieldname: string; options?: string }> }>(
+      `/resource/DocType/Customer?fields=["fields.fieldname","fields.options"]`
+    )
+    const field = doc.fields?.find((f) => f.fieldname === "customer_type")
+    if (!field?.options) return []
+    return field.options.split("\n").filter(Boolean)
+  } catch {
+    return []
+  }
+}
+
+export default function QuickAddCustomerModal({ open, onClose, onCreated }: Props) {
   const navigate = useNavigate()
+  const { addToast } = useToast()
+
   const [customerName, setCustomerName] = useState("")
-  const [customerType, setCustomerType] = useState<"Company" | "Individual" | "Partnership">("Company")
-  const [customerGroup, setCustomerGroup] = useState("")
-  const [territory, setTerritory] = useState("")
+  const [customerType, setCustomerType] = useState("")
   const [firstName, setFirstName] = useState("")
   const [lastName, setLastName] = useState("")
   const [email, setEmail] = useState("")
@@ -28,40 +43,27 @@ export default function QuickAddCustomerModal({ open, onClose }: Props) {
   const [country, setCountry] = useState("")
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState("")
-  const [loadingLookups, setLoadingLookups] = useState(true)
-  const [customerGroups, setCustomerGroups] = useState<string[]>([])
-  const [territories, setTerritories] = useState<string[]>([])
+  const [customerTypeOptions, setCustomerTypeOptions] = useState<string[]>([])
 
   useEffect(() => {
     if (!open) return
     let cancelled = false
-    async function load() {
-      setLoadingLookups(true)
+    ;(async () => {
       try {
-        const [groups, terrs] = await Promise.all([
-          customerService.lookups.customerGroups(),
-          customerService.lookups.territories(),
-        ])
+        const opts = await fetchCustomerTypeOptions()
         if (cancelled) return
-        setCustomerGroups(groups)
-        setTerritories(terrs)
-        setCustomerGroup((prev) => prev || (groups.length > 0 ? groups[0] : ""))
-        setTerritory((prev) => prev || (terrs.length > 0 ? terrs[0] : ""))
+        setCustomerTypeOptions(opts)
+        if (opts.length > 0) setCustomerType("Company")
       } catch {
-        if (!cancelled) setError("Failed to load dropdown options.")
-      } finally {
-        if (!cancelled) setLoadingLookups(false)
+        if (!cancelled) setError("Failed to load options.")
       }
-    }
-    load()
+    })()
     return () => { cancelled = true }
   }, [open])
 
   const reset = () => {
     setCustomerName("")
-    setCustomerType("Company")
-    setCustomerGroup("")
-    setTerritory("")
+    setCustomerType("")
     setFirstName("")
     setLastName("")
     setEmail("")
@@ -76,33 +78,37 @@ export default function QuickAddCustomerModal({ open, onClose }: Props) {
     setSaving(false)
   }
 
+  const hasContactInfo = email.trim().length > 0 || mobile.trim().length > 0
+
+  const addressFilled =
+    addrLine1.trim().length > 0 || city.trim().length > 0 || country.trim().length > 0
+
+  const validate = (): string | null => {
+    if (!customerName.trim()) return "Customer Name is required."
+    if (addressFilled) {
+      if (!addrLine1.trim()) return "Address Line 1 is required when an address is provided."
+      if (!city.trim()) return "City is required when an address is provided."
+      if (!country.trim()) return "Country is required when an address is provided."
+    }
+    return null
+  }
+
   const handleSave = async () => {
     setError("")
-    if (!customerName.trim()) {
-      setError("Customer Name is required.")
-      return
-    }
-    if (!customerGroup) {
-      setError("Customer Group is required.")
-      return
-    }
-    if (!territory) {
-      setError("Territory is required.")
-      return
-    }
+    const validationError = validate()
+    if (validationError) { setError(validationError); return }
 
     setSaving(true)
     try {
-      const contactFilled = [firstName, lastName, email, mobile].some((v) => v && v.trim().length > 0)
-      const addressFilled = [addrLine1, city, country].some((v) => v && v.trim().length > 0)
-
-      await customerService.create({
+      const created = await customerService.quickCreate({
         customer_name: customerName.trim(),
-        customer_type: customerType,
-        customer_group: customerGroup,
-        territory: territory,
-        contactEmail: contactFilled ? email || undefined : undefined,
-        contactPhone: contactFilled ? mobile || undefined : undefined,
+        customer_type: customerType || "",
+        customer_group: "",
+        territory: "",
+        contactFirstName: customerType === "Company" ? (firstName || undefined) : undefined,
+        contactLastName: customerType === "Company" ? (lastName || undefined) : undefined,
+        contactEmail: hasContactInfo ? email || undefined : undefined,
+        contactPhone: hasContactInfo ? mobile || undefined : undefined,
         billingAddress: addressFilled ? {
           address_line1: addrLine1,
           address_line2: addrLine2 || undefined,
@@ -118,30 +124,56 @@ export default function QuickAddCustomerModal({ open, onClose }: Props) {
         is_internal_customer: false,
       })
 
+      addToast(`${customerName.trim()} saved`, "success")
       reset()
       onClose()
-      navigate(`/customers/${customerName.trim()}`)
+      onCreated?.(created)
     } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Failed to create customer."
-      )
+      setError(err instanceof Error ? err.message : "Failed to create customer.")
     } finally {
       setSaving(false)
     }
   }
 
   const handleEditFullForm = () => {
-    reset()
+    const stateData: Record<string, unknown> = {
+      customer_name: customerName.trim() || undefined,
+      customer_type: customerType || undefined,
+    }
+    if (firstName && customerType === "Company") stateData.contactFirstName = firstName
+    if (lastName && customerType === "Company") stateData.contactLastName = lastName
+    if (hasContactInfo) {
+      if (email) stateData.contactEmail = email
+      if (mobile) stateData.contactPhone = mobile
+    }
+    if (addressFilled) {
+      stateData.billingAddress = {
+        address_line1: addrLine1,
+        address_line2: addrLine2 || undefined,
+        city,
+        state: state || undefined,
+        country,
+        pincode: pincode || undefined,
+      }
+    }
     onClose()
-    navigate("/customers/new", {
-      state: { customer_name: customerName.trim() || undefined, customer_type: customerType },
-    })
+    navigate("/customers/new", { state: stateData })
   }
 
-  const inputClass =
-    "w-full px-3 py-2 bg-white border border-border rounded-[10px] text-sm text-body placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 transition-all duration-200"
-  const labelClass = "block text-xs font-semibold text-muted mb-1 uppercase tracking-wider"
-  const sectionLabel = "text-sm font-semibold text-heading mb-3"
+  const handleSaveRef = useRef(handleSave)
+  handleSaveRef.current = handleSave
+
+  useEffect(() => {
+    if (!open) return
+    const handler = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+        e.preventDefault()
+        handleSaveRef.current()
+      }
+    }
+    window.addEventListener("keydown", handler)
+    return () => window.removeEventListener("keydown", handler)
+  }, [open])
 
   return (
     <Modal open={open} onClose={() => { reset(); onClose() }} title="Add Customer" size="lg">
@@ -152,129 +184,75 @@ export default function QuickAddCustomerModal({ open, onClose }: Props) {
           </p>
         )}
 
-        <div className="grid grid-cols-2 gap-4">
-          <div className="col-span-2">
-            <label className={labelClass}>Customer Name *</label>
-            <input
-              value={customerName}
-              onChange={(e) => setCustomerName(e.target.value)}
-              className={inputClass}
-              placeholder="John Doe / Acme Corp"
-              autoFocus
+        <div className="flex items-center gap-3 px-3 py-2 bg-blue-50 border border-blue-100 rounded-[10px] text-xs text-blue-700">
+          <kbd className="px-1.5 py-0.5 bg-white border border-blue-200 rounded text-[11px] font-mono">Ctrl+Enter</kbd>
+          to save
+        </div>
+
+        <div className="space-y-4">
+          <Input
+            label="Customer Name *"
+            value={customerName}
+            onChange={(e) => setCustomerName(e.target.value)}
+            placeholder="John Doe / Acme Corp"
+            autoFocus
+          />
+          <Select
+            label="Customer Type *"
+            value={customerType}
+            onChange={(e) => setCustomerType(e.target.value)}
+          >
+            {customerTypeOptions.map((opt) => (
+              <option key={opt} value={opt}>{opt}</option>
+            ))}
+          </Select>
+        </div>
+
+        <div className="border-t border-border pt-4">
+          <p className="text-sm font-semibold text-heading mb-3">Primary Contact Details</p>
+          <div className="grid grid-cols-2 gap-4">
+            {customerType === "Company" && (
+              <>
+                <Input label="First Name" value={firstName} onChange={(e) => setFirstName(e.target.value)} />
+                <Input label="Last Name" value={lastName} onChange={(e) => setLastName(e.target.value)} />
+              </>
+            )}
+            <Input label="Email Id" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+            <Input label="Mobile Number" type="tel" maxLength={15} value={mobile} onChange={(e) => setMobile(e.target.value.replace(/\D/g, ""))} />
+          </div>
+        </div>
+
+        <div className="border-t border-border pt-4">
+          <p className="text-sm font-semibold text-heading mb-3">Primary Address Details</p>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="col-span-2">
+              <Input label="Address Line 1" value={addrLine1} onChange={(e) => setAddrLine1(e.target.value)} />
+            </div>
+            <div className="col-span-2">
+              <Input label="Address Line 2" value={addrLine2} onChange={(e) => setAddrLine2(e.target.value)} />
+            </div>
+            <Input label="ZIP Code" value={pincode} onChange={(e) => setPincode(e.target.value)} />
+            <Input label="City" value={city} onChange={(e) => setCity(e.target.value)} />
+            <Input label="State/Province" value={state} onChange={(e) => setState(e.target.value)} />
+            <LinkSearchField
+              label="Country"
+              value={country}
+              onChange={(v) => setCountry(v ?? "")}
+              searchFn={(q) => searchLink("Country", q).then((items) => ({ items }))}
+              docType="country"
+              placeholder="Begin typing for results."
             />
-          </div>
-          <div>
-            <label className={labelClass}>Customer Type *</label>
-            <select
-              value={customerType}
-              onChange={(e) => setCustomerType(e.target.value as typeof customerType)}
-              className={inputClass}
-            >
-              <option value="Company">Company</option>
-              <option value="Individual">Individual</option>
-              <option value="Partnership">Partnership</option>
-            </select>
-          </div>
-          <div>
-            <label className={labelClass}>Customer Group *</label>
-            <select
-              value={customerGroup}
-              onChange={(e) => setCustomerGroup(e.target.value)}
-              className={inputClass}
-              disabled={loadingLookups}
-            >
-              <option value="">{loadingLookups ? "Loading..." : "Select group"}</option>
-              {customerGroups.map((g) => (
-                <option key={g} value={g}>{g}</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className={labelClass}>Territory *</label>
-            <select
-              value={territory}
-              onChange={(e) => setTerritory(e.target.value)}
-              className={inputClass}
-              disabled={loadingLookups}
-            >
-              <option value="">{loadingLookups ? "Loading..." : "Select territory"}</option>
-              {territories.map((t) => (
-                <option key={t} value={t}>{t}</option>
-              ))}
-            </select>
-          </div>
-        </div>
-
-        <div className="border-t border-border pt-4">
-          <p className={sectionLabel}>Primary Contact Details</p>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className={labelClass}>First Name</label>
-              <input value={firstName} onChange={(e) => setFirstName(e.target.value)} className={inputClass} />
-            </div>
-            <div>
-              <label className={labelClass}>Last Name</label>
-              <input value={lastName} onChange={(e) => setLastName(e.target.value)} className={inputClass} />
-            </div>
-            <div>
-              <label className={labelClass}>Email Id</label>
-              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className={inputClass} />
-            </div>
-            <div>
-              <label className={labelClass}>Mobile Number</label>
-              <input type="tel" value={mobile} onChange={(e) => setMobile(e.target.value)} className={inputClass} />
-            </div>
-          </div>
-        </div>
-
-        <div className="border-t border-border pt-4">
-          <p className={sectionLabel}>Primary Address Details</p>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="col-span-2">
-              <label className={labelClass}>Address Line 1</label>
-              <input value={addrLine1} onChange={(e) => setAddrLine1(e.target.value)} className={inputClass} />
-            </div>
-            <div className="col-span-2">
-              <label className={labelClass}>Address Line 2</label>
-              <input value={addrLine2} onChange={(e) => setAddrLine2(e.target.value)} className={inputClass} />
-            </div>
-            <div>
-              <label className={labelClass}>City / Town</label>
-              <input value={city} onChange={(e) => setCity(e.target.value)} className={inputClass} />
-            </div>
-            <div>
-              <label className={labelClass}>State / Province</label>
-              <input value={state} onChange={(e) => setState(e.target.value)} className={inputClass} />
-            </div>
-            <div>
-              <label className={labelClass}>ZIP / Postal Code</label>
-              <input value={pincode} onChange={(e) => setPincode(e.target.value)} className={inputClass} />
-            </div>
-            <div>
-              <label className={labelClass}>Country</label>
-              <input value={country} onChange={(e) => setCountry(e.target.value)} className={inputClass} />
-            </div>
           </div>
         </div>
       </div>
 
       <ModalFooter>
-        <button
-          type="button"
-          onClick={handleEditFullForm}
-          className="px-4 py-2 text-sm font-semibold text-muted bg-white border border-border rounded-[10px] hover:bg-gray-50 transition-colors"
-        >
+        <Button variant="outline" onClick={handleEditFullForm}>
           Edit Full Form
-        </button>
-        <button
-          type="button"
-          onClick={handleSave}
-          disabled={saving || loadingLookups}
-          className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-[10px] hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-        >
-          {saving && <Loader2 size={14} className="animate-spin" />}
+        </Button>
+        <Button onClick={handleSave} disabled={saving} loading={saving}>
           {saving ? "Saving..." : "Save"}
-        </button>
+        </Button>
       </ModalFooter>
     </Modal>
   )

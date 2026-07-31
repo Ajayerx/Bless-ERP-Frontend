@@ -119,7 +119,9 @@ export interface SalesInvoice {
   taxes_and_charges?: string
   tax_category?: string
   customer_address?: string
+  address_display?: string
   shipping_address_name?: string
+  shipping_address?: string
   contact_person?: string
   contact_email?: string
   contact_mobile?: string
@@ -151,8 +153,8 @@ export interface SalesInvoice {
   loyalty_program?: string
   loyalty_points?: number
   loyalty_amount?: number
-  redemption_account?: string
-  redemption_cost_center?: string
+  loyalty_redemption_account?: string
+  loyalty_redemption_cost_center?: string
   // Print
   letter_head?: string
   group_same_items?: boolean
@@ -179,6 +181,7 @@ export interface SalesInvoice {
   is_internal_customer?: 0 | 1
   represents_company?: string
   dispatch_address_name?: string
+  dispatch_address?: string
   naming_series?: string
   set_posting_time?: boolean
   contact_display?: string
@@ -277,8 +280,8 @@ export interface SalesInvoiceFormData {
   loyalty_program?: string
   loyalty_points?: number
   loyalty_amount?: number
-  redemption_account?: string
-  redemption_cost_center?: string
+  loyalty_redemption_account?: string
+  loyalty_redemption_cost_center?: string
   // Print
   letter_head?: string
   group_same_items?: boolean

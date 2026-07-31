@@ -6,18 +6,23 @@ import { ArrowLeft } from "lucide-react"
 import Topbar from "@/components/layout/Topbar"
 import { Button } from "@/components/ui"
 import CustomerForm from "../components/CustomerForm"
-import type { CustomerFormData } from "@/services"
-
 export default function NewCustomer() {
   const navigate = useNavigate()
   const location = useLocation()
   const state = location.state as Record<string, unknown> | null
 
-  const initialValues: Partial<CustomerFormData> | undefined =
+  const initialValues: Partial<import("@/services").CustomerFormData> | undefined =
     state?.customer_name
       ? {
           customer_name: state.customer_name as string,
-          customer_type: (state.customer_type as CustomerFormData["customer_type"]) || "Company",
+          customer_type: (state.customer_type as string) || undefined,
+          customer_group: (state.customer_group as string) || undefined,
+          territory: (state.territory as string) || undefined,
+          contactFirstName: (state.contactFirstName as string) || undefined,
+          contactLastName: (state.contactLastName as string) || undefined,
+          contactEmail: (state.contactEmail as string) || undefined,
+          contactPhone: (state.contactPhone as string) || undefined,
+          billingAddress: state.billingAddress as import("@/services").AddressInput | undefined,
         }
       : undefined
 

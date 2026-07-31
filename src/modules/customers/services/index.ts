@@ -2,12 +2,14 @@ import { apiClient } from "@/services/api-client"
 import type {
   Customer, CustomerListResponse, AddressInput, AllowedCompanyRow,
   CreditLimitRow, PartyAccountRow, SalesTeamRow, PortalUserRow,
-  SupplierNumberRow, CustomerFormData, CustomerDetail,
+  SupplierNumberRow, CustomerFormData, CustomerDetail, TransactionCounts,
+  ContactDetail,
 } from "../types"
 export type {
   Customer, CustomerListResponse, AddressInput, AllowedCompanyRow,
   CreditLimitRow, PartyAccountRow, SalesTeamRow, PortalUserRow,
   SupplierNumberRow, CustomerFormData, CustomerDetail, TransactionCounts,
+  ContactDetail,
 } from "../types"
 
 export function buildListUrl(
@@ -55,6 +57,44 @@ async function fetchLinkOptions(doctype: string, orderByField = "name", filters?
   }
 }
 
+export async function fetchFieldOptions(doctype: string, fieldname: string): Promise<string[]> {
+  try {
+    const doc = await apiClient<{ fields: Array<{ fieldname: string; options?: string }> }>(
+      `/resource/DocType/${encodeURIComponent(doctype)}?fields=["fields.fieldname","fields.options"]`
+    )
+    const field = doc.fields?.find((f) => f.fieldname === fieldname)
+    if (!field?.options) return []
+    return field.options.split("\n").filter(Boolean)
+  } catch {
+    return []
+  }
+}
+
+export async function searchLink(doctype: string, query: string, referenceDoctype?: string, filters?: unknown[][] | Record<string, string>, customQuery?: string): Promise<{ value: string; label: string; description: string }[]> {
+  try {
+    const qp = new URLSearchParams()
+    qp.set("doctype", doctype)
+    qp.set("txt", query)
+    if (referenceDoctype) qp.set("reference_doctype", referenceDoctype)
+    if (filters) qp.set("filters", JSON.stringify(filters))
+    if (customQuery) qp.set("query", customQuery)
+    qp.set("limit", "10")
+    return apiClient(`/method/frappe.desk.search.search_link?${qp.toString()}`)
+  } catch {
+    return []
+  }
+}
+
+export async function getPartyDetails(partyType: string, partyName: string): Promise<Record<string, unknown>> {
+  try {
+    return apiClient(
+      `/method/erpnext.accounts.party.get_party_details?party_type=${encodeURIComponent(partyType)}&party=${encodeURIComponent(partyName)}`
+    )
+  } catch {
+    return {}
+  }
+}
+
 export const customerLookups = {
   customerGroups: () => fetchLinkOptions("Customer Group", "name", [["is_group", "=", 0]]),
   territories: () => fetchLinkOptions("Territory", "name", [["is_group", "=", 0]]),
@@ -68,7 +108,6 @@ export const customerLookups = {
   industries: () => fetchLinkOptions("Industry Type"),
   languages: () => fetchLinkOptions("Language"),
   taxCategories: () => fetchLinkOptions("Tax Category"),
-  taxWithholdingGroups: () => fetchLinkOptions("Tax Withholding Group"),
   taxWithholdingCategories: () => fetchLinkOptions("Tax Withholding Category"),
   paymentTermsTemplates: () => fetchLinkOptions("Payment Terms Template"),
   loyaltyPrograms: () => fetchLinkOptions("Loyalty Program"),
@@ -76,7 +115,7 @@ export const customerLookups = {
   accounts: () => fetchLinkOptions("Account", "name", [["account_type", "=", "Receivable"], ["root_type", "=", "Asset"], ["is_group", "=", 0]]),
   advanceAccounts: () => fetchLinkOptions("Account", "name", [["account_type", "=", "Receivable"], ["root_type", "=", "Liability"], ["is_group", "=", 0]]),
   salesPersons: () => fetchLinkOptions("Sales Person"),
-  users: () => fetchLinkOptions("User", "full_name"),
+  users: () => fetchLinkOptions("User", "full_name", [["enabled", "=", 1]]),
   leads: () => fetchLinkOptions("Lead", "name"),
   opportunities: () => fetchLinkOptions("Opportunity", "name"),
   prospects: () => fetchLinkOptions("Prospect", "name"),
@@ -90,6 +129,7 @@ const CUSTOMER_FIELDS: (keyof CustomerRow)[] = [
   "is_internal_customer", "represents_company",
   "mobile_no", "email_id", "default_currency", "default_price_list",
   "disabled", "is_frozen", "creation", "modified",
+  "image",
 ]
 
 function toCustomer(row: CustomerRow, outstanding: number): Customer {
@@ -142,14 +182,16 @@ export interface AddressDoc {
 
 async function createContact(
   customerName: string,
-  displayName: string,
+  firstName?: string,
+  lastName?: string,
   email?: string,
   phone?: string
 ): Promise<ContactDoc> {
   return apiClient<ContactDoc>("/resource/Contact", {
     method: "POST",
     body: JSON.stringify({
-      first_name: displayName,
+      first_name: firstName || customerName,
+      ...(lastName ? { last_name: lastName } : {}),
       email_ids: email ? [{ email_id: email, is_primary: 1 }] : [],
       phone_nos: phone ? [{ phone, is_primary_mobile_no: 1 }] : [],
       links: [{ link_doctype: "Customer", link_name: customerName }],
@@ -220,6 +262,36 @@ async function deleteAddress(addressName: string): Promise<void> {
   })
 }
 
+async function fetchContactsForCustomer(customerName: string): Promise<ContactDetail[]> {
+  try {
+    const rows = await apiClient<Array<{
+      name: string
+      first_name: string
+      last_name?: string
+      email_ids?: Array<{ email_id: string; is_primary: 0 | 1 }>
+      phone_nos?: Array<{ phone: string; is_primary_mobile_no: 0 | 1 }>
+    }>>(
+      buildListUrl("Contact", {
+        fields: ["name", "first_name", "last_name", "email_ids", "phone_nos"],
+        filters: [
+          ["Dynamic Link", "link_doctype", "=", "Customer"],
+          ["Dynamic Link", "link_name", "=", customerName],
+        ],
+      })
+    )
+    return (rows ?? []).map((r) => ({
+      name: r.name,
+      first_name: r.first_name,
+      last_name: r.last_name,
+      email_id: r.email_ids?.find((e) => e.is_primary)?.email_id ?? r.email_ids?.[0]?.email_id,
+      mobile_no: r.phone_nos?.find((p) => p.is_primary_mobile_no)?.phone ?? r.phone_nos?.[0]?.phone,
+      is_primary_contact: 0 as const,
+    }))
+  } catch {
+    return []
+  }
+}
+
 async function fetchAddressesForCustomer(customerName: string): Promise<AddressDoc[]> {
   return apiClient<AddressDoc[]>(
     buildListUrl("Address", {
@@ -236,26 +308,42 @@ async function fetchAddressesForCustomer(customerName: string): Promise<AddressD
   )
 }
 
-async function fetchTransactionCounts(customerName: string): Promise<{
-  sales_orders: number
-  sales_invoices: number
-  opportunities: number
-  issues: number
-}> {
-  const [sales_orders, sales_invoices, opportunities, issues] = await Promise.all([
+async function fetchTransactionCounts(customerName: string): Promise<TransactionCounts> {
+  const [
+    sales_orders, sales_invoices, opportunities, issues,
+    quotations, delivery_notes, payment_entries, bank_accounts,
+    dunnings, maintenance_visits, installation_notes, warranty_claims,
+    projects, pricing_rules, subscriptions,
+  ] = await Promise.all([
     getCount("Sales Order", [["customer", "=", customerName], ["docstatus", "!=", 2]]),
     getCount("Sales Invoice", [["customer", "=", customerName], ["docstatus", "!=", 2]]),
     getCount("Opportunity", [["party_name", "=", customerName], ["docstatus", "!=", 2]]),
     getCount("Issue", [["customer", "=", customerName]]),
+    getCount("Quotation", [["party_name", "=", customerName], ["docstatus", "!=", 2]]),
+    getCount("Delivery Note", [["customer", "=", customerName], ["docstatus", "!=", 2]]),
+    getCount("Payment Entry", [["party", "=", customerName], ["docstatus", "!=", 2]]),
+    getCount("Bank Account", [["party_type", "=", "Customer"], ["party", "=", customerName]]),
+    getCount("Dunning", [["customer", "=", customerName], ["docstatus", "!=", 2]]),
+    getCount("Maintenance Visit", [["customer", "=", customerName], ["docstatus", "!=", 2]]),
+    getCount("Installation Note", [["customer", "=", customerName], ["docstatus", "!=", 2]]),
+    getCount("Warranty Claim", [["customer", "=", customerName]]),
+    getCount("Project", [["customer", "=", customerName]]),
+    getCount("Pricing Rule", [["customer", "=", customerName]]),
+    getCount("Subscription", [["party_type", "=", "Customer"], ["party", "=", customerName]]),
   ])
-  return { sales_orders, sales_invoices, opportunities, issues }
+  return {
+    sales_orders, sales_invoices, opportunities, issues,
+    quotations, delivery_notes, payment_entries, bank_accounts,
+    dunnings, maintenance_visits, installation_notes, warranty_claims,
+    projects, pricing_rules, subscriptions,
+  }
 }
 
 
 function toCustomerDocPayload(data: CustomerFormData): Record<string, unknown> {
   return {
+    naming_series: data.naming_series,
     salutation: data.salutation,
-    alias: data.alias,
     customer_name: data.customer_name.trim(),
     customer_type: data.customer_type,
     customer_group: data.customer_group,
@@ -263,7 +351,6 @@ function toCustomerDocPayload(data: CustomerFormData): Record<string, unknown> {
     gender: data.gender,
     lead_name: data.lead_name,
     opportunity_name: data.opportunity_name,
-    crm_deal: data.crm_deal,
     account_manager: data.account_manager,
     image: data.image,
     default_currency: data.default_currency,
@@ -273,13 +360,11 @@ function toCustomerDocPayload(data: CustomerFormData): Record<string, unknown> {
     represents_company: data.represents_company,
     market_segment: data.market_segment,
     industry: data.industry,
-    customer_pos_id: data.customer_pos_id,
     website: data.website,
     language: data.language,
     customer_details: data.customer_details,
     tax_id: data.tax_id,
     tax_category: data.tax_category,
-    tax_withholding_group: data.tax_withholding_group,
     tax_withholding_category: data.tax_withholding_category,
     payment_terms: data.payment_terms,
     loyalty_program: data.loyalty_program,
@@ -301,29 +386,38 @@ function toCustomerDocPayload(data: CustomerFormData): Record<string, unknown> {
 export const customerService = {
   lookups: customerLookups,
   createAddress,
+  fetchFieldOptions,
+  searchLink,
+  getPartyDetails,
 
   async list(params: {
     search?: string
     page?: number
     pageSize?: number
+    start?: number
+    pageLength?: number
+    filters?: unknown[]
   }): Promise<CustomerListResponse> {
-    const page = params.page ?? 1
-    const pageSize = params.pageSize ?? 10
-    const filters = params.search
+    const pageSize = params.pageLength ?? params.pageSize ?? 20
+    const limit_start = params.start != null ? params.start : ((params.page ?? 1) - 1) * pageSize
+    const searchFilters = params.search
       ? [["customer_name", "like", `%${params.search}%`]]
-      : undefined
+      : []
+    const extraFilters = params.filters ?? []
+    const filters = [...searchFilters, ...extraFilters] as unknown[]
+    const queryFilters = filters.length > 0 ? filters : undefined
 
     const [rows, total] = await Promise.all([
       apiClient<CustomerRow[]>(
         buildListUrl("Customer", {
           fields: CUSTOMER_FIELDS as string[],
-          filters,
+          filters: queryFilters,
           limit_page_length: pageSize,
-          limit_start: (page - 1) * pageSize,
+          limit_start,
           order_by: "modified desc",
         })
       ),
-      getCount("Customer", filters),
+      getCount("Customer", queryFilters as unknown[] | undefined),
     ])
 
     const outstandingMap = await fetchOutstandingByCustomer(rows.map((r) => r.name))
@@ -332,14 +426,14 @@ export const customerService = {
     return {
       items,
       total,
-      page,
+      page: params.page ?? 1,
       pageSize,
       totalPages: Math.max(1, Math.ceil(total / pageSize)),
     }
   },
 
   async getById(name: string): Promise<CustomerDetail> {
-    const [fullDoc, addresses, outstandingMap, transaction_counts] = await Promise.all([
+    const [fullDoc, addresses, contacts, outstandingMap, transaction_counts] = await Promise.all([
       apiClient<CustomerRow & {
         companies?: AllowedCompanyRow[]
         credit_limits?: CreditLimitRow[]
@@ -349,6 +443,7 @@ export const customerService = {
         supplier_numbers?: SupplierNumberRow[]
       }>(`/resource/Customer/${encodeURIComponent(name)}`),
       fetchAddressesForCustomer(name),
+      fetchContactsForCustomer(name),
       fetchOutstandingByCustomer([name]),
       fetchTransactionCounts(name),
     ])
@@ -365,6 +460,7 @@ export const customerService = {
         country: a.country,
         pincode: a.pincode,
       })),
+      contacts,
       companies: fullDoc.companies ?? [],
       credit_limits: fullDoc.credit_limits ?? [],
       accounts: fullDoc.accounts ?? [],
@@ -372,6 +468,41 @@ export const customerService = {
       portal_users: fullDoc.portal_users ?? [],
       supplier_numbers: fullDoc.supplier_numbers ?? [],
     }
+  },
+
+  async quickCreate(data: CustomerFormData): Promise<Customer> {
+    const payload: Record<string, unknown> = {
+      customer_name: data.customer_name.trim(),
+      customer_type: data.customer_type,
+      customer_group: data.customer_group,
+      territory: data.territory,
+      so_required: data.so_required ? 1 : 0,
+      dn_required: data.dn_required ? 1 : 0,
+      is_frozen: data.is_frozen ? 1 : 0,
+      disabled: data.disabled ? 1 : 0,
+      is_internal_customer: data.is_internal_customer ? 1 : 0,
+    }
+
+    if (data.contactEmail) payload.email_id = data.contactEmail
+    if (data.contactPhone) payload.mobile_no = data.contactPhone
+    if (data.contactFirstName) payload.first_name = data.contactFirstName
+    if (data.contactLastName) payload.last_name = data.contactLastName
+
+    if (data.billingAddress) {
+      payload.address_line1 = data.billingAddress.address_line1
+      if (data.billingAddress.address_line2) payload.address_line2 = data.billingAddress.address_line2
+      payload.city = data.billingAddress.city
+      if (data.billingAddress.state) payload.state = data.billingAddress.state
+      payload.country = data.billingAddress.country
+      if (data.billingAddress.pincode) payload.pincode = data.billingAddress.pincode
+    }
+
+    const result = await apiClient<CustomerRow>("/resource/Customer", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    })
+
+    return toCustomer(result, 0)
   },
 
   async create(data: CustomerFormData): Promise<Customer> {
@@ -385,7 +516,8 @@ export const customerService = {
     if (data.contactEmail || data.contactPhone) {
       const contact = await createContact(
         customerRow.name,
-        data.customer_name,
+        data.contactFirstName || data.customer_name,
+        data.contactLastName,
         data.contactEmail,
         data.contactPhone
       )
@@ -422,7 +554,7 @@ export const customerService = {
       if (data.existingContactName) {
         await updateContact(data.existingContactName, data.contactEmail, data.contactPhone)
       } else {
-        const contact = await createContact(name, data.customer_name, data.contactEmail, data.contactPhone)
+        const contact = await createContact(name, data.contactFirstName || data.customer_name, data.contactLastName, data.contactEmail, data.contactPhone)
         await apiClient(`/resource/Customer/${encodeURIComponent(name)}`, {
           method: "PUT",
           body: JSON.stringify({ customer_primary_contact: contact.name }),
@@ -455,9 +587,41 @@ export const customerService = {
   },
 
   async delete(name: string): Promise<void> {
+    const [contacts, addrs] = await Promise.all([
+      apiClient<{ name: string }[]>(
+        buildListUrl("Contact", {
+          fields: ["name"],
+          filters: [["Dynamic Link", "link_doctype", "=", "Customer"], ["Dynamic Link", "link_name", "=", name]],
+        })
+      ).catch(() => []),
+      apiClient<{ name: string }[]>(
+        buildListUrl("Address", {
+          fields: ["name"],
+          filters: [["Dynamic Link", "link_doctype", "=", "Customer"], ["Dynamic Link", "link_name", "=", name]],
+        })
+      ).catch(() => []),
+    ])
+    await Promise.all([
+      ...contacts.map((c) => deleteContact(c.name).catch(() => {})),
+      ...addrs.map((a) => deleteAddress(a.name).catch(() => {})),
+    ])
     return apiClient<void>(`/resource/Customer/${encodeURIComponent(name)}`, {
       method: "DELETE",
     })
+  },
+
+  async makeQuotation(customerName: string): Promise<{ name: string }> {
+    return apiClient<{ name: string }>(
+      "/method/erpnext.selling.doctype.customer.customer.make_quotation",
+      { method: "POST", body: JSON.stringify({ source_name: customerName }) }
+    )
+  },
+
+  async makeOpportunity(customerName: string): Promise<{ name: string }> {
+    return apiClient<{ name: string }>(
+      "/method/erpnext.selling.doctype.customer.customer.make_opportunity",
+      { method: "POST", body: JSON.stringify({ source_name: customerName }) }
+    )
   },
 
   async deleteContact(contactName: string): Promise<void> {
@@ -473,7 +637,7 @@ export const customerService = {
     const headers = ["name", "customer_name", "customer_type", "customer_group", "territory", "email_id", "mobile_no", "outstanding", "status", "creation"]
     const rows = result.items.map((c) =>
       headers.map((h) => {
-        const val = String((c as Record<string, unknown>)[h] ?? "")
+        const val = String((c as unknown as Record<string, unknown>)[h] ?? "")
         return val.includes(",") || val.includes('"') || val.includes("\n")
           ? `"${val.replace(/"/g, '""')}"`
           : val
@@ -513,7 +677,7 @@ export const customerService = {
       try {
         await customerService.create({
           customer_name: customerName,
-          customer_type: (cols[typeIdx] as "Company" | "Individual" | "Partnership") || "Company",
+          customer_type: cols[typeIdx] || "Company",
           customer_group: cols[groupIdx] || "",
           territory: cols[territoryIdx] || "",
           so_required: false,

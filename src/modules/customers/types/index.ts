@@ -2,16 +2,14 @@ export interface Customer {
   name: string
   naming_series?: string
   salutation?: string
-  alias?: string
   customer_name: string
-  customer_type: "Company" | "Individual" | "Partnership"
+  customer_type: string
   customer_group: string
   territory: string
   gender?: string
   lead_name?: string
   opportunity_name?: string
   prospect_name?: string
-  crm_deal?: string
   account_manager?: string
   image?: string
   default_currency?: string
@@ -21,7 +19,6 @@ export interface Customer {
   represents_company?: string
   market_segment?: string
   industry?: string
-  customer_pos_id?: string
   website?: string
   language?: string
   customer_details?: string
@@ -34,7 +31,6 @@ export interface Customer {
   last_name?: string
   tax_id?: string
   tax_category?: string
-  tax_withholding_group?: string
   tax_withholding_category?: string
   payment_terms?: string
   loyalty_program?: string
@@ -48,7 +44,7 @@ export interface Customer {
   creation: string
   modified: string
   outstanding: number
-  status: "active" | "inactive"
+  status: string
 }
 
 export interface CustomerListResponse {
@@ -100,6 +96,7 @@ export interface SalesTeamRow {
 export interface PortalUserRow {
   name?: string
   user: string
+  email?: string
 }
 
 export interface SupplierNumberRow {
@@ -109,17 +106,16 @@ export interface SupplierNumberRow {
 }
 
 export interface CustomerFormData {
+  naming_series?: string
   salutation?: string
-  alias?: string
   customer_name: string
-  customer_type: "Company" | "Individual" | "Partnership"
+  customer_type: string
   customer_group: string
   territory: string
   gender?: string
   lead_name?: string
   opportunity_name?: string
   prospect_name?: string
-  crm_deal?: string
   account_manager?: string
   image?: string
   default_currency?: string
@@ -129,13 +125,16 @@ export interface CustomerFormData {
   represents_company?: string
   market_segment?: string
   industry?: string
-  customer_pos_id?: string
   website?: string
   language?: string
   customer_details?: string
+  customer_primary_contact?: string
+  customer_primary_address?: string
+  primary_address?: string
+  mobile_no?: string
+  email_id?: string
   tax_id?: string
   tax_category?: string
-  tax_withholding_group?: string
   tax_withholding_category?: string
   payment_terms?: string
   loyalty_program?: string
@@ -145,6 +144,8 @@ export interface CustomerFormData {
   dn_required?: boolean
   is_frozen?: boolean
   disabled?: boolean
+  contactFirstName?: string
+  contactLastName?: string
   contactEmail?: string
   contactPhone?: string
   billingAddress?: AddressInput
@@ -160,11 +161,31 @@ export interface CustomerFormData {
   supplier_numbers?: SupplierNumberRow[]
 }
 
+export interface ContactDetail {
+  name: string
+  first_name: string
+  last_name?: string
+  email_id?: string
+  mobile_no?: string
+  is_primary_contact?: 0 | 1
+}
+
 export interface TransactionCounts {
   sales_orders: number
   sales_invoices: number
   opportunities: number
   issues: number
+  quotations: number
+  delivery_notes: number
+  payment_entries: number
+  bank_accounts: number
+  dunnings: number
+  maintenance_visits: number
+  installation_notes: number
+  warranty_claims: number
+  projects: number
+  pricing_rules: number
+  subscriptions: number
 }
 
 export interface CustomerDetail extends Customer {
@@ -179,6 +200,7 @@ export interface CustomerDetail extends Customer {
     country: string
     pincode?: string
   }>
+  contacts: ContactDetail[]
   companies: AllowedCompanyRow[]
   credit_limits: CreditLimitRow[]
   accounts: PartyAccountRow[]

@@ -57,6 +57,8 @@ export function validateInvoice(
   if (!formData.isReturn && !formData.isDebitNote) {
     if (!hasValue(formData.dueDate)) {
       errors.dueDate = "Payment Due Date is required";
+    } else if (hasValue(formData.issueDate) && formData.dueDate < formData.issueDate) {
+      errors.dueDate = "Due Date cannot be before Posting Date";
     }
   }
 
@@ -64,16 +66,18 @@ export function validateInvoice(
     errors.currency = "Currency is required";
   }
 
-  if (formData.conversionRate !== undefined && formData.conversionRate <= 0) {
-    errors.conversionRate = "Exchange Rate must be greater than 0";
-  }
+  if (hasValue(formData.customer)) {
+    if (formData.conversionRate === undefined || formData.conversionRate === null || formData.conversionRate <= 0) {
+      errors.conversionRate = "Exchange Rate is required and must be greater than 0";
+    }
 
-  if (!hasValue(effectivePriceList)) {
-    errors.sellingPriceList = "Price List is required";
-  }
+    if (!hasValue(effectivePriceList)) {
+      errors.sellingPriceList = "Price List is required";
+    }
 
-  if (formData.plcConversionRate !== undefined && formData.plcConversionRate <= 0) {
-    errors.plcConversionRate = "Price List Exchange Rate must be greater than 0";
+    if (formData.plcConversionRate === undefined || formData.plcConversionRate === null || formData.plcConversionRate <= 0) {
+      errors.plcConversionRate = "Price List Exchange Rate is required and must be greater than 0";
+    }
   }
 
   if (!hasValue(effectiveDebitTo)) {
@@ -93,7 +97,9 @@ export function validateInvoice(
       const row = lineItems[i];
       const rowErr: { itemCode?: string; qty?: string; rate?: string; uom?: string } = {};
 
-      if (!hasValue(row.sku) && !hasValue(row.productName)) {
+      const hasItem = hasValue(row.sku) || hasValue(row.productName);
+
+      if (!hasItem) {
         rowErr.itemCode = "Item is required";
       }
       if (row.quantity < 1) {
@@ -102,7 +108,7 @@ export function validateInvoice(
       if (row.price < 0) {
         rowErr.rate = "Rate cannot be negative";
       }
-      if (!hasValue(row.uom)) {
+      if (hasItem && !hasValue(row.uom)) {
         rowErr.uom = "UOM is required";
       }
 
@@ -119,6 +125,8 @@ export function validateInvoice(
 
   if (formData.isReturn && !hasValue(formData.returnAgainst)) {
     errors.returnAgainst = "Return Against is required for credit notes";
+  } else if (formData.isDebitNote && !hasValue(formData.returnAgainst)) {
+    errors.returnAgainst = "Adjustment Against is required for debit notes";
   }
 
   if (
@@ -160,4 +168,30 @@ export function getValidationSummary(errors: InvoiceValidationErrors): string {
   const total = countErrors(errors);
   if (total === 0) return "";
   return `Please fix ${total} validation error${total === 1 ? "" : "s"} before saving.`;
+}
+
+export function getErrorMessages(errors: InvoiceValidationErrors): string[] {
+  const msgs: string[] = [];
+  if (errors.customer) msgs.push(errors.customer);
+  if (errors.company) msgs.push(errors.company);
+  if (errors.postingDate) msgs.push(errors.postingDate);
+  if (errors.dueDate) msgs.push(errors.dueDate);
+  if (errors.currency) msgs.push(errors.currency);
+  if (errors.conversionRate) msgs.push(errors.conversionRate);
+  if (errors.sellingPriceList) msgs.push(errors.sellingPriceList);
+  if (errors.plcConversionRate) msgs.push(errors.plcConversionRate);
+  if (errors.debitTo) msgs.push(errors.debitTo);
+  if (errors.items) msgs.push(errors.items);
+  if (errors.returnAgainst) msgs.push(errors.returnAgainst);
+  if (errors.posPayments) msgs.push(errors.posPayments);
+  if (errors.itemRows) {
+    for (const [idx, row] of Object.entries(errors.itemRows)) {
+      const rowNum = Number(idx) + 1;
+      if (row.itemCode) msgs.push(`Row ${rowNum}: ${row.itemCode}`);
+      if (row.qty) msgs.push(`Row ${rowNum}: ${row.qty}`);
+      if (row.rate) msgs.push(`Row ${rowNum}: ${row.rate}`);
+      if (row.uom) msgs.push(`Row ${rowNum}: ${row.uom}`);
+    }
+  }
+  return msgs;
 }
