@@ -25,17 +25,26 @@ export interface PaymentEntryTax {
   name?: string
   add_deduct_tax?: string
   charge_type: string
+  row_id?: string
   account_head: string
   description?: string
   rate?: number
   tax_amount?: number
   total?: number
+  base_tax_amount?: number
+  base_total?: number
+  currency?: string
   included_in_paid_amount?: number
+  allocated_amount?: number
   cost_center?: string
+  project?: string
+  tax_fraction_for_current_item?: number
+  grand_total_fraction_for_current_item?: number
 }
 
 export interface PaymentEntry {
   name: string
+  naming_series?: string
   payment_type: string
   posting_date: string
   company: string
@@ -66,12 +75,25 @@ export interface PaymentEntry {
   base_total_allocated_amount?: number
   unallocated_amount?: number
   difference_amount?: number
+  sales_taxes_and_charges_template?: string
+  purchase_taxes_and_charges_template?: string
+  apply_tax_withholding_amount?: number
+  tax_withholding_category?: string
+  total_taxes_and_charges?: number
+  base_total_taxes_and_charges?: number
   bank_account?: string
   bank?: string
   bank_account_no?: string
   party_bank_account?: string
   contact_person?: string
   contact_email?: string
+  cost_center?: string
+  project?: string
+  letter_head?: string
+  print_heading?: string
+  is_opening?: number
+  book_advance_payments_in_separate_party_account?: number
+  reconcile_on_advance_payment_date?: number
   reference_no?: string
   reference_date?: string
   clearance_date?: string
@@ -108,6 +130,28 @@ export interface AccountDetails {
   account_currency: string
   account_balance: number
   account_type: string
+}
+
+export interface ContactDetails {
+  contact_person: string
+  contact_display: string
+  contact_email: string
+  contact_mobile: string
+  contact_phone: string
+  contact_designation?: string
+  contact_department?: string
+}
+
+export interface BankAccountDetails {
+  account?: string
+  bank?: string
+  bank_account_no?: string
+}
+
+export interface PartyAndAccountBalance {
+  paid_from_account_balance: number
+  paid_to_account_balance: number
+  party_balance: number
 }
 
 export interface OutstandingReference {
@@ -159,9 +203,23 @@ export interface PaymentDeductionForm {
   cost_center: string
   amount: number
   description: string
+  is_exchange_gain_loss?: number
+}
+
+export interface LedgerPreviewColumn {
+  fieldname: string
+  label: string
+  fieldtype?: string
+  width?: number
+}
+
+export interface LedgerPreviewData {
+  gl_columns: LedgerPreviewColumn[]
+  gl_data: Record<string, unknown>[]
 }
 
 export interface RecordPaymentData {
+  naming_series?: string
   payment_type: "Receive" | "Pay" | "Internal Transfer"
   party_type: string
   party: string
@@ -178,14 +236,26 @@ export interface RecordPaymentData {
   target_exchange_rate: number
   base_paid_amount: number
   base_received_amount: number
+  sales_taxes_and_charges_template?: string
+  purchase_taxes_and_charges_template?: string
+  apply_tax_withholding_amount?: number
+  tax_withholding_category?: string
   bank_account?: string
   party_bank_account?: string
   contact_person?: string
   contact_email?: string
+  cost_center?: string
+  project?: string
+  letter_head?: string
+  print_heading?: string
+  is_opening?: number
+  book_advance_payments_in_separate_party_account?: number
+  reconcile_on_advance_payment_date?: number
   reference_no?: string
   reference_date?: string
   remarks?: string
   amended_from?: string
   references: InvoiceAllocation[]
-  deductions: { account: string; cost_center: string; amount: number; description?: string }[]
+  deductions?: { account: string; cost_center: string; amount: number; description?: string; is_exchange_gain_loss?: number }[]
+  taxes?: PaymentEntryTax[]
 }

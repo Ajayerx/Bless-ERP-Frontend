@@ -2,6 +2,16 @@
 export { apiClient, ApiError } from "./api-client"
 export { authService } from "./auth.service"
 export type { AuthService, User } from "./auth.service"
+export {
+  getValue,
+  getAccountingDimensions,
+} from "./frappe-client"
+export type {
+  LinkValidationResult,
+  AccountingDimension,
+  AccountingDimensionsResult,
+  CompanyFetchFields,
+} from "./frappe-client"
 
 // Module re-exports
 export { dashboardService } from "@/modules/dashboard/services"
@@ -23,7 +33,7 @@ export { invoiceService, templateRowsToEditable, invoiceTaxesToEditable, compute
 export type { SalesInvoice, SalesInvoiceFormData, SalesInvoiceItem, SalesInvoiceTax, SalesInvoiceListResponse, EditableTaxRow, ChargeType, AccountInfo } from "@/modules/invoices/services"
 
 export { paymentService } from "@/modules/payments/services"
-export type { PaymentEntry, PaymentEntryListResponse, RecordPaymentData, InvoiceAllocation, PaymentDeductionForm } from "@/modules/payments/services"
+export type { PaymentEntry, PaymentEntryListResponse, RecordPaymentData, InvoiceAllocation, PaymentDeductionForm, LedgerPreviewData, LedgerPreviewColumn } from "@/modules/payments/services"
 
 export { reportService } from "@/modules/reports/services"
 export type { TaxSummary, TaxBreakdownRow, SalesReport, ARReport, InventoryReport, ProfitLoss, BalanceSheet } from "@/modules/reports/services"

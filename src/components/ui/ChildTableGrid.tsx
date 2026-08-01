@@ -14,6 +14,8 @@ export interface GridColumn<T> {
   searchFn?: (query: string) => Promise<{ items: { value: string; label: string; description: string }[] }>;
   validate?: (value: string) => Promise<void>;
   docType?: string;
+  disabled?: (row: T) => boolean;
+  placeholder?: string;
 }
 
 interface ChildTableGridProps<T> {
@@ -23,6 +25,7 @@ interface ChildTableGridProps<T> {
   columns: GridColumn<T>[];
   emptyRow: T;
   onChange: (rows: T[]) => void;
+  readOnly?: boolean;
 }
 
 export default function ChildTableGrid<T extends object>({
@@ -32,6 +35,7 @@ export default function ChildTableGrid<T extends object>({
   columns,
   emptyRow,
   onChange,
+  readOnly = false,
 }: ChildTableGridProps<T>) {
   const cacheKey = `${title}::${(rows as unknown as Record<string, unknown>[]).map((r) => String(r.name ?? "")).join("|")}`;
   const [checked, setChecked] = useState<Set<number>>(() => {
@@ -76,7 +80,7 @@ export default function ChildTableGrid<T extends object>({
   const allChecked = rows.length > 0 && checked.size === rows.length;
 
   const cellInputClass =
-    "w-full h-[38px] bg-transparent border-0 rounded-none px-1 text-[13px] text-body focus:outline-none focus:ring-0";
+    "w-full h-[38px] bg-transparent border-0 rounded-none px-1 text-[13px] text-body focus:outline-none focus:ring-0 disabled:opacity-60";
 
   return (
     <div className="pt-4 border-t border-border">
@@ -93,6 +97,7 @@ export default function ChildTableGrid<T extends object>({
                 type="checkbox"
                 checked={allChecked}
                 onChange={toggleAll}
+                disabled={readOnly}
                 className="h-3.5 w-3.5 rounded-[4px] border-border"
                 aria-label="Select all rows"
               />
@@ -126,6 +131,7 @@ export default function ChildTableGrid<T extends object>({
                     type="checkbox"
                     checked={checked.has(idx)}
                     onChange={() => toggleRow(idx)}
+                    disabled={readOnly}
                     className="h-3.5 w-3.5 rounded-[4px] border-border"
                     aria-label={`Select row ${idx + 1}`}
                   />
@@ -149,12 +155,14 @@ export default function ChildTableGrid<T extends object>({
                         validate={col.validate}
                         docType={col.docType ?? ""}
                         placeholder="Search..."
+                        disabled={readOnly}
                         inputClassName="border-0 bg-transparent rounded-none px-0 pr-8 py-2.5 text-[13px] focus:ring-0"
                       />
                     ) : col.type === "link" ? (
                       <select
                         value={(row[col.key] as string) ?? ""}
                         onChange={(e) => updateCell(idx, col.key, e.target.value)}
+                        disabled={col.disabled?.(row) || readOnly}
                         className={cellInputClass}
                       >
                         <option value="">Select…</option>
@@ -168,13 +176,17 @@ export default function ChildTableGrid<T extends object>({
                       <input
                         value={(row[col.key] as string) ?? ""}
                         onChange={(e) => updateCell(idx, col.key, e.target.value)}
+                        disabled={col.disabled?.(row) || readOnly}
+                        placeholder={col.placeholder}
                         className={cellInputClass}
                       />
                     ) : col.type === "number" ? (
                       <input
                         type="number"
-                        value={(row[col.key] as number) ?? 0}
+                        value={(row[col.key] as number) ?? ""}
                         onChange={(e) => updateCell(idx, col.key, Number(e.target.value))}
+                        disabled={col.disabled?.(row) || readOnly}
+                        placeholder={col.placeholder}
                         className={cellInputClass}
                       />
                     ) : col.type === "checkbox" ? (
@@ -198,7 +210,7 @@ export default function ChildTableGrid<T extends object>({
       </div>
 
       <div className="mt-1.5 flex items-center gap-1 py-1.5">
-        {checked.size > 0 && (
+        {!readOnly && checked.size > 0 && (
           <button
             type="button"
             onClick={removeChecked}
@@ -207,13 +219,15 @@ export default function ChildTableGrid<T extends object>({
             Delete
           </button>
         )}
-        <button
-          type="button"
-          onClick={addRow}
-          className="rounded-[8px] bg-[#7c7c7c] px-2 py-1 text-xs text-white hover:bg-[#696969]"
-        >
-          Add Row
-        </button>
+        {!readOnly && (
+          <button
+            type="button"
+            onClick={addRow}
+            className="rounded-[8px] bg-[#7c7c7c] px-2 py-1 text-xs text-white hover:bg-[#696969]"
+          >
+            Add Row
+          </button>
+        )}
       </div>
     </div>
   );

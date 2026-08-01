@@ -1,5 +1,5 @@
 import { apiClient } from "@/services/api-client"
-import { getCompany } from "@/services/company"
+import { postMethod, withDedup } from "@/services/frappe-client"
 import type { SalesInvoice } from "@/modules/invoices/services"
 import type {
   PaymentEntry,
@@ -9,6 +9,11 @@ import type {
   OutstandingReference,
   GetOutstandingArgs,
   RecordPaymentData,
+  PaymentEntryTax,
+  LedgerPreviewData,
+  ContactDetails,
+  BankAccountDetails,
+  PartyAndAccountBalance,
 } from "../types"
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
@@ -46,7 +51,7 @@ const LIST_FIELDS = [
   "reference_no", "status", "docstatus", "company",
 ]
 
-export type { PaymentEntry, PaymentEntryListResponse, RecordPaymentData, PaymentEntryReference, PartyDetails, AccountDetails, OutstandingReference, GetOutstandingArgs } from "../types"
+export type { PaymentEntry, PaymentEntryListResponse, RecordPaymentData, PaymentEntryReference, PartyDetails, AccountDetails, OutstandingReference, GetOutstandingArgs, LedgerPreviewData, LedgerPreviewColumn, ContactDetails, BankAccountDetails, PartyAndAccountBalance } from "../types"
 
 export interface PaymentListFilters {
   page?: number
@@ -83,6 +88,102 @@ function buildPaymentFilters(params: PaymentListFilters): unknown[] | undefined 
     filters.push(["posting_date", "<=", params.postingDateTo])
   }
   return filters.length > 0 ? filters : undefined
+}
+
+function buildPaymentDoc(
+  data: RecordPaymentData,
+  opts: { omitNamingSeries?: boolean; omitAmendedFrom?: boolean } = {}
+): Record<string, unknown> {
+  const safeDate = (v?: string) => (v && DATE_RE.test(v) ? v : undefined)
+
+  const doc: Record<string, unknown> = {
+    doctype: "Payment Entry",
+    payment_type: data.payment_type,
+    party_type: data.party_type || undefined,
+    party: data.party || undefined,
+    posting_date: data.posting_date,
+    company: data.company,
+    mode_of_payment: data.mode_of_payment || undefined,
+    paid_from: data.paid_from,
+    paid_from_account_currency: data.paid_from_account_currency,
+    paid_to: data.paid_to,
+    paid_to_account_currency: data.paid_to_account_currency,
+    paid_amount: data.paid_amount,
+    received_amount: data.received_amount,
+    source_exchange_rate: data.source_exchange_rate,
+    target_exchange_rate: data.target_exchange_rate,
+    base_paid_amount: data.base_paid_amount,
+    base_received_amount: data.base_received_amount,
+    reference_no: data.reference_no || undefined,
+    reference_date: safeDate(data.reference_date),
+    remarks: data.remarks || undefined,
+  }
+
+  if (!opts.omitNamingSeries && data.naming_series) doc.naming_series = data.naming_series
+  if (data.sales_taxes_and_charges_template) doc.sales_taxes_and_charges_template = data.sales_taxes_and_charges_template
+  if (data.purchase_taxes_and_charges_template) doc.purchase_taxes_and_charges_template = data.purchase_taxes_and_charges_template
+  if (data.apply_tax_withholding_amount !== undefined) doc.apply_tax_withholding_amount = data.apply_tax_withholding_amount
+  if (data.tax_withholding_category) doc.tax_withholding_category = data.tax_withholding_category
+  if (data.print_heading) doc.print_heading = data.print_heading
+  if (data.is_opening) doc.is_opening = data.is_opening
+  if (!opts.omitAmendedFrom && data.amended_from) doc.amended_from = data.amended_from
+  if (data.bank_account) doc.bank_account = data.bank_account
+  if (data.party_bank_account) doc.party_bank_account = data.party_bank_account
+  if (data.contact_person) doc.contact_person = data.contact_person
+  if (data.contact_email) doc.contact_email = data.contact_email
+  if (data.cost_center) doc.cost_center = data.cost_center
+  if (data.project) doc.project = data.project
+  if (data.letter_head) doc.letter_head = data.letter_head
+  if (data.book_advance_payments_in_separate_party_account !== undefined) {
+    doc.book_advance_payments_in_separate_party_account = data.book_advance_payments_in_separate_party_account
+  }
+  if (data.reconcile_on_advance_payment_date !== undefined) {
+    doc.reconcile_on_advance_payment_date = data.reconcile_on_advance_payment_date
+  }
+
+  const validRefs = (data.references || []).filter((r) => r.allocated_amount > 0)
+  if (validRefs.length > 0) {
+    doc.references = validRefs.map((r) => ({
+      reference_doctype: r.reference_doctype,
+      reference_name: r.reference_name,
+      total_amount: r.total_amount,
+      outstanding_amount: r.outstanding_amount,
+      allocated_amount: r.allocated_amount,
+      due_date: safeDate(r.due_date),
+      exchange_rate: r.exchange_rate || undefined,
+      account: r.account || undefined,
+    }))
+  }
+
+  if (data.deductions && data.deductions.length > 0) {
+    doc.deductions = data.deductions
+      .filter((d) => d.account && d.amount > 0)
+      .map((d) => ({
+        account: d.account,
+        cost_center: d.cost_center,
+        amount: d.amount,
+        description: d.description || undefined,
+        is_exchange_gain_loss: d.is_exchange_gain_loss ? 1 : undefined,
+      }))
+  }
+
+  if (data.taxes && data.taxes.length > 0) {
+    doc.taxes = data.taxes.map((t) => ({
+      charge_type: t.charge_type,
+      row_id: t.row_id || undefined,
+      account_head: t.account_head,
+      description: t.description || undefined,
+      rate: t.rate ?? undefined,
+      tax_amount: t.tax_amount ?? undefined,
+      total: t.total ?? undefined,
+      add_deduct_tax: t.add_deduct_tax || "Add",
+      included_in_paid_amount: t.included_in_paid_amount ? 1 : undefined,
+      cost_center: t.cost_center || undefined,
+      project: t.project || undefined,
+    }))
+  }
+
+  return doc
 }
 
 export const paymentService = {
@@ -122,23 +223,57 @@ export const paymentService = {
     company: string,
     partyType: string,
     party: string,
-    date: string
+    date: string,
+    cost_center?: string
   ): Promise<PartyDetails> {
-    return apiClient<PartyDetails>(
-      `/method/erpnext.accounts.doctype.payment_entry.payment_entry.get_party_details?` +
-      new URLSearchParams({
-        company,
-        party_type: partyType,
-        party,
-        date,
-      }).toString()
+    const params: Record<string, unknown> = {
+      company,
+      party_type: partyType,
+      party,
+      date,
+    }
+    if (cost_center) params.cost_center = cost_center
+    return postMethod<PartyDetails>(
+      "erpnext.accounts.doctype.payment_entry.payment_entry.get_party_details",
+      params
     )
   },
 
-  async getAccountDetails(account: string, date: string): Promise<AccountDetails> {
-    return apiClient<AccountDetails>(
-      `/method/erpnext.accounts.doctype.payment_entry.payment_entry.get_account_details?` +
-      new URLSearchParams({ account, date }).toString()
+  async getAccountDetails(account: string, date: string, cost_center?: string): Promise<AccountDetails> {
+    const params: Record<string, unknown> = { account, date }
+    if (cost_center) params.cost_center = cost_center
+    return postMethod<AccountDetails>(
+      "erpnext.accounts.doctype.payment_entry.payment_entry.get_account_details",
+      params
+    )
+  },
+
+  async getContactDetails(contact: string): Promise<ContactDetails> {
+    return postMethod<ContactDetails>(
+      "frappe.contacts.doctype.contact.contact.get_contact_details",
+      { contact }
+    )
+  },
+
+  async getPartyAndAccountBalance(args: {
+    company: string
+    date: string
+    paid_from: string
+    paid_to: string
+    party_type?: string
+    party?: string
+    cost_center?: string
+  }): Promise<PartyAndAccountBalance> {
+    return postMethod<PartyAndAccountBalance>(
+      "erpnext.accounts.doctype.payment_entry.payment_entry.get_party_and_account_balance",
+      args
+    )
+  },
+
+  async getBankAccountDetails(bankAccount: string): Promise<BankAccountDetails> {
+    return postMethod<BankAccountDetails>(
+      "erpnext.accounts.doctype.bank_account.bank_account.get_bank_account_details",
+      { bank_account: bankAccount }
     )
   },
 
@@ -149,26 +284,84 @@ export const paymentService = {
     )
   },
 
-  async getExchangeRate(fromCurrency: string, toCurrency: string, date: string): Promise<number> {
-    const result = await apiClient<number | string>(
-      `/method/erpnext.setup.utils.get_exchange_rate?` +
-      new URLSearchParams({
+  async getExchangeRate(
+    fromCurrency: string,
+    toCurrency: string,
+    date: string,
+    keySuffix?: string,
+    options?: { skipDedup?: boolean }
+  ): Promise<number> {
+    const fetchRate = () =>
+      postMethod<number | string>("erpnext.setup.utils.get_exchange_rate", {
         transaction_date: date,
         from_currency: fromCurrency,
         to_currency: toCurrency,
-      }).toString()
+      }).then((result) => Number(result) || 1)
+
+    if (options?.skipDedup) return fetchRate()
+
+    const baseKey = `get_exchange_rate:${fromCurrency}:${toCurrency}:${date}`
+    const key = keySuffix ? `${baseKey}:${keySuffix}` : baseKey
+    return withDedup(key, 2000, fetchRate)
+  },
+
+  async getBankCashAccount(modeOfPayment: string, company: string): Promise<string> {
+    const result = await postMethod<{ account: string }>(
+      "erpnext.accounts.doctype.sales_invoice.sales_invoice.get_bank_cash_account",
+      { mode_of_payment: modeOfPayment, company }
     )
-    return Number(result) || 1
+    return result.account
   },
 
   async getModeOfPaymentAccount(mop: string, company: string): Promise<string | null> {
     try {
-      const doc = await apiClient<Record<string, unknown>>(
-        `/resource/Mode%20of%20Payment/${encodeURIComponent(mop)}?fields=${encodeURIComponent(JSON.stringify(["accounts"]))}`
+      return await this.getBankCashAccount(mop, company)
+    } catch {
+      return null
+    }
+  },
+
+  async fetchTaxesAndCharges(
+    masterDoctype: string,
+    masterName: string
+  ): Promise<PaymentEntryTax[]> {
+    try {
+      const result = await apiClient<Array<Record<string, unknown>>>(
+        "/method/erpnext.controllers.accounts_controller.get_taxes_and_charges",
+        {
+          method: "POST",
+          body: JSON.stringify({ master_doctype: masterDoctype, master_name: masterName }),
+        }
       )
-      const accounts = (doc.accounts as Array<{ company: string; default_account: string }>) || []
-      const match = accounts.find((a) => a.company === company)
-      return match?.default_account || accounts[0]?.default_account || null
+      return (result || []).map((t) => ({
+        charge_type: String(t.charge_type === "On Net Total" ? "On Paid Amount" : t.charge_type || ""),
+        account_head: String(t.account_head || ""),
+        description: t.description ? String(t.description) : undefined,
+        rate: t.rate != null ? Number(t.rate) : undefined,
+        tax_amount: t.tax_amount != null ? Number(t.tax_amount) : undefined,
+        total: t.total != null ? Number(t.total) : undefined,
+        add_deduct_tax: String(t.add_deduct_tax || "Add"),
+        included_in_paid_amount: t.included_in_paid_amount ? 1 : 0,
+        cost_center: t.cost_center ? String(t.cost_center) : undefined,
+        project: t.project ? String(t.project) : undefined,
+        currency: t.currency ? String(t.currency) : undefined,
+      }))
+    } catch {
+      return []
+    }
+  },
+
+  async getSupplierWithholding(party: string): Promise<string | null> {
+    try {
+      const result = await apiClient<Record<string, unknown>>(
+        "/method/frappe.client.get_value?" +
+        new URLSearchParams({
+          doctype: "Supplier",
+          fieldname: JSON.stringify(["tax_withholding_category"]),
+          filters: JSON.stringify({ name: party }),
+        }).toString()
+      )
+      return (result.tax_withholding_category as string) || null
     } catch {
       return null
     }
@@ -206,66 +399,20 @@ export const paymentService = {
   },
 
   async saveDraft(data: RecordPaymentData): Promise<PaymentEntry> {
-    const safeDate = (v?: string) => (v && DATE_RE.test(v) ? v : undefined)
-
-    const doc: Record<string, unknown> = {
-      doctype: "Payment Entry",
-      payment_type: data.payment_type,
-      party_type: data.party_type || undefined,
-      party: data.party || undefined,
-      posting_date: data.posting_date,
-      company: data.company,
-      mode_of_payment: data.mode_of_payment || undefined,
-      paid_from: data.paid_from,
-      paid_from_account_currency: data.paid_from_account_currency,
-      paid_to: data.paid_to,
-      paid_to_account_currency: data.paid_to_account_currency,
-      paid_amount: data.paid_amount,
-      received_amount: data.received_amount,
-      source_exchange_rate: data.source_exchange_rate,
-      target_exchange_rate: data.target_exchange_rate,
-      base_paid_amount: data.base_paid_amount,
-      base_received_amount: data.base_received_amount,
-      reference_no: data.reference_no || undefined,
-      reference_date: safeDate(data.reference_date),
-      remarks: data.remarks || undefined,
-    }
-
-    if (data.amended_from) doc.amended_from = data.amended_from
-    if (data.bank_account) doc.bank_account = data.bank_account
-    if (data.party_bank_account) doc.party_bank_account = data.party_bank_account
-    if (data.contact_person) doc.contact_person = data.contact_person
-    if (data.contact_email) doc.contact_email = data.contact_email
-
-    const validRefs = (data.references || []).filter((r) => r.allocated_amount > 0)
-    if (validRefs.length > 0) {
-      doc.references = validRefs.map((r) => ({
-        reference_doctype: r.reference_doctype,
-        reference_name: r.reference_name,
-        total_amount: r.total_amount,
-        outstanding_amount: r.outstanding_amount,
-        allocated_amount: r.allocated_amount,
-        due_date: safeDate(r.due_date),
-        exchange_rate: r.exchange_rate || undefined,
-        account: r.account || undefined,
-      }))
-    }
-
-    if (data.deductions && data.deductions.length > 0) {
-      doc.deductions = data.deductions
-        .filter((d) => d.account && d.amount > 0)
-        .map((d) => ({
-          account: d.account,
-          cost_center: d.cost_center,
-          amount: d.amount,
-          description: d.description || undefined,
-        }))
-    }
-
     return apiClient<PaymentEntry>("/resource/Payment Entry", {
       method: "POST",
-      body: JSON.stringify(doc),
+      body: JSON.stringify(buildPaymentDoc(data)),
     })
+  },
+
+  async updatePayment(name: string, data: RecordPaymentData): Promise<PaymentEntry> {
+    return apiClient<PaymentEntry>(
+      `/resource/Payment Entry/${encodeURIComponent(name)}`,
+      {
+        method: "PUT",
+        body: JSON.stringify(buildPaymentDoc(data, { omitNamingSeries: true, omitAmendedFrom: true })),
+      }
+    )
   },
 
   async submitPayment(name: string): Promise<PaymentEntry> {
@@ -286,6 +433,16 @@ export const paymentService = {
     await apiClient(
       `/resource/Payment Entry/${encodeURIComponent(name)}`,
       { method: "DELETE" }
+    )
+  },
+
+  async getAccountingLedgerPreview(company: string, name: string): Promise<LedgerPreviewData> {
+    return apiClient<LedgerPreviewData>(
+      "/method/erpnext.controllers.stock_controller.show_accounting_ledger_preview",
+      {
+        method: "POST",
+        body: JSON.stringify({ company, doctype: "Payment Entry", docname: name }),
+      }
     )
   },
 

@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react"
-import { Search, ChevronDown, X, Loader2 } from "lucide-react"
+import { ChevronDown, X, Loader2 } from "lucide-react"
 import { apiClient } from "@/services/api-client"
+import { postMethod } from "@/services/frappe-client"
 import { cn } from "@/lib/utils"
 
 interface LinkFieldProps {
@@ -15,6 +16,11 @@ interface LinkFieldProps {
   disabled?: boolean
   className?: string
   error?: string
+  searchMethod?: "resource" | "search_link"
+  referenceDoctype?: string
+  pageLength?: number
+  queryMethod?: string
+  searchLinkFilters?: Record<string, unknown>
 }
 
 export default function LinkField({
@@ -29,6 +35,11 @@ export default function LinkField({
   disabled = false,
   className,
   error,
+  searchMethod = "resource",
+  referenceDoctype,
+  pageLength,
+  queryMethod,
+  searchLinkFilters,
 }: LinkFieldProps) {
   const [query, setQuery] = useState("")
   const [options, setOptions] = useState<Array<{ name: string; label?: string }>>([])
@@ -37,7 +48,7 @@ export default function LinkField({
   const [highlightIndex, setHighlightIndex] = useState(-1)
   const wrapperRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>()
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined)
 
   // Store filters/fetch config in refs so the fetch effect doesn't re-run when parent re-renders
   const filtersRef = useRef(filters)
@@ -46,30 +57,66 @@ export default function LinkField({
   doctypeRef.current = doctype
   const labelFieldRef = useRef(labelField)
   labelFieldRef.current = labelField
+  const searchMethodRef = useRef(searchMethod)
+  searchMethodRef.current = searchMethod
+  const referenceDoctypeRef = useRef(referenceDoctype)
+  referenceDoctypeRef.current = referenceDoctype
+  const pageLengthRef = useRef(pageLength)
+  pageLengthRef.current = pageLength
+  const queryRef = useRef(queryMethod)
+  queryRef.current = queryMethod
+  const searchLinkFiltersRef = useRef(searchLinkFilters)
+  searchLinkFiltersRef.current = searchLinkFilters
 
   const fetchOptions = useCallback(
     async (search: string) => {
       setLoading(true)
       try {
-        const searchFilters: unknown[][] = search
-          ? [["name", "like", `%${search}%`]]
-          : []
-        const allFilters = [...filtersRef.current, ...searchFilters]
+        const doctypeName = doctypeRef.current
+        let items: Array<{ name: string; label?: string }> = []
 
-        const fields = labelFieldRef.current ? ["name", labelFieldRef.current] : ["name"]
-        const qp = new URLSearchParams()
-        qp.set("fields", JSON.stringify(fields))
-        qp.set("filters", JSON.stringify(allFilters))
-        qp.set("limit_page_length", "20")
-        qp.set("order_by", "name asc")
+        if (searchMethodRef.current === "search_link") {
+          const body: Record<string, unknown> = {
+            doctype: doctypeName,
+            txt: search,
+            reference_doctype: referenceDoctypeRef.current,
+            page_length: pageLengthRef.current ?? 10,
+            ignore_user_permissions: 0,
+          }
+          if (queryRef.current) body.query = queryRef.current
+          if (searchLinkFiltersRef.current) body.filters = searchLinkFiltersRef.current
 
-        const items = await apiClient<Array<{ name: string; [key: string]: unknown }>>(
-          `/resource/${encodeURIComponent(doctypeRef.current)}?${qp.toString()}`
-        )
-        setOptions(items.map((i) => ({
-          name: i.name,
-          label: labelFieldRef.current ? (i[labelFieldRef.current] as string) : undefined,
-        })))
+          const results = await postMethod<Array<{ value: string; label?: string; description?: string }>>(
+            "frappe.desk.search.search_link",
+            body,
+            { "x-frappe-doctype": encodeURIComponent(doctypeName) }
+          )
+          items = (results || []).map((r) => ({
+            name: r.value,
+            label: r.label || r.description || undefined,
+          }))
+        } else {
+          const searchFilters: unknown[][] = search
+            ? [["name", "like", `%${search}%`]]
+            : []
+          const allFilters = [...filtersRef.current, ...searchFilters]
+
+          const fields = labelFieldRef.current ? ["name", labelFieldRef.current] : ["name"]
+          const qp = new URLSearchParams()
+          qp.set("fields", JSON.stringify(fields))
+          qp.set("filters", JSON.stringify(allFilters))
+          qp.set("limit_page_length", String(pageLengthRef.current ?? 20))
+          qp.set("order_by", "name asc")
+
+          const rows = await apiClient<Array<{ name: string; [key: string]: unknown }>>(
+            `/resource/${encodeURIComponent(doctypeName)}?${qp.toString()}`
+          )
+          items = rows.map((i) => ({
+            name: i.name,
+            label: labelFieldRef.current ? (i[labelFieldRef.current] as string) : undefined,
+          }))
+        }
+        setOptions(items)
       } catch {
         setOptions([])
       } finally {

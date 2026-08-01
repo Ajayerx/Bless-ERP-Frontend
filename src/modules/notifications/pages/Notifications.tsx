@@ -5,7 +5,7 @@ import Topbar from "@/components/layout/Topbar"
 import { Button } from "@/components/ui"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useNotifications } from "../hooks/useNotifications"
-import { notificationService, timeAgo, type NotificationItem } from "@/services"
+import { timeAgo, type NotificationItem } from "@/services"
 
 const dotColors: Record<string, string> = {
   Success: "bg-green-500",
@@ -23,9 +23,7 @@ const typeFilters = [
 ] as const
 
 export default function Notifications() {
-  const { notifications, unreadCount, loading, markAsRead, markAllAsRead, refetch } = useNotifications({
-    pollInterval: 0,
-  })
+  const { notifications, unreadCount, loading, markAsRead, markAllAsRead } = useNotifications()
   const [statusFilter, setStatusFilter] = useState<"all" | "unread" | "read">("all")
   const [typeFilter, setTypeFilter] = useState<string | undefined>(undefined)
 

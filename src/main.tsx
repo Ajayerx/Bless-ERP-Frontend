@@ -7,6 +7,7 @@ import { ThemeProvider } from "./context/ThemeContext"
 import { CompanyProvider } from "./context/CompanyContext"
 import { ToastProvider } from "./components/ui/toast"
 import ErrorBoundary from "./components/ErrorBoundary"
+import { NotificationProvider } from "./modules/notifications/context/NotificationContext"
 import App from "./App"
 import "./index.css"
 
@@ -33,7 +34,9 @@ async function bootstrap() {
               <AuthProvider>
                 <CompanyProvider>
                   <AppProvider>
-                    <App />
+                    <NotificationProvider>
+                      <App />
+                    </NotificationProvider>
                   </AppProvider>
                 </CompanyProvider>
               </AuthProvider>

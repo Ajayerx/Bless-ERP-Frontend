@@ -13,9 +13,7 @@ const dotColors: Record<string, string> = {
 
 export default function NotificationDropdown() {
   const navigate = useNavigate()
-  const { notifications, unreadCount, loading, markAsRead, markAllAsRead } = useNotifications({
-    pollInterval: 30000,
-  })
+  const { notifications, unreadCount, loading, markAsRead, markAllAsRead } = useNotifications()
 
   const handleClick = async (n: NotificationItem) => {
     if (!n.read) {
