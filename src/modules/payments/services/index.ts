@@ -1,5 +1,5 @@
 import { apiClient } from "@/services/api-client"
-import { postMethod, withDedup } from "@/services/frappe-client"
+import { postMethod, postMethodRaw, withDedup } from "@/services/frappe-client"
 import type { SalesInvoice } from "@/modules/invoices/services"
 import type {
   PaymentEntry,
@@ -10,6 +10,7 @@ import type {
   GetOutstandingArgs,
   RecordPaymentData,
   PaymentEntryTax,
+  PaymentComment,
   LedgerPreviewData,
   ContactDetails,
   BankAccountDetails,
@@ -51,7 +52,68 @@ const LIST_FIELDS = [
   "reference_no", "status", "docstatus", "company",
 ]
 
-export type { PaymentEntry, PaymentEntryListResponse, RecordPaymentData, PaymentEntryReference, PartyDetails, AccountDetails, OutstandingReference, GetOutstandingArgs, LedgerPreviewData, LedgerPreviewColumn, ContactDetails, BankAccountDetails, PartyAndAccountBalance } from "../types"
+export type { PaymentEntry, PaymentEntryListResponse, RecordPaymentData, PaymentEntryReference, PartyDetails, AccountDetails, OutstandingReference, GetOutstandingArgs, LedgerPreviewData, LedgerPreviewColumn, ContactDetails, BankAccountDetails, PartyAndAccountBalance, PaymentComment, InvoiceAllocation, PaymentDeductionForm } from "../types"
+
+export async function getReferenceDetails(
+  reference_doctype: string,
+  reference_name: string,
+  party_account_currency: string,
+  party_type: string,
+  party: string
+): Promise<ReferenceDetails> {
+  return postMethod<ReferenceDetails>(
+    "erpnext.accounts.doctype.payment_entry.payment_entry.get_reference_details",
+    { reference_doctype, reference_name, party_account_currency, party_type, party }
+  )
+}
+
+export async function allocateAmountToReferences(
+  doc: PaymentEntryDocSnapshot,
+  args: { paid_amount: number; paid_amount_change: boolean; allocate_payment_amount: boolean }
+): Promise<PaymentEntry | null> {
+  const body = await postMethodRaw<{ docs?: Array<PaymentEntry | null> }>(
+    "run_doc_method",
+    {
+      method: "allocate_amount_to_references",
+      docs: JSON.stringify(doc),
+      args: JSON.stringify(args),
+    },
+    { "x-frappe-doctype": encodeURIComponent("Payment Entry") }
+  )
+  return body.docs?.[0] ?? null
+}
+
+export interface ReferenceDetails {
+  due_date?: string
+  total_amount: number
+  outstanding_amount: number
+  exchange_rate?: number
+  bill_no?: string
+  account_type?: string
+  payment_type?: string
+  account?: string
+}
+
+export interface PaymentEntryDocSnapshot {
+  doctype: "Payment Entry"
+  name?: string
+  modified?: string
+  payment_type: string
+  party_type: string
+  company: string
+  party?: string
+  paid_amount: number
+  received_amount?: number
+  references?: Array<{
+    reference_doctype?: string
+    reference_name?: string
+    outstanding_amount?: number
+    allocated_amount?: number
+    payment_term?: string
+    payment_request?: string
+  }>
+  deductions?: Array<{ amount?: number }>
+}
 
 export interface PaymentListFilters {
   page?: number
@@ -116,6 +178,8 @@ function buildPaymentDoc(
     base_received_amount: data.base_received_amount,
     reference_no: data.reference_no || undefined,
     reference_date: safeDate(data.reference_date),
+    clearance_date: safeDate(data.clearance_date),
+    custom_remarks: data.custom_remarks || undefined,
     remarks: data.remarks || undefined,
   }
 
@@ -151,6 +215,7 @@ function buildPaymentDoc(
       allocated_amount: r.allocated_amount,
       due_date: safeDate(r.due_date),
       exchange_rate: r.exchange_rate || undefined,
+      exchange_gain_loss: r.exchange_gain_loss || undefined,
       account: r.account || undefined,
     }))
   }
@@ -457,6 +522,94 @@ export const paymentService = {
     }
   },
 
+  async getPartyTypes(): Promise<Array<{ name: string; account_type: string | null }>> {
+    try {
+      return await apiClient<Array<{ name: string; account_type: string | null }>>(
+        `/resource/Party%20Type?fields=${encodeURIComponent(JSON.stringify(["name", "account_type"]))}&limit_page_length=0`
+      )
+    } catch {
+      return []
+    }
+  },
+
+  async getPrintFormats(): Promise<string[]> {
+    try {
+      const raw = await apiClient<Array<{ name: string }>>(
+        `/resource/Print%20Format?filters=${encodeURIComponent(JSON.stringify([["doc_type", "=", "Payment Entry"], ["disabled", "=", 0]]))}&fields=${encodeURIComponent(JSON.stringify(["name"]))}&limit_page_length=100`
+      )
+      return raw.map((f) => f.name)
+    } catch {
+      return ["Standard"]
+    }
+  },
+
+  async getComments(name: string): Promise<PaymentComment[]> {
+    try {
+      const rows = await apiClient<{ name: string; content: string; owner: string; creation: string }[]>(
+        buildListUrl("Communication", {
+          fields: ["name", "content", "owner", "creation"],
+          filters: [
+            ["communication_type", "=", "Comment"],
+            ["reference_doctype", "=", "Payment Entry"],
+            ["reference_name", "=", name],
+          ],
+          limit_page_length: 100,
+          order_by: "creation desc",
+        })
+      )
+      return (rows ?? []).map((r) => ({
+        id: r.name,
+        content: r.content,
+        author: r.owner,
+        createdAt: r.creation,
+      }))
+    } catch {
+      return []
+    }
+  },
+
+  async addComment(name: string, content: string): Promise<PaymentComment> {
+    const row = await apiClient<{ name: string; content: string; owner: string; creation: string }>(
+      "/resource/Communication",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          communication_type: "Comment",
+          comment_type: "Comment",
+          reference_doctype: "Payment Entry",
+          reference_name: name,
+          content,
+        }),
+      }
+    )
+    return {
+      id: row.name,
+      content: row.content,
+      author: row.owner,
+      createdAt: row.creation,
+    }
+  },
+
+  async sendEmail(name: string, data: {
+    recipients: string
+    subject: string
+    content: string
+    printFormat?: string
+  }): Promise<{ name: string }> {
+    return apiClient<{ name: string }>("/method/frappe.core.doctype.communication.email.make", {
+      method: "POST",
+      body: JSON.stringify({
+        doctype: "Payment Entry",
+        name,
+        recipients: data.recipients,
+        subject: data.subject,
+        content: data.content,
+        communication_medium: "Email",
+        send_email: 1,
+        print_format: data.printFormat || "Standard",
+      }),
+    })
+  },
 }
 
 export type { SalesInvoice } from "@/modules/invoices/services"

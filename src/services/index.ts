@@ -32,8 +32,8 @@ export type {
 export { invoiceService, templateRowsToEditable, invoiceTaxesToEditable, computeTaxes, createEmptyTaxRow } from "@/modules/invoices/services"
 export type { SalesInvoice, SalesInvoiceFormData, SalesInvoiceItem, SalesInvoiceTax, SalesInvoiceListResponse, EditableTaxRow, ChargeType, AccountInfo } from "@/modules/invoices/services"
 
-export { paymentService } from "@/modules/payments/services"
-export type { PaymentEntry, PaymentEntryListResponse, RecordPaymentData, InvoiceAllocation, PaymentDeductionForm, LedgerPreviewData, LedgerPreviewColumn } from "@/modules/payments/services"
+export { paymentService, getReferenceDetails, allocateAmountToReferences } from "@/modules/payments/services"
+export type { PaymentEntry, PaymentEntryListResponse, RecordPaymentData, InvoiceAllocation, PaymentDeductionForm, LedgerPreviewData, LedgerPreviewColumn, PaymentComment, ReferenceDetails, PaymentEntryDocSnapshot } from "@/modules/payments/services"
 
 export { reportService } from "@/modules/reports/services"
 export type { TaxSummary, TaxBreakdownRow, SalesReport, ARReport, InventoryReport, ProfitLoss, BalanceSheet } from "@/modules/reports/services"

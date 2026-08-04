@@ -2,8 +2,20 @@ import { useState } from "react"
 import { Search, Loader2 } from "lucide-react"
 import Modal from "@/components/ui/Modal"
 import { cn } from "@/lib/utils"
+import LinkField from "./LinkField"
+import type { AccountingDimension } from "@/services"
 
-interface FilterValues {
+function validateFilters(filters: GetOutstandingFilters): string | null {
+  if (filters.from_posting_date && !filters.to_posting_date) {
+    return "Error: to posting date is mandatory field"
+  }
+  if (filters.from_posting_date && filters.from_posting_date > filters.to_posting_date) {
+    return "Posting Date: from posting date must be less than to posting date"
+  }
+  return null
+}
+
+export interface GetOutstandingFilters {
   from_posting_date: string
   to_posting_date: string
   from_due_date: string
@@ -11,14 +23,16 @@ interface FilterValues {
   outstanding_amt_greater_than: number
   outstanding_amt_less_than: number
   allocate_payment_amount: boolean
+  dimensions: Record<string, string>
 }
 
 interface GetOutstandingDialogProps {
   open: boolean
   onClose: () => void
-  onFetch: (filters: FilterValues) => Promise<void>
+  onFetch: (filters: GetOutstandingFilters) => Promise<void>
   loading: boolean
   title: string
+  dimensions: AccountingDimension[]
 }
 
 function getDefaultFromDate(): string {
@@ -40,8 +54,9 @@ export default function GetOutstandingDialog({
   onFetch,
   loading,
   title,
+  dimensions = [],
 }: GetOutstandingDialogProps) {
-  const [filters, setFilters] = useState<FilterValues>({
+  const [filters, setFilters] = useState<GetOutstandingFilters>({
     from_posting_date: getDefaultFromDate(),
     to_posting_date: getToday(),
     from_due_date: "",
@@ -49,13 +64,25 @@ export default function GetOutstandingDialog({
     outstanding_amt_greater_than: 0,
     outstanding_amt_less_than: 0,
     allocate_payment_amount: true,
+    dimensions: {},
   })
+  const [error, setError] = useState<string | null>(null)
 
-  const update = (field: keyof FilterValues, value: string | number | boolean) => {
+  const update = (field: keyof GetOutstandingFilters, value: string | number | boolean) => {
     setFilters((prev) => ({ ...prev, [field]: value }))
+    setError(null)
+  }
+
+  const updateDimension = (fieldname: string, value: string) => {
+    setFilters((prev) => ({ ...prev, dimensions: { ...prev.dimensions, [fieldname]: value } }))
   }
 
   const handleFetch = async () => {
+    const message = validateFilters(filters)
+    if (message) {
+      setError(message)
+      return
+    }
     await onFetch(filters)
   }
 
@@ -64,10 +91,10 @@ export default function GetOutstandingDialog({
       <div className="space-y-4">
         {/* Posting Date Range */}
         <div>
-          <p className="text-xs font-semibold text-muted uppercase tracking-wider mb-2">Posting Date</p>
+          <p className="text-sm font-semibold text-heading mb-2">Posting Date</p>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs text-muted mb-1">From Date</label>
+              <label className="block text-[13px] font-medium text-body/70 mb-1">From Date</label>
               <input
                 type="date"
                 value={filters.from_posting_date}
@@ -76,7 +103,7 @@ export default function GetOutstandingDialog({
               />
             </div>
             <div>
-              <label className="block text-xs text-muted mb-1">To Date</label>
+              <label className="block text-[13px] font-medium text-body/70 mb-1">To Date</label>
               <input
                 type="date"
                 value={filters.to_posting_date}
@@ -89,10 +116,10 @@ export default function GetOutstandingDialog({
 
         {/* Due Date Range */}
         <div>
-          <p className="text-xs font-semibold text-muted uppercase tracking-wider mb-2">Due Date</p>
+          <p className="text-sm font-semibold text-heading mb-2">Due Date</p>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs text-muted mb-1">From Date</label>
+              <label className="block text-[13px] font-medium text-body/70 mb-1">From Date</label>
               <input
                 type="date"
                 value={filters.from_due_date}
@@ -101,7 +128,7 @@ export default function GetOutstandingDialog({
               />
             </div>
             <div>
-              <label className="block text-xs text-muted mb-1">To Date</label>
+              <label className="block text-[13px] font-medium text-body/70 mb-1">To Date</label>
               <input
                 type="date"
                 value={filters.to_due_date}
@@ -114,10 +141,10 @@ export default function GetOutstandingDialog({
 
         {/* Outstanding Amount */}
         <div>
-          <p className="text-xs font-semibold text-muted uppercase tracking-wider mb-2">Outstanding Amount</p>
+          <p className="text-sm font-semibold text-heading mb-2">Outstanding Amount</p>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs text-muted mb-1">Greater Than</label>
+              <label className="block text-[13px] font-medium text-body/70 mb-1">Greater Than</label>
               <input
                 type="number"
                 min={0}
@@ -128,7 +155,7 @@ export default function GetOutstandingDialog({
               />
             </div>
             <div>
-              <label className="block text-xs text-muted mb-1">Less Than</label>
+              <label className="block text-[13px] font-medium text-body/70 mb-1">Less Than</label>
               <input
                 type="number"
                 min={0}
@@ -141,6 +168,32 @@ export default function GetOutstandingDialog({
             </div>
           </div>
         </div>
+
+        {/* Accounting Dimensions */}
+        {dimensions.length > 0 && (
+          <div>
+            <p className="text-sm font-semibold text-heading mb-2">Dimensions</p>
+            <div className="grid grid-cols-2 gap-3">
+              {dimensions.map((d) => (
+                <div key={d.fieldname || d.document_type}>
+                  <label className="block text-[13px] font-medium text-body/70 mb-1">
+                    {d.document_type === "Cost Center" ? "Cost Center" : d.label || d.document_type}
+                  </label>
+                  <LinkField
+                    doctype={d.document_type}
+                    value={filters.dimensions[d.fieldname || d.document_type] || ""}
+                    onChange={(value) => updateDimension(d.fieldname || d.document_type, value)}
+                    placeholder="Select..."
+                    searchMethod="search_link"
+                    referenceDoctype="Payment Entry"
+                    pageLength={10}
+                    testId={d.fieldname || d.document_type}
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Allocate checkbox */}
         <label className="flex items-center gap-2.5 cursor-pointer">
@@ -155,6 +208,11 @@ export default function GetOutstandingDialog({
       </div>
 
       {/* Footer */}
+      {error && (
+        <p className="mt-4 text-sm font-medium text-red-600 bg-red-50 border border-red-200 rounded-[12px] px-3 py-2">
+          {error}
+        </p>
+      )}
       <div className="flex items-center justify-end gap-3 pt-5 mt-5 border-t border-border">
         <button
           type="button"

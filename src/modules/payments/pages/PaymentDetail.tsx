@@ -1,15 +1,25 @@
 "use client"
 
-import { useEffect, useState, useCallback } from "react"
-import { useParams, Link, useNavigate } from "react-router-dom"
-import { ArrowLeft, BookOpen } from "lucide-react"
+import { useEffect, useState, useCallback, useRef } from "react"
+import { useParams, useNavigate } from "react-router-dom"
+import { BookOpen, Check, Save, Ban, GitBranch, Copy, Mail, Printer, Trash2, MoreHorizontal } from "lucide-react"
 import { motion } from "framer-motion"
 import Topbar from "@/components/layout/Topbar"
-import { Badge, Skeleton, Modal } from "@/components/ui"
+import PageHead from "@/components/layout/PageHead"
+import { Badge, Button, Skeleton, Modal } from "@/components/ui"
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+} from "@/components/ui"
 import { ConfirmationDialog } from "@/components/ui"
-import { paymentService, type PaymentEntry, type LedgerPreviewData } from "@/services"
+import { paymentService, type PaymentEntry, type LedgerPreviewData, type PaymentComment } from "@/services"
 import { ApiError } from "@/services/api-client"
-import PaymentForm, { type PaymentToolbarAction } from "../components/PaymentForm"
+import PaymentForm, { type PaymentFormHandle } from "../components/PaymentForm"
+import { normalizeLedger } from "../components/ledgerUtils"
+import SendPaymentEmailDialog from "../components/SendPaymentEmailDialog"
 
 function statusBadge(docstatus: number, status: string) {
   if (docstatus === 1) return <Badge variant="success">Submitted</Badge>
@@ -19,23 +29,36 @@ function statusBadge(docstatus: number, status: string) {
 
 function formatNumber(v: unknown): string {
   const n = Number(v)
-  if (!isFinite(n)) return String(v ?? "—")
+  if (!isFinite(n)) return String(v ?? "\u2014")
   return new Intl.NumberFormat("en-CA", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n)
+}
+
+function formatDate(iso: string): string {
+  try {
+    return new Date(iso + "T00:00:00").toLocaleDateString("en-CA", { year: "numeric", month: "short", day: "numeric" })
+  } catch {
+    return iso
+  }
 }
 
 export default function PaymentDetail() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const formRef = useRef<PaymentFormHandle>(null)
   const [payment, setPayment] = useState<PaymentEntry | null>(null)
   const [loading, setLoading] = useState(true)
   const [acting, setActing] = useState(false)
+  const [dirty, setDirty] = useState(false)
   const [confirmAction, setConfirmAction] = useState<"submit" | "cancel" | "delete" | "amend" | null>(null)
   const [confirmError, setConfirmError] = useState<string | null>(null)
 
   const [ledgerOpen, setLedgerOpen] = useState(false)
+  const [emailOpen, setEmailOpen] = useState(false)
   const [ledgerLoading, setLedgerLoading] = useState(false)
   const [ledgerError, setLedgerError] = useState<string | null>(null)
   const [ledgerData, setLedgerData] = useState<LedgerPreviewData | null>(null)
+  const [comments, setComments] = useState<PaymentComment[]>([])
+  const [commentsLoading, setCommentsLoading] = useState(false)
 
   const fetchPayment = useCallback(async () => {
     if (!id) return
@@ -52,18 +75,35 @@ export default function PaymentDetail() {
 
   useEffect(() => { fetchPayment() }, [fetchPayment])
 
-  const handleToolbarAction = (action: PaymentToolbarAction) => {
-    if (!payment) return
-    if (action === "submit") setConfirmAction("submit")
-    else if (action === "cancel") setConfirmAction("cancel")
-    else if (action === "delete") setConfirmAction("delete")
-    else if (action === "amend") setConfirmAction("amend")
-    else if (action === "print") {
-      window.open(`/printview?doctype=Payment Entry&name=${payment.name}`, "_blank")
-    } else if (action === "email") {
-      // TODO: email dialog
+  const loadLedger = useCallback(async (company: string, name: string) => {
+    setLedgerLoading(true)
+    setLedgerError(null)
+    try {
+      const data = await paymentService.getAccountingLedgerPreview(company, name)
+      setLedgerData(data)
+    } catch (err) {
+      setLedgerError(err instanceof ApiError ? err.message : "Failed to load ledger preview.")
+    } finally {
+      setLedgerLoading(false)
     }
-  }
+  }, [])
+
+  const loadComments = useCallback(async (name: string) => {
+    setCommentsLoading(true)
+    try {
+      setComments(await paymentService.getComments(name))
+    } catch {
+      setComments([])
+    } finally {
+      setCommentsLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!payment) return
+    loadComments(payment.name)
+    loadLedger(payment.company, payment.name)
+  }, [payment, loadComments, loadLedger])
 
   const handleConfirm = async () => {
     if (!payment || !confirmAction) return
@@ -71,7 +111,9 @@ export default function PaymentDetail() {
     setConfirmError(null)
     try {
       if (confirmAction === "submit") {
-        await paymentService.submitPayment(payment.name)
+        const savedName = await formRef.current?.save()
+        if (!savedName) { setActing(false); return }
+        await paymentService.submitPayment(savedName)
         await fetchPayment()
       } else if (confirmAction === "cancel") {
         await paymentService.cancelPayment(payment.name)
@@ -91,74 +133,168 @@ export default function PaymentDetail() {
     }
   }
 
+  const handleSave = async () => {
+    await formRef.current?.save()
+  }
+
   const openLedgerPreview = async () => {
     if (!payment) return
     setLedgerOpen(true)
-    setLedgerLoading(true)
-    setLedgerError(null)
-    setLedgerData(null)
-    try {
-      const data = await paymentService.getAccountingLedgerPreview(payment.company, payment.name)
-      setLedgerData(data)
-    } catch (err) {
-      setLedgerError(err instanceof ApiError ? err.message : "Failed to load ledger preview.")
-    } finally {
-      setLedgerLoading(false)
-    }
+    await loadLedger(payment.company, payment.name)
+  }
+
+  const handleAddComment = async (content: string) => {
+    if (!payment) return
+    const created = await paymentService.addComment(payment.name, content)
+    setComments((prev) => [created, ...prev])
   }
 
   const confirmTitle = confirmAction
-    ? {
+    ? ({
         submit: "Submit Payment",
         cancel: "Cancel Payment",
         delete: "Delete Payment",
         amend: "Amend Payment",
-      }[confirmAction]
+      }[confirmAction])
     : undefined
 
   const confirmMessage = confirmAction
-    ? {
+    ? ({
         submit: `Permanently submit ${payment?.name}? This action cannot be undone.`,
         cancel: `Permanently cancel ${payment?.name}? This will reverse all GL entries.`,
         delete: `Delete ${payment?.name}? This action cannot be undone.`,
         amend: `Create a new draft copy of ${payment?.name}?`,
-      }[confirmAction]
+      }[confirmAction])
     : undefined
 
   if (loading) return <><Topbar /><div className="p-6 space-y-4"><Skeleton className="h-8 w-48" /><Skeleton className="h-48 w-full" /></div></>
   if (!payment) return <><Topbar /><div className="p-6 text-center text-muted">Payment not found</div></>
 
+  const docstatus = payment.docstatus
+  const isDraft = docstatus === 0
+  const isSubmitted = docstatus === 1
+  const isCancelled = docstatus === 2
+
   return (
     <>
       <Topbar />
+      <PageHead
+        eyebrow="Payment Entry"
+        title={payment.name}
+        subtitle={
+          [payment.party_name || payment.party, payment.company, payment.posting_date ? formatDate(payment.posting_date) : ""]
+            .filter(Boolean)
+            .join(" \u00b7 ") || "\u2014"
+        }
+        badge={statusBadge(docstatus, payment.status)}
+        backTo="/payments"
+        actions={
+          <>
+            {/* ERPNext get_action_status: draft clean -> Submit, draft dirty -> Save */}
+            {isDraft && (dirty ? (
+              <Button variant="primary" size="md" onClick={handleSave} data-testid="save_button">
+                <Save size={16} /> Save
+              </Button>
+            ) : (
+              <Button variant="primary" size="md" onClick={() => setConfirmAction("submit")}>
+                <Check size={16} /> Submit
+              </Button>
+            ))}
+
+            {/* Submitted: Cancel (secondary) or Update (primary when dirty) */}
+            {isSubmitted && (dirty ? (
+              <Button variant="primary" size="md" onClick={handleSave}>
+                <Save size={16} /> Update
+              </Button>
+            ) : (
+              <Button variant="secondary" size="md" onClick={() => setConfirmAction("cancel")}>
+                <Ban size={16} /> Cancel
+              </Button>
+            ))}
+
+            {/* Cancelled: Amend (primary) */}
+            {isCancelled && (
+              <Button variant="primary" size="md" onClick={() => setConfirmAction("amend")}>
+                <GitBranch size={16} /> Amend
+              </Button>
+            )}
+
+            {/* Draft: Accounting Ledger Preview */}
+            {isDraft && (
+              <Button variant="secondary" size="md" onClick={openLedgerPreview}>
+                <BookOpen size={16} /> Accounting Ledger Preview
+              </Button>
+            )}
+
+            {/* Three-dot menu */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="secondary" size="icon" aria-label="More actions">
+                  <MoreHorizontal size={16} />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                {isDraft && (
+                  <>
+                    <DropdownMenuItem onClick={() => setConfirmAction("delete")}>
+                      <Trash2 size={14} className="text-danger-600" /> Delete
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                  </>
+                )}
+                {isSubmitted && (
+                  <>
+                    <DropdownMenuItem onClick={() => setConfirmAction("amend")}>
+                      <GitBranch size={14} /> Amend
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => navigate("/payments/new", { state: { copyFrom: payment } })}>
+                      <Copy size={14} /> Duplicate
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                  </>
+                )}
+                {isCancelled && (
+                  <>
+                    <DropdownMenuItem onClick={() => navigate("/payments/new", { state: { copyFrom: payment } })}>
+                      <Copy size={14} /> Duplicate
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                  </>
+                )}
+                <DropdownMenuItem onClick={() => window.open(`/printview?doctype=Payment Entry&name=${payment.name}`, "_blank")}>
+                  <Printer size={14} /> Print
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setEmailOpen(true)}>
+                  <Mail size={14} /> Email
+                </DropdownMenuItem>
+                {(isSubmitted || isCancelled) && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={() => setConfirmAction("delete")}>
+                      <Trash2 size={14} className="text-danger-600" /> Delete
+                    </DropdownMenuItem>
+                  </>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </>
+        }
+      />
       <motion.div className="p-6 space-y-6" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.3 }}>
-        <div className="flex items-center justify-between">
-          <Link to="/payments" className="inline-flex items-center gap-1.5 text-sm text-muted hover:text-heading transition-colors">
-            <ArrowLeft size={15} /> Back to Payments
-          </Link>
-          <button
-            type="button"
-            onClick={openLedgerPreview}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-semibold text-heading bg-surface border border-border rounded-[10px] hover:bg-gray-50 transition-colors"
-          >
-            <BookOpen size={14} /> Accounting Ledger Preview
-          </button>
-        </div>
-
-        <div className="bg-white rounded-2xl shadow-card p-6 space-y-6">
-          {/* Header with status */}
-          <div className="flex items-center justify-between">
-            <h1 className="text-2xl font-bold text-heading">{payment.name}</h1>
-            {statusBadge(payment.docstatus, payment.status)}
-          </div>
-
-          {/* ERPNext form (editable per docstatus) */}
+        <div className="bg-white rounded-2xl shadow-card p-6">
+          {/* Form — single PaymentForm for ALL docstates */}
           <PaymentForm
+            ref={formRef}
             mode="existing"
             initialValues={payment}
             onSaved={() => fetchPayment()}
             onCancel={() => navigate("/payments")}
-            onToolbarAction={handleToolbarAction}
+            onDirtyChange={setDirty}
+            hideFooter={true}
+            ledger={ledgerData ? { data: ledgerData, loading: ledgerLoading, error: ledgerError } : undefined}
+            comments={comments}
+            commentsLoading={commentsLoading}
+            onAddComment={handleAddComment}
           />
         </div>
       </motion.div>
@@ -185,7 +321,7 @@ export default function PaymentDetail() {
       <Modal
         open={ledgerOpen}
         onClose={() => setLedgerOpen(false)}
-        title={`Accounting Ledger — ${payment.name}`}
+        title={`Accounting Ledger \u2014 ${payment.name}`}
         description={payment.company}
         size="xl"
       >
@@ -201,40 +337,50 @@ export default function PaymentDetail() {
             {ledgerError}
           </p>
         )}
-        {!ledgerLoading && !ledgerError && ledgerData && (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border/50">
-                  {ledgerData.gl_columns.map((col) => (
-                    <th key={col.fieldname} className="text-left py-2 px-2 text-xs font-semibold text-muted whitespace-nowrap">
-                      {col.label}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {ledgerData.gl_data.length === 0 && (
-                  <tr>
-                    <td colSpan={ledgerData.gl_columns.length} className="py-4 text-center text-xs text-muted">
-                      No ledger entries found.
-                    </td>
-                  </tr>
-                )}
-                {ledgerData.gl_data.map((row, i) => (
-                  <tr key={i} className="border-b border-border/30">
-                    {ledgerData.gl_columns.map((col) => (
-                      <td key={col.fieldname} className="py-2 px-2 text-xs text-body whitespace-nowrap tabular-nums">
-                        {formatNumber(row[col.fieldname])}
-                      </td>
+        {!ledgerLoading && !ledgerError && ledgerData && (() => {
+          const { columns, rows } = normalizeLedger(ledgerData)
+          return (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border/50">
+                    {columns.map((col) => (
+                      <th key={col.key} className="text-left py-2 px-2 text-xs font-semibold text-muted whitespace-nowrap">
+                        {col.label}
+                      </th>
                     ))}
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+                </thead>
+                <tbody>
+                  {rows.length === 0 && (
+                    <tr>
+                      <td colSpan={columns.length} className="py-4 text-center text-xs text-muted">
+                        No ledger entries found.
+                      </td>
+                    </tr>
+                  )}
+                  {rows.map((row, i) => (
+                    <tr key={i} className="border-b border-border/30">
+                      {columns.map((col, colIdx) => (
+                        <td key={col.key} className="py-2 px-2 text-xs text-body whitespace-nowrap tabular-nums">
+                          {formatNumber(row[colIdx])}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )
+        })()}
       </Modal>
+
+      <SendPaymentEmailDialog
+        open={emailOpen}
+        onOpenChange={setEmailOpen}
+        paymentName={payment.name}
+        contactEmail={payment.contact_email}
+      />
     </>
   )
 }

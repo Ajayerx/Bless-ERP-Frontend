@@ -199,7 +199,7 @@ export default function Payments() {
       >
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-heading">Payments</h1>
+            <h1 className="text-2xl font-bold tracking-tight text-heading">Payments</h1>
             <p className="text-sm text-muted mt-1">Record payments and view payment history.</p>
           </div>
           <Button onClick={() => navigate("/payments/new")}>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import type { ReactNode } from "react";
 import LinkSearchField from "./LinkSearchField";
 import { cn } from "@/lib/utils";
 
@@ -11,11 +12,12 @@ export interface GridColumn<T> {
   label: string;
   type: "link" | "text" | "number" | "checkbox" | "readonly";
   options?: string[];
-  searchFn?: (query: string) => Promise<{ items: { value: string; label: string; description: string }[] }>;
-  validate?: (value: string) => Promise<void>;
-  docType?: string;
+  searchFn?: (query: string, row?: T) => Promise<{ items: { value: string; label: string; description: string }[] }>;
+  validate?: (value: string, row?: T) => Promise<void>;
+  docType?: string | ((row: T) => string);
   disabled?: (row: T) => boolean;
   placeholder?: string;
+  render?: (row: T) => ReactNode;
 }
 
 interface ChildTableGridProps<T> {
@@ -151,11 +153,11 @@ export default function ChildTableGrid<T extends object>({
                       <LinkSearchField
                         value={(row[col.key] as string) ?? ""}
                         onChange={(v) => updateCell(idx, col.key, v ?? "")}
-                        searchFn={col.searchFn}
-                        validate={col.validate}
-                        docType={col.docType ?? ""}
-                        placeholder="Search..."
-                        disabled={readOnly}
+                        searchFn={(q) => col.searchFn!(q, row)}
+                        validate={col.validate ? (v) => col.validate!(v, row) : undefined}
+                        docType={typeof col.docType === "function" ? col.docType(row) : (col.docType ?? "")}
+                        placeholder={col.placeholder ?? "Search..."}
+                        disabled={col.disabled?.(row) || readOnly}
                         inputClassName="border-0 bg-transparent rounded-none px-0 pr-8 py-2.5 text-[13px] focus:ring-0"
                       />
                     ) : col.type === "link" ? (
@@ -196,6 +198,8 @@ export default function ChildTableGrid<T extends object>({
                         onChange={(e) => updateCell(idx, col.key, e.target.checked ? 1 : 0)}
                         className="h-3.5 w-3.5 rounded-[4px] border-border"
                       />
+                    ) : col.render ? (
+                      col.render(row)
                     ) : (
                       <span className="text-xs text-muted">
                         {(row[col.key] as string | number) ?? "—"}

@@ -33,3 +33,22 @@ tsconfig.scripts.json
 .opencode
 plans
 
+# Playwright artifacts
+test-results
+playwright-report
+blob-report
+.auth
+
+# Testing (payment parity work)
+src/mocks/server.ts
+src/modules/payments/components/__tests__/
+e2e/
+playwright.config.ts
+tsconfig.e2e.json
+*.tsbuildinfo
+
+PAYMENT_FORM_PARITY_PLAN.md
+src/modules/invoices/FINAL_REVIEW.md
+src/modules/invoices/IMPLEMENTATION_PLAN.md
+src/modules/invoices/REVIEW_NOTES.md
+src/modules/invoices/ROADMAP.md

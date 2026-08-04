@@ -23,9 +23,9 @@ export default function CollapsibleSection({
       <button
         type="button"
         onClick={onToggle}
-        className="w-full flex items-center justify-between gap-2 text-left"
+        className="w-full flex items-center justify-between gap-2 text-left pb-2.5 border-b border-border/60"
       >
-        <span className="flex items-center gap-1.5 text-xs font-semibold text-muted uppercase tracking-wider hover:text-body transition-colors">
+        <span className="flex items-center gap-1.5 text-sm font-semibold text-heading transition-colors">
           <ChevronDown size={12} className={cn("transition-transform", open && "rotate-180")} />
           {title}
           {badge !== undefined && badge !== "" && (

@@ -110,10 +110,7 @@ async function safeParseJson(res: Response): Promise<any> {
   }
 }
 
-export async function apiClient<T>(
-  endpoint: string,
-  options: RequestInit = {}
-): Promise<T> {
+async function fetchJson(endpoint: string, options: RequestInit = {}): Promise<any> {
   const controller = new AbortController()
   const timeoutId = setTimeout(() => controller.abort(), API_CONFIG.timeout)
 
@@ -155,5 +152,20 @@ export async function apiClient<T>(
     throw new ApiError(res.status, parseErrorMessage(body), parseRawErrorMessage(body))
   }
 
+  return body
+}
+
+export async function apiClient<T>(
+  endpoint: string,
+  options: RequestInit = {}
+): Promise<T> {
+  const body = await fetchJson(endpoint, options)
   return (body.data ?? body.message) as T
+}
+
+export async function apiClientWithBody<T>(
+  endpoint: string,
+  options: RequestInit = {}
+): Promise<{ data?: unknown; message: unknown; docs?: unknown[] } & T> {
+  return fetchJson(endpoint, options)
 }

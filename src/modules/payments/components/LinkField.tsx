@@ -21,6 +21,7 @@ interface LinkFieldProps {
   pageLength?: number
   queryMethod?: string
   searchLinkFilters?: Record<string, unknown>
+  testId?: string
 }
 
 export default function LinkField({
@@ -40,6 +41,7 @@ export default function LinkField({
   pageLength,
   queryMethod,
   searchLinkFilters,
+  testId,
 }: LinkFieldProps) {
   const [query, setQuery] = useState("")
   const [options, setOptions] = useState<Array<{ name: string; label?: string }>>([])
@@ -183,9 +185,9 @@ export default function LinkField({
   }
 
   return (
-    <div ref={wrapperRef} className={cn("relative", className)}>
+    <div ref={wrapperRef} className={cn("relative", className)} data-testid={testId}>
       {label && (
-        <label className="block text-xs font-semibold text-muted mb-1.5 uppercase tracking-wider">
+        <label className="block text-[13px] font-medium text-body/70 mb-1.5">
           {label}{required && <span className="text-danger-500 ml-0.5">*</span>}
         </label>
       )}
@@ -203,6 +205,7 @@ export default function LinkField({
           <input
             ref={inputRef}
             type="text"
+            data-testid={testId ? `${testId}_input` : undefined}
             value={query}
             onChange={(e) => { setQuery(e.target.value); setHighlightIndex(-1) }}
             onFocus={() => setOpen(true)}
@@ -239,7 +242,7 @@ export default function LinkField({
               className={cn(
                 "w-full text-left px-4 py-2.5 text-sm transition-colors",
                 idx === highlightIndex ? "bg-primary-50 text-primary-700" : "text-body hover:bg-gray-50",
-                value === opt.name && "font-semibold bg-primary-50/50"
+                value === opt.name && "font-semibold text-primary-700 bg-primary-50/60"
               )}
             >
               <span className="font-medium">{opt.name}</span>

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react"
 import {
   Loader2, Plus, Trash2, FileText, RefreshCw, Save,
-  Check, Ban, GitBranch, Printer, Mail,
+  Check, Ban, GitBranch, Printer, Mail, Copy,
 } from "lucide-react"
 import { paymentService, getValue, getAccountingDimensions, searchLink } from "@/services"
 import { validateLink } from "@/services/frappe-client"
@@ -55,7 +55,7 @@ function formatCurrency(n: number, currency?: string): string {
 
 export type PaymentFormMode = "new" | "existing"
 
-export type PaymentToolbarAction = "submit" | "cancel" | "delete" | "amend" | "print" | "email"
+export type PaymentToolbarAction = "submit" | "cancel" | "delete" | "amend" | "print" | "email" | "duplicate"
 
 export interface PaymentFormProps {
   initialValues?: PaymentEntry
@@ -64,6 +64,7 @@ export interface PaymentFormProps {
   onCancel: () => void
   mode?: PaymentFormMode
   onToolbarAction?: (action: PaymentToolbarAction) => void
+  duplicate?: boolean
 }
 
 type PaymentType = "Receive" | "Pay" | "Internal Transfer"
@@ -83,7 +84,7 @@ function createDeductionId(): string {
 const inputClass =
   "w-full px-3 py-2.5 bg-white border border-border rounded-[12px] text-sm text-body placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 transition-all duration-200 disabled:bg-gray-50 disabled:text-muted disabled:cursor-not-allowed"
 
-const labelClass = "block text-xs font-semibold text-muted mb-1.5 uppercase tracking-wider"
+const labelClass = "block text-[13px] font-medium text-body/70 mb-1.5"
 
 export default function PaymentForm({
   initialValues,
@@ -92,8 +93,9 @@ export default function PaymentForm({
   onCancel,
   mode = "new",
   onToolbarAction,
+  duplicate = false,
 }: PaymentFormProps) {
-  const isAmend = !!initialValues && mode !== "existing"
+  const isAmend = !!initialValues && mode !== "existing" && !duplicate
   const isExisting = mode === "existing" && !!initialValues
   const docstatus = isExisting ? initialValues.docstatus : 0
   const isReadOnly = isExisting && docstatus !== 0
@@ -108,11 +110,22 @@ export default function PaymentForm({
   const [companyDefaultCurrency, setCompanyDefaultCurrency] = useState("")
 
   const [partyType, setPartyType] = useState("Customer")
+  const [partyTypes, setPartyTypes] = useState<Array<{ name: string; account_type: string | null }>>([])
   const [party, setParty] = useState("")
   const [partyName, setPartyName] = useState("")
   const [partyBalance, setPartyBalance] = useState(0)
 
+  const partyAccountTypes = useMemo(() => {
+    const map: Record<string, string> = { ...PARTY_ACCOUNT_TYPES }
+    for (const pt of partyTypes) {
+      if (pt.account_type) map[pt.name] = pt.account_type
+    }
+    return map
+  }, [partyTypes])
+
   const [bankAccount, setBankAccount] = useState("")
+  const [bankName, setBankName] = useState("")
+  const [bankAccountNo, setBankAccountNo] = useState("")
   const [partyBankAccount, setPartyBankAccount] = useState("")
   const [contactPerson, setContactPerson] = useState("")
   const [contactEmail, setContactEmail] = useState("")
@@ -144,6 +157,7 @@ export default function PaymentForm({
   const [referenceNo, setReferenceNo] = useState("")
   const [referenceDate, setReferenceDate] = useState("")
   const [clearanceDate, setClearanceDate] = useState("")
+  const [customRemarks, setCustomRemarks] = useState(false)
   const [remarks, setRemarks] = useState("")
   const [showDeductions, setShowDeductions] = useState(false)
 
@@ -190,9 +204,11 @@ export default function PaymentForm({
   const showBasePaid = paidFromCurrency && paidFromCurrency !== companyCurrency
   const showBaseReceived = paidToCurrency && paidToCurrency !== companyCurrency && paidFromCurrency !== paidToCurrency && basePaidAmount !== baseReceivedAmount
   const needRefNo = (isPay && paidFromType === "Bank") || (isReceive && paidToType === "Bank")
+  const needRefDate = needRefNo
   const showPaidFromField = isInternal || isPay || !!party
   const showPaidToField = isInternal || isReceive || !!party
   const partyAccountCurrency = isReceive ? paidFromCurrency : paidToCurrency
+  const multiCurrency = !!partyAccountCurrency && !!companyCurrency && partyAccountCurrency !== companyCurrency
 
   const totalAllocated = useMemo(
     () => references.reduce((s, r) => s + r.allocated_amount, 0),
@@ -202,6 +218,19 @@ export default function PaymentForm({
     () => references.reduce((s, r) => s + r.allocated_amount * (r.exchange_rate || 1), 0),
     [references]
   )
+
+  const referencesWithGainLoss = useMemo(() => {
+    if (!multiCurrency) return references
+    const paymentRate = isReceive ? sourceExchangeRate : targetExchangeRate
+    if (!paymentRate) return references
+    return references.map((r) => ({
+      ...r,
+      exchange_gain_loss:
+        typeof r.exchange_rate === "number" && r.allocated_amount > 0
+          ? Math.round((r.allocated_amount * paymentRate - r.allocated_amount * r.exchange_rate) * 100) / 100
+          : undefined,
+    }))
+  }, [references, multiCurrency, isReceive, sourceExchangeRate, targetExchangeRate])
 
   const taxCalc = useMemo(() => {
     if (taxes.length === 0) return null
@@ -265,6 +294,11 @@ export default function PaymentForm({
     }).catch(() => {})
   }, [isExisting])
 
+  // --- Fetch Party Type master (ERPNext boot: tabParty Type -> party_account_types) ---
+  useEffect(() => {
+    paymentService.getPartyTypes().then(setPartyTypes).catch(() => {})
+  }, [])
+
   // --- Mirror ERPNext onload: fetch accounting dimensions ---
   useEffect(() => {
     if (isExisting) return
@@ -317,6 +351,8 @@ export default function PaymentForm({
       setPartyName(v.party_name || "")
       setPartyBalance(v.party_balance || 0)
       setBankAccount(v.bank_account || "")
+      setBankName(v.bank || "")
+      setBankAccountNo(v.bank_account_no || "")
       setPartyBankAccount(v.party_bank_account || "")
       setContactPerson(v.contact_person || "")
       setContactEmail(v.contact_email || "")
@@ -335,6 +371,7 @@ export default function PaymentForm({
       setReferenceNo(v.reference_no || "")
       setReferenceDate(v.reference_date || "")
       setClearanceDate(v.clearance_date || "")
+      setCustomRemarks(!!v.custom_remarks)
       setRemarks(v.remarks || "")
       setCostCenter(v.cost_center || "")
       setProject(v.project || "")
@@ -357,6 +394,7 @@ export default function PaymentForm({
           outstanding_amount: r.outstanding_amount,
           allocated_amount: r.allocated_amount,
           exchange_rate: r.exchange_rate,
+          exchange_gain_loss: r.exchange_gain_loss,
           account: r.account,
         })))
       } else {
@@ -412,6 +450,7 @@ export default function PaymentForm({
       setPaidAmount(invoice.outstanding_amount)
       setReceivedAmount(invoice.outstanding_amount)
       setRemarks(`Payment against ${invoice.name}`)
+      setCustomRemarks(false)
       setCostCenter("")
       setProject("")
       setLetterHead("")
@@ -435,6 +474,7 @@ export default function PaymentForm({
       setPaidAmount(0)
       setReceivedAmount(0)
       setRemarks("")
+      setCustomRemarks(false)
       setCostCenter("")
       setProject("")
       setLetterHead("")
@@ -478,6 +518,7 @@ export default function PaymentForm({
       setShowAccountingDimensions(false)
       setShowMoreInfo(false)
       setShowAccounts(false)
+      setCustomRemarks(false)
     }
     setError("")
   }, [initialValues, invoice])
@@ -771,6 +812,25 @@ export default function PaymentForm({
       .catch(() => {})
   }, [company, isPay, isReceive, paidFrom, paidTo, isExisting])
 
+  // --- Show Bank + Bank Account No for the selected Company Bank Account ---
+  useEffect(() => {
+    if (!bankAccount) {
+      setBankName("")
+      setBankAccountNo("")
+      return
+    }
+    paymentService
+      .getBankAccountDetails(bankAccount)
+      .then((details) => {
+        setBankName(details.bank || "")
+        setBankAccountNo(details.bank_account_no || "")
+      })
+      .catch(() => {
+        setBankName("")
+        setBankAccountNo("")
+      })
+  }, [bankAccount])
+
   // --- Auto-set the bank-side account when Company Bank Account changes (ERPNext parity: bank_account handler) ---
   useEffect(() => {
     if (isExisting) return
@@ -840,6 +900,7 @@ export default function PaymentForm({
           outstanding_amount: r.outstanding_amount,
           allocated_amount: r.allocated_amount || r.outstanding_amount,
           exchange_rate: r.exchange_rate,
+          exchange_gain_loss: r.exchange_gain_loss,
           account: r.account,
         }))
 
@@ -1050,6 +1111,7 @@ export default function PaymentForm({
     if (!paidTo) { setError("Please select a Paid To account."); return }
     if (paidAmount <= 0 && receivedAmount <= 0) { setError("Payment amount must be greater than zero."); return }
     if (needRefNo && !referenceNo) { setError("Reference No is required for bank accounts."); return }
+    if (needRefDate && !referenceDate) { setError("Reference Date is required for bank accounts."); return }
     if (referenceDate && !isValidDateString(referenceDate)) { setError("Reference Date must be a valid date (YYYY-MM-DD)."); return }
     if (applyTaxWithholding && !taxWithholdingCategory) { setError("Tax Withholding Category is required when applying withholding."); return }
 
@@ -1088,9 +1150,11 @@ export default function PaymentForm({
       reconcile_on_advance_payment_date: reconcileOnAdvancePaymentDate ? 1 : 0,
       reference_no: referenceNo || undefined,
       reference_date: referenceDate || undefined,
+      clearance_date: clearanceDate || undefined,
+      custom_remarks: customRemarks ? 1 : 0,
       remarks: remarks || undefined,
-      amended_from: isExisting ? undefined : initialValues?.amended_from || initialValues?.name || undefined,
-      references: references.filter((r) => r.allocated_amount > 0),
+      amended_from: isExisting ? undefined : isAmend ? initialValues?.amended_from || initialValues?.name : undefined,
+      references: referencesWithGainLoss.filter((r) => r.allocated_amount > 0),
       deductions: deductions
         .filter((d) => d.account && d.amount > 0)
         .map((d) => ({ account: d.account, cost_center: d.cost_center, amount: d.amount, description: d.description || undefined, is_exchange_gain_loss: d.is_exchange_gain_loss })),
@@ -1135,7 +1199,7 @@ export default function PaymentForm({
   const showAmountSection = !!paidFrom && !!paidTo
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-5">
+    <form onSubmit={handleSubmit} noValidate className="space-y-5">
       {isAmend && (
         <div className="flex items-center gap-2 text-xs font-semibold text-warning-700 bg-warning-50 border border-warning-200 px-3 py-2 rounded-[10px]">
           <span>Amended from {initialValues?.amended_from || initialValues?.name}</span>
@@ -1145,11 +1209,11 @@ export default function PaymentForm({
 
       {/* Section 1: Type of Payment */}
       <div className="bg-gray-50/50 rounded-[14px] p-4 space-y-3 border border-border/50">
-        <p className="text-xs font-semibold text-muted uppercase tracking-wider">Type of Payment</p>
+        <p className="text-sm font-semibold text-heading pb-2.5 border-b border-border/60 mb-0.5">Type of Payment</p>
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
           <div className="space-y-3">
             <div>
-              <label className={labelClass}>{isExisting ? "Series" : "Series *"}</label>
+              <label className={labelClass}>{isExisting ? "Series" : <>Series <span className="text-danger-500">*</span></>}</label>
               {isExisting ? (
                 <input
                   type="text"
@@ -1168,11 +1232,12 @@ export default function PaymentForm({
               )}
             </div>
             <div>
-              <label className={labelClass}>Payment Type *</label>
+              <label className={labelClass}>Payment Type <span className="text-danger-500">*</span></label>
               <select
                 value={paymentType}
                 onChange={(e) => setPaymentType(e.target.value as PaymentType)}
                 disabled={isReadOnly}
+                data-testid="payment_type"
                 className={inputClass}
               >
                 <option value="Receive">Receive</option>
@@ -1183,7 +1248,7 @@ export default function PaymentForm({
           </div>
           <div className="space-y-3">
             <div>
-              <label className={labelClass}>Posting Date *</label>
+              <label className={labelClass}>Posting Date <span className="text-danger-500">*</span></label>
               <input type="date" value={postingDate} onChange={(e) => setPostingDate(e.target.value)} disabled={isReadOnly} className={inputClass} />
             </div>
             <div>
@@ -1197,6 +1262,7 @@ export default function PaymentForm({
                 searchMethod="search_link"
                 referenceDoctype="Payment Entry"
                 pageLength={10}
+                testId="mop"
               />
               {modeOfPaymentError && (
                 <p className="text-xs text-red-600 mt-1">{modeOfPaymentError}</p>
@@ -1209,19 +1275,25 @@ export default function PaymentForm({
       {/* Section 2: Payment From/To (Party) */}
       {!isInternal && (
         <div className="bg-gray-50/50 rounded-[14px] p-4 space-y-3 border border-border/50">
-          <p className="text-xs font-semibold text-muted uppercase tracking-wider">Payment From/To</p>
+          <p className="text-sm font-semibold text-heading pb-2.5 border-b border-border/60 mb-0.5">Payment From/To</p>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
             <div className="space-y-3">
               <div>
-                <label className={labelClass}>Party Type *</label>
-                <select value={partyType} onChange={(e) => { handlePartyTypeChange(e.target.value) }} disabled={isReadOnly} className={inputClass}>
-                  <option value="Customer">Customer</option>
-                  <option value="Supplier">Supplier</option>
-                  <option value="Employee">Employee</option>
+                <label className={labelClass}>Party Type</label>
+                <select value={partyType} onChange={(e) => { handlePartyTypeChange(e.target.value) }} disabled={isReadOnly} data-testid="party_type" className={inputClass}>
+                  <option value="">Select Party Type</option>
+                  {partyTypes.length > 0
+                    ? partyTypes.map((pt) => (
+                        <option key={pt.name} value={pt.name}>{pt.name}</option>
+                      ))
+                    : ["Customer", "Supplier", "Employee"].map((t) => (
+                        <option key={t} value={t}>{t}</option>
+                      ))}
                 </select>
               </div>
+              {partyType && (
               <div>
-                <label className={labelClass}>Party *</label>
+                <label className={labelClass}>Party</label>
                 <LinkField
                   {...readOnlyLinkProps}
                   doctype={partyType}
@@ -1231,15 +1303,69 @@ export default function PaymentForm({
                   searchMethod="search_link"
                   referenceDoctype="Payment Entry"
                   pageLength={10}
+                  testId="party"
                   queryMethod={partyType === "Employee" ? "erpnext.controllers.queries.employee_query" : undefined}
                 />
               </div>
+              )}
+              {partyType && (
               <div>
                 <label className={labelClass}>Party Name</label>
                 <input type="text" value={partyName} readOnly className={`${inputClass} bg-gray-50`} />
               </div>
+              )}
             </div>
             <div className="space-y-3">
+              {party && (
+                <div>
+                  <label className={labelClass}>Company Bank Account</label>
+                  <LinkField
+                    {...readOnlyLinkProps}
+                    doctype="Bank Account"
+                    value={bankAccount}
+                    onChange={setBankAccount}
+                    placeholder="Select company bank..."
+                    searchMethod="search_link"
+                    referenceDoctype="Payment Entry"
+                    pageLength={10}
+                    searchLinkFilters={{ is_company_account: 1, company }}
+                    testId="bank_account"
+                  />
+                </div>
+              )}
+              {bankAccount && (bankName || bankAccountNo) && (
+                <div className="space-y-3">
+                  {bankName && (
+                    <div>
+                      <label className={labelClass}>Bank</label>
+                      <div className={`${inputClass} bg-gray-50`}>{bankName}</div>
+                    </div>
+                  )}
+                  {bankAccountNo && (
+                    <div>
+                      <label className={labelClass}>Bank Account No</label>
+                      <div className={`${inputClass} bg-gray-50`}>{bankAccountNo}</div>
+                    </div>
+                  )}
+                </div>
+              )}
+              {party && (
+                <div>
+                  <label className={labelClass}>Party Bank Account</label>
+                  <LinkField
+                    {...readOnlyLinkProps}
+                    doctype="Bank Account"
+                    value={partyBankAccount}
+                    onChange={setPartyBankAccount}
+                    placeholder="Select party bank..."
+                    searchMethod="search_link"
+                    referenceDoctype="Payment Entry"
+                    pageLength={10}
+                    searchLinkFilters={{ is_company_account: 0, party_type: partyType, party }}
+                    testId="party_bank_account"
+                  />
+                </div>
+              )}
               {party && partyType !== "Employee" && (
                 <div>
                   <label className={labelClass}>Contact Person</label>
@@ -1254,6 +1380,7 @@ export default function PaymentForm({
                     pageLength={10}
                     queryMethod="frappe.contacts.doctype.contact.contact.contact_query"
                     searchLinkFilters={{ link_doctype: partyType, link_name: party }}
+                    testId="contact_person"
                   />
                 </div>
               )}
@@ -1263,36 +1390,6 @@ export default function PaymentForm({
                   <input type="text" value={contactEmail} readOnly className={`${inputClass} bg-gray-50`} />
                 </div>
               )}
-            </div>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <div>
-              <label className={labelClass}>Company Bank Account</label>
-              <LinkField
-                {...readOnlyLinkProps}
-                doctype="Bank Account"
-                value={bankAccount}
-                onChange={setBankAccount}
-                placeholder="Select company bank..."
-                searchMethod="search_link"
-                referenceDoctype="Payment Entry"
-                pageLength={10}
-                searchLinkFilters={{ is_company_account: 1, company }}
-              />
-            </div>
-            <div>
-              <label className={labelClass}>Party Bank Account</label>
-              <LinkField
-                {...readOnlyLinkProps}
-                doctype="Bank Account"
-                value={partyBankAccount}
-                onChange={setPartyBankAccount}
-                placeholder="Select party bank..."
-                searchMethod="search_link"
-                referenceDoctype="Payment Entry"
-                pageLength={10}
-                searchLinkFilters={{ is_company_account: 0, party_type: partyType, party }}
-              />
             </div>
           </div>
         </div>
@@ -1316,7 +1413,7 @@ export default function PaymentForm({
             )}
             {showPaidFromField && (
               <div>
-                <label className={labelClass}>Account Paid From *</label>
+                <label className={labelClass}>Account Paid From <span className="text-danger-500">*</span></label>
                 <LinkField
                   {...readOnlyLinkProps}
                   doctype="Account"
@@ -1327,10 +1424,11 @@ export default function PaymentForm({
                   referenceDoctype="Payment Entry"
                   pageLength={10}
                   searchLinkFilters={{
-                    account_type: ["in", isPay || isInternal ? ["Bank", "Cash"] : [PARTY_ACCOUNT_TYPES[partyType]]],
+                    account_type: ["in", isPay || isInternal ? ["Bank", "Cash"] : [partyAccountTypes[partyType]]],
                     is_group: 0,
                     company,
                   }}
+                  testId="paid_from"
                 />
                 {paidFrom && (
                   <>
@@ -1346,7 +1444,7 @@ export default function PaymentForm({
           <div className="space-y-3">
             {showPaidToField && (
               <div>
-                <label className={labelClass}>Account Paid To *</label>
+                <label className={labelClass}>Account Paid To <span className="text-danger-500">*</span></label>
                 <LinkField
                   {...readOnlyLinkProps}
                   doctype="Account"
@@ -1357,10 +1455,11 @@ export default function PaymentForm({
                   referenceDoctype="Payment Entry"
                   pageLength={10}
                   searchLinkFilters={{
-                    account_type: ["in", isReceive || isInternal ? ["Bank", "Cash"] : [PARTY_ACCOUNT_TYPES[partyType]]],
+                    account_type: ["in", isReceive || isInternal ? ["Bank", "Cash"] : [partyAccountTypes[partyType]]],
                     is_group: 0,
                     company,
                   }}
+                  testId="paid_to"
                 />
                 {paidTo && (
                   <>
@@ -1379,14 +1478,15 @@ export default function PaymentForm({
       {/* Section 4: Amount (gated on accounts) */}
       {showAmountSection && (
         <div className="bg-gray-50/50 rounded-[14px] p-4 space-y-3 border border-border/50">
-          <p className="text-xs font-semibold text-muted uppercase tracking-wider">Amount</p>
+          <p className="text-sm font-semibold text-heading pb-2.5 border-b border-border/60 mb-0.5">Amount</p>
           <div className={cn("grid grid-cols-1 gap-3", showReceivedAmount && "lg:grid-cols-2")}>
             <div className="space-y-3">
               <div>
-                <label className={labelClass}>Paid Amount ({paidFromCurrency || companyCurrency}) *</label>
+                <label className={labelClass}>Paid Amount ({paidFromCurrency || companyCurrency}) <span className="text-danger-500">*</span></label>
                 <input
                   type="number" min={0} step={0.01}
                   value={paidAmount}
+                  data-testid="paid_amount"
                   onChange={(e) => {
                     const v = parseFloat(e.target.value) || 0
                     setPaidAmount(v)
@@ -1419,10 +1519,11 @@ export default function PaymentForm({
             {showReceivedAmount && (
               <div className="space-y-3">
                 <div>
-                  <label className={labelClass}>Received Amount ({paidToCurrency || companyCurrency}) *</label>
+                  <label className={labelClass}>Received Amount ({paidToCurrency || companyCurrency}) <span className="text-danger-500">*</span></label>
                   <input
                     type="number" min={0} step={0.01}
                     value={receivedAmount}
+                    data-testid="received_amount"
                     onChange={(e) => setReceivedAmount(parseFloat(e.target.value) || 0)}
                     disabled={isReadOnly}
                     className={inputClass}
@@ -1463,7 +1564,7 @@ export default function PaymentForm({
       {!!(party && paidFrom && paidTo && paidAmount && receivedAmount) && (
         <div className="bg-gray-50/50 rounded-[14px] p-4 space-y-3 border border-border/50">
           <div className="flex items-center justify-between">
-            <p className="text-xs font-semibold text-muted uppercase tracking-wider">References</p>
+            <p className="text-sm font-semibold text-heading pb-2.5 border-b border-border/60 mb-0.5">References</p>
             <div className="flex items-center gap-2">
               <button
                 type="button"
@@ -1494,18 +1595,26 @@ export default function PaymentForm({
                     <th className="text-left py-1.5 text-xs font-semibold text-muted hidden md:table-cell">Due Date</th>
                     <th className="text-right py-1.5 text-xs font-semibold text-muted">Total</th>
                     <th className="text-right py-1.5 text-xs font-semibold text-muted">Outstanding</th>
+                    {multiCurrency && (
+                      <th className="text-right py-1.5 text-xs font-semibold text-muted">Exchange Gain/Loss</th>
+                    )}
                     <th className="text-right py-1.5 text-xs font-semibold text-muted w-[110px]">Allocate</th>
                     <th className="w-8" />
                   </tr>
                 </thead>
                 <tbody>
-                  {references.map((r) => (
+                  {referencesWithGainLoss.map((r) => (
                     <tr key={r.reference_name} className="border-b border-border/30">
                       <td className="py-1.5 text-xs text-muted">{r.reference_doctype}</td>
                       <td className="py-1.5 font-medium text-heading">{r.reference_name}</td>
                       <td className="py-1.5 text-xs text-muted hidden md:table-cell">{r.due_date || "—"}</td>
                       <td className="py-1.5 text-right text-muted tabular-nums">{formatCurrency(r.total_amount, partyAccountCurrency)}</td>
                       <td className="py-1.5 text-right text-muted tabular-nums">{formatCurrency(r.outstanding_amount, partyAccountCurrency)}</td>
+                      {multiCurrency && (
+                        <td className="py-1.5 text-right text-muted tabular-nums">
+                          {r.exchange_gain_loss != null ? formatCurrency(r.exchange_gain_loss, partyAccountCurrency) : "—"}
+                        </td>
+                      )}
                       <td className="py-1.5 text-right">
                         <input
                           type="number" min={0} max={r.outstanding_amount} step={0.01}
@@ -1534,7 +1643,7 @@ export default function PaymentForm({
       {/* Section 6: Writeoff */}
       {!!(paidAmount && receivedAmount) && (
         <div className="bg-gray-50/50 rounded-[14px] p-4 space-y-3 border border-border/50">
-          <p className="text-xs font-semibold text-muted uppercase tracking-wider">Write Off</p>
+          <p className="text-sm font-semibold text-heading pb-2.5 border-b border-border/60 mb-0.5">Write Off</p>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 text-sm">
             <div className="space-y-3">
               {!!(paidAmount && receivedAmount && references.length > 0) && (
@@ -1720,40 +1829,44 @@ export default function PaymentForm({
       )}
 
       {/* Section 9: Transaction ID */}
+      {!!(paidFrom && paidTo) && (
       <div className="bg-gray-50/50 rounded-[14px] p-4 space-y-3 border border-border/50">
-        <p className="text-xs font-semibold text-muted uppercase tracking-wider">Transaction ID</p>
+        <p className="text-sm font-semibold text-heading pb-2.5 border-b border-border/60 mb-0.5">Transaction ID</p>
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
           <div className="space-y-3">
-            {!!(paidFrom && paidTo) && (
-              <div>
-                <label className={labelClass}>Reference No {needRefNo && <span className="text-danger-500">*</span>}</label>
-                <input
-                  type="text"
-                  value={referenceNo}
-                  onChange={(e) => setReferenceNo(e.target.value)}
-                  disabled={isReadOnly}
-                  className={inputClass}
-                  placeholder="Cheque/Reference No"
-                />
-              </div>
-            )}
+            <div>
+              <label className={labelClass}>Reference No {needRefNo && <span className="text-danger-500">*</span>}</label>
+              <input
+                type="text"
+                value={referenceNo}
+                onChange={(e) => setReferenceNo(e.target.value)}
+                disabled={isReadOnly}
+                className={inputClass}
+                placeholder="Cheque/Reference No"
+                data-testid="reference_no"
+              />
+            </div>
           </div>
           <div className="space-y-3">
-            {!!(paidFrom && paidTo) && (
-              <div>
-                <label className={labelClass}>Reference Date</label>
-                <input type="date" value={referenceDate} onChange={(e) => setReferenceDate(e.target.value)} disabled={isReadOnly} pattern="\d{4}-\d{2}-\d{2}" className={inputClass} />
-              </div>
-            )}
-            {(isAmend || docstatus === 1) && clearanceDate && (
-              <div>
-                <label className={labelClass}>Clearance Date</label>
-                <input type="date" value={clearanceDate} readOnly className={`${inputClass} bg-gray-50`} />
-              </div>
-            )}
+            <div>
+              <label className={labelClass}>Reference Date {needRefDate && <span className="text-danger-500">*</span>}</label>
+              <input type="date" value={referenceDate} onChange={(e) => setReferenceDate(e.target.value)} disabled={isReadOnly} pattern="\d{4}-\d{2}-\d{2}" data-testid="reference_date" className={inputClass} />
+            </div>
+            <div>
+              <label className={labelClass}>Clearance Date</label>
+              <input
+                type="date"
+                value={clearanceDate}
+                onChange={(e) => setClearanceDate(e.target.value)}
+                disabled={isReadOnly}
+                data-testid="clearance_date"
+                className={inputClass}
+              />
+            </div>
           </div>
         </div>
       </div>
+      )}
 
       {/* Section 10: More Information (gated like ERPNext) */}
       {!!(paidFrom && paidTo && paidAmount && receivedAmount) && (
@@ -1798,7 +1911,7 @@ export default function PaymentForm({
                 />
               </div>
               <div className="flex flex-col gap-2">
-                <label className="flex items-center gap-2 text-xs font-semibold text-muted uppercase tracking-wider">
+                <label className="flex items-center gap-2 text-[13px] font-medium text-body/70">
                   <input
                     type="checkbox"
                     checked={isOpening}
@@ -1808,7 +1921,7 @@ export default function PaymentForm({
                   />
                   Opening Entry
                 </label>
-                <label className="flex items-center gap-2 text-xs font-semibold text-muted uppercase tracking-wider">
+                <label className="flex items-center gap-2 text-[13px] font-medium text-body/70">
                   <input
                     type="checkbox"
                     checked={bookAdvancePayments}
@@ -1818,7 +1931,7 @@ export default function PaymentForm({
                   />
                   Book Advance Payments in Separate Party Account
                 </label>
-                <label className="flex items-center gap-2 text-xs font-semibold text-muted uppercase tracking-wider">
+                <label className="flex items-center gap-2 text-[13px] font-medium text-body/70">
                   <input
                     type="checkbox"
                     checked={reconcileOnAdvancePaymentDate}
@@ -1828,10 +1941,20 @@ export default function PaymentForm({
                   />
                   Reconcile on Advance Payment Date
                 </label>
+                <label className="flex items-center gap-2 text-[13px] font-medium text-body/70">
+                  <input
+                    type="checkbox"
+                    checked={customRemarks}
+                    onChange={(e) => setCustomRemarks(e.target.checked)}
+                    disabled={isReadOnly}
+                    className="h-4 w-4 rounded border-border text-primary-600 focus:ring-primary-500/20 disabled:opacity-40"
+                  />
+                  Custom Remarks
+                </label>
               </div>
               {partyType === "Supplier" && (
                 <div className="space-y-3">
-                  <label className="flex items-center gap-2 text-xs font-semibold text-muted uppercase tracking-wider">
+                  <label className="flex items-center gap-2 text-[13px] font-medium text-body/70">
                     <input
                       type="checkbox"
                       checked={applyTaxWithholding}
@@ -1918,7 +2041,7 @@ export default function PaymentForm({
 
       {/* Error */}
       {error && (
-        <p className="text-sm text-danger-600 bg-danger-50 border border-danger-100 px-3 py-2.5 rounded-[10px]">
+        <p data-testid="form_error" className="text-sm text-danger-600 bg-danger-50 border border-danger-100 px-3 py-2.5 rounded-[10px]">
           {error}
         </p>
       )}
@@ -1973,6 +2096,13 @@ export default function PaymentForm({
               )}
               <button
                 type="button"
+                onClick={() => onToolbarAction?.("duplicate")}
+                className="flex items-center gap-2 px-4 py-2.5 text-sm font-semibold text-muted bg-surface border border-border rounded-[12px] hover:bg-gray-50 transition-colors"
+              >
+                <Copy size={16} /> Duplicate
+              </button>
+              <button
+                type="button"
                 onClick={() => onToolbarAction?.("email")}
                 className="flex items-center gap-2 px-4 py-2.5 text-sm font-semibold text-muted bg-surface border border-border rounded-[12px] hover:bg-gray-50 transition-colors"
               >
@@ -2017,6 +2147,7 @@ export default function PaymentForm({
             <button
               type="submit"
               disabled={saving}
+              data-testid="save_button"
               className="flex items-center gap-2 px-4 py-2.5 text-sm font-semibold text-white bg-primary-600 rounded-[12px] hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-sm"
             >
               {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
@@ -2033,6 +2164,7 @@ export default function PaymentForm({
         onFetch={handleFetchOutstanding}
         loading={fetchingOutstanding}
         title={outstandingDialogTitle}
+        dimensions={dimensions.filter((d) => d.document_type !== "Project")}
       />
     </form>
   )

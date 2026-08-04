@@ -1,4 +1,4 @@
-import { apiClient } from "./api-client"
+import { apiClient, apiClientWithBody } from "./api-client"
 
 interface CacheEntry {
   expires: number
@@ -42,6 +42,29 @@ export function postMethod<T>(
   })
 }
 
+// Same wire format as postMethod but preserves the full response body, so
+// callers can read nested keys like `docs[0]` (used by run_doc_method, which
+// stores the mutated document at frappe.response["docs"][0]).
+export function postMethodRaw<T>(
+  endpoint: string,
+  params: Record<string, unknown>,
+  headers?: Record<string, string>
+): Promise<T> {
+  const body = new URLSearchParams()
+  for (const [key, value] of Object.entries(params)) {
+    if (value === undefined) continue
+    body.set(key, typeof value === "object" ? JSON.stringify(value) : String(value))
+  }
+  return apiClientWithBody<T>(`/method/${endpoint}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+      ...headers,
+    },
+    body: body.toString(),
+  })
+}
+
 export interface LinkValidationResult {
   name: string
   [key: string]: unknown
@@ -50,6 +73,7 @@ export interface LinkValidationResult {
 export interface AccountingDimension {
   fieldname: string
   document_type: string
+  label?: string
 }
 
 export interface AccountingDimensionsResult {

@@ -42,12 +42,25 @@ export interface PaymentEntryTax {
   grand_total_fraction_for_current_item?: number
 }
 
+export interface PaymentComment {
+  id: string
+  content: string
+  author: string
+  createdAt: string
+}
+
 export interface PaymentEntry {
   name: string
+  modified?: string
   naming_series?: string
   payment_type: string
+  payment_order_status?: string
   posting_date: string
   company: string
+  owner?: string
+  creation?: string
+  submitted_by?: string
+  submitted_on?: string
   party_type: string
   party: string
   party_name?: string
@@ -99,6 +112,8 @@ export interface PaymentEntry {
   clearance_date?: string
   remarks?: string
   custom_remarks?: number
+  in_words?: string
+  base_in_words?: string
   status: string
   docstatus: number
   references?: PaymentEntryReference[]
@@ -163,6 +178,7 @@ export interface OutstandingReference {
   due_date?: string
   account?: string
   exchange_rate?: number
+  exchange_gain_loss?: number
   bill_no?: string
   payment_term?: string
   payment_term_outstanding?: number
@@ -194,6 +210,7 @@ export interface InvoiceAllocation {
   outstanding_amount: number
   allocated_amount: number
   exchange_rate?: number
+  exchange_gain_loss?: number
   account?: string
 }
 
@@ -207,15 +224,16 @@ export interface PaymentDeductionForm {
 }
 
 export interface LedgerPreviewColumn {
-  fieldname: string
-  label: string
+  fieldname?: string
+  label?: string
+  name?: string
   fieldtype?: string
   width?: number
 }
 
 export interface LedgerPreviewData {
   gl_columns: LedgerPreviewColumn[]
-  gl_data: Record<string, unknown>[]
+  gl_data: Record<string, unknown>[] | unknown[][]
 }
 
 export interface RecordPaymentData {
@@ -253,6 +271,8 @@ export interface RecordPaymentData {
   reconcile_on_advance_payment_date?: number
   reference_no?: string
   reference_date?: string
+  clearance_date?: string
+  custom_remarks?: number
   remarks?: string
   amended_from?: string
   references: InvoiceAllocation[]
