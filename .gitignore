@@ -52,3 +52,15 @@ src/modules/invoices/FINAL_REVIEW.md
 src/modules/invoices/IMPLEMENTATION_PLAN.md
 src/modules/invoices/REVIEW_NOTES.md
 src/modules/invoices/ROADMAP.md
+src/hooks/useAutoGrowTextarea.test.tsx
+
+
+src/modules/payments/utils/taxes.test.ts
+src/modules/payments/utils/allocation.test.ts
+src/modules/payments/components/ledgerUtils.test.ts
+
+src/modules/payments/components/LedgerPreviewTable.test.tsx
+src/modules/reports/pages/__tests__/GeneralLedgerPage.test.tsx
+src/modules/payments/pages/__tests__/PaymentDetail.test.tsx
+PLAN-general-ledger-activity.md
+src/modules/payments/pages/__tests__/VersionDetail.test.tsx

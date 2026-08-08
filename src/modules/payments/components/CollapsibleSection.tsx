@@ -23,6 +23,7 @@ export default function CollapsibleSection({
       <button
         type="button"
         onClick={onToggle}
+        aria-expanded={open}
         className="w-full flex items-center justify-between gap-2 text-left pb-2.5 border-b border-border/60"
       >
         <span className="flex items-center gap-1.5 text-sm font-semibold text-heading transition-colors">

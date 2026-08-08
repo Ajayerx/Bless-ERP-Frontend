@@ -314,3 +314,228 @@ html::-webkit-scrollbar {
     border-radius: 4px;
   }
 }
+
+/* ===== Accounting Ledger Preview (frappe-datatable look-alike) ===== */
+
+/* Single scroll region: the wrapper clips at the modal body width/height and
+   never overflows it, so the modal itself does not scroll. The inner
+   .dt-scrollable is the only horizontal + vertical scroller. */
+.ledger-preview-datatable {
+  --dt-border-color: #d1d8dd;
+  --dt-header-bg: #f4f5f6;
+  --dt-control-bg: #f4f5f6;
+  --dt-text-color: #1f272e;
+  font-size: 13px;
+  color: var(--dt-text-color);
+  position: relative;
+  width: 100%;
+  max-height: calc(85vh - 44px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 16px;
+  border: 1px solid var(--dt-border-color);
+  background-color: #fff;
+}
+
+.ledger-preview-datatable .dt-scrollable {
+  flex: 1 1 auto;
+  min-height: 100px;
+  overflow: auto;
+  scrollbar-width: thin;
+}
+
+/* Header + filter rows live inside the scrollable and stick to the top, so the
+   column labels scroll horizontally in sync with the body and stay visible on
+   vertical scroll (no JS transform sync needed). */
+.ledger-preview-datatable .dt-header {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background-color: #fff;
+}
+
+.ledger-preview-datatable .dt-row {
+  display: flex;
+  height: 35px;
+}
+
+.ledger-preview-datatable .dt-row-header {
+  background-color: var(--dt-header-bg);
+}
+
+.ledger-preview-datatable .dt-row-header .dt-cell {
+  border-top: none;
+}
+
+/* Full grid like ERPNext: thin vertical separator (right) + thin horizontal
+   separator (top) per cell. Bottom border only on the last body row. */
+.ledger-preview-datatable .dt-cell {
+  border: 1px solid var(--dt-border-color);
+  border-bottom: none;
+  border-left: none;
+  position: relative;
+  background-color: #fff;
+  color: var(--dt-text-color);
+  flex: 0 0 auto;
+  width: 110px;
+  min-width: 0;
+}
+
+.ledger-preview-datatable .dt-cell:first-child {
+  border-left: none;
+}
+
+.ledger-preview-datatable .dt-cell:last-child {
+  border-right: none;
+}
+
+.ledger-preview-datatable .dt-cell.dt-cell-serial {
+  width: 30px;
+}
+
+.ledger-preview-datatable .dt-scrollable > .dt-row:last-child .dt-cell {
+  border-bottom: none;
+}
+
+.ledger-preview-datatable .dt-cell__content {
+  box-sizing: border-box;
+  height: 100%;
+  padding: 8px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  overflow: hidden;
+  position: relative;
+}
+
+.ledger-preview-datatable .dt-cell--header .dt-cell__content {
+  background-color: var(--dt-header-bg);
+  font-weight: normal;
+  padding-right: 1rem;
+}
+
+.ledger-preview-datatable .dt-cell__content--header-0,
+.ledger-preview-datatable .dt-cell__content--col-0 {
+  padding: 8px;
+}
+
+.ledger-preview-datatable .dt-scrollable .dt-cell__content {
+  font-feature-settings: "tnum";
+}
+
+.ledger-preview-datatable .dt-scrollable__no-data {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100px;
+}
+
+.ledger-preview-datatable .no-data-message {
+  color: var(--dt-text-color);
+}
+
+.ledger-preview-datatable .right-aligned {
+  text-align: right;
+}
+
+.ledger-preview-datatable .centered {
+  text-align: center;
+}
+
+.ledger-preview-datatable .sort-indicator {
+  margin-left: 4px;
+  color: inherit;
+}
+
+.ledger-preview-datatable .dt-dropdown__toggle {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  color: #6b7280;
+  opacity: 0;
+  border-radius: 2px;
+}
+
+.ledger-preview-datatable .dt-cell--header:hover .dt-dropdown__toggle {
+  opacity: 1;
+}
+
+.ledger-preview-datatable .dt-cell--sticky {
+  z-index: 2;
+}
+
+.ledger-preview-datatable .dt-cell--sticky-last::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: -1px;
+  width: 8px;
+  height: 100%;
+  pointer-events: none;
+  box-shadow: 4px 0 6px -4px rgba(15, 23, 42, 0.2);
+}
+
+.ledger-preview-datatable .dt-row-filter .dt-cell__content {
+  padding: 4px;
+}
+
+.ledger-preview-datatable .dt-filter.dt-input {
+  border-radius: 3px;
+  height: 100%;
+  width: 100%;
+  background-color: var(--dt-control-bg);
+  padding-left: 8px;
+  border: none;
+  font: inherit;
+  color: inherit;
+  outline: none;
+}
+
+.ledger-preview-datatable .dt-filter.dt-input:focus {
+  box-shadow: 0 0 0 1px var(--color-primary-500, #3b82f6);
+}
+
+.ledger-preview-datatable .dt-filter.dt-input:disabled {
+  background-color: var(--dt-header-bg);
+  cursor: not-allowed;
+}
+
+.ledger-preview-datatable .dt-dropdown-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 9;
+}
+
+.ledger-preview-datatable .dt-dropdown__list {
+  position: fixed;
+  min-width: 8rem;
+  z-index: 10;
+  cursor: pointer;
+  background-color: #fff;
+  border-radius: 3px;
+  padding: 4px 0;
+  box-shadow: 0 2px 3px rgba(10, 10, 10, 0.1), 0 0 0 1px rgba(10, 10, 10, 0.1);
+  font-size: 13px;
+  color: var(--dt-text-color);
+}
+
+.ledger-preview-datatable .dt-dropdown__list-item {
+  padding: 4px 0;
+  padding-left: 12px;
+  padding-right: 12px;
+  white-space: nowrap;
+}
+
+.ledger-preview-datatable .dt-dropdown__list-item:hover {
+  background-color: #f5f7fa;
+}

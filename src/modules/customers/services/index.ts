@@ -70,7 +70,7 @@ export async function fetchFieldOptions(doctype: string, fieldname: string): Pro
   }
 }
 
-export async function searchLink(doctype: string, query: string, referenceDoctype?: string, filters?: unknown[][] | Record<string, string | number | boolean>, customQuery?: string, ignoreUserPermissions?: boolean): Promise<{ value: string; label: string; description: string }[]> {
+export async function searchLink(doctype: string, query: string, referenceDoctype?: string, filters?: unknown[][] | Record<string, string | number | boolean | Array<string | number>>, customQuery?: string, ignoreUserPermissions?: boolean): Promise<{ value: string; label: string; description: string }[]> {
   try {
     const qp = new URLSearchParams()
     qp.set("doctype", doctype)

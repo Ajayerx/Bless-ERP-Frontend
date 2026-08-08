@@ -1,4 +1,6 @@
-import { apiClient } from "@/services/api-client"
+import { apiClient, apiClientWithBody, serverMessagesFromBody, type AppMessage } from "@/services/api-client"
+import { API_CONFIG } from "@/config/api.config"
+import { sanitizeHtml } from "@/lib/utils"
 import { postMethod, postMethodRaw, withDedup } from "@/services/frappe-client"
 import type { SalesInvoice } from "@/modules/invoices/services"
 import type {
@@ -11,10 +13,18 @@ import type {
   RecordPaymentData,
   PaymentEntryTax,
   PaymentComment,
+  PaymentActivityItem,
   LedgerPreviewData,
   ContactDetails,
   BankAccountDetails,
   PartyAndAccountBalance,
+  UnreconcileAllocation,
+  PaymentAfterSaveResult,
+  DocInfo,
+  DocInfoVersion,
+  DocInfoUserInfo,
+  ActivityMessageSegment,
+  VersionDoc,
 } from "../types"
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
@@ -52,20 +62,7 @@ const LIST_FIELDS = [
   "reference_no", "status", "docstatus", "company",
 ]
 
-export type { PaymentEntry, PaymentEntryListResponse, RecordPaymentData, PaymentEntryReference, PartyDetails, AccountDetails, OutstandingReference, GetOutstandingArgs, LedgerPreviewData, LedgerPreviewColumn, ContactDetails, BankAccountDetails, PartyAndAccountBalance, PaymentComment, InvoiceAllocation, PaymentDeductionForm } from "../types"
-
-export async function getReferenceDetails(
-  reference_doctype: string,
-  reference_name: string,
-  party_account_currency: string,
-  party_type: string,
-  party: string
-): Promise<ReferenceDetails> {
-  return postMethod<ReferenceDetails>(
-    "erpnext.accounts.doctype.payment_entry.payment_entry.get_reference_details",
-    { reference_doctype, reference_name, party_account_currency, party_type, party }
-  )
-}
+export type { PaymentEntry, PaymentEntryListResponse, RecordPaymentData, PaymentEntryReference, PartyDetails, AccountDetails, OutstandingReference, GetOutstandingArgs, LedgerPreviewData, LedgerPreviewColumn, ContactDetails, BankAccountDetails, PartyAndAccountBalance, PaymentComment, PaymentActivityItem, InvoiceAllocation, PaymentDeductionForm, UnreconcileAllocation, PaymentAfterSaveResult, DocInfo, DocInfoVersion, DocInfoUserInfo, ActivityMessageSegment, VersionDoc } from "../types"
 
 export async function allocateAmountToReferences(
   doc: PaymentEntryDocSnapshot,
@@ -77,6 +74,44 @@ export async function allocateAmountToReferences(
       method: "allocate_amount_to_references",
       docs: JSON.stringify(doc),
       args: JSON.stringify(args),
+    },
+    { "x-frappe-doctype": encodeURIComponent("Payment Entry") }
+  )
+  return body.docs?.[0] ?? null
+}
+
+// Persist a Payment Entry but preserve the full save response so callers can
+// read `matched_payment_requests` (mirrors ERPNext `after_save`).
+export async function savePaymentRaw(
+  data: RecordPaymentData,
+  name?: string
+): Promise<PaymentAfterSaveResult> {
+  const isUpdate = !!name
+  const opts = isUpdate ? { omitNamingSeries: true, omitAmendedFrom: true } : {}
+  const body = await apiClientWithBody<{
+    docs?: Array<PaymentEntry | PaymentAfterSaveResult>
+    matched_payment_requests?: string[][]
+  }>(isUpdate ? `/resource/Payment Entry/${encodeURIComponent(name)}` : "/resource/Payment Entry", {
+    method: isUpdate ? "PUT" : "POST",
+    body: JSON.stringify(buildPaymentDoc(data, opts)),
+  })
+  const doc = Array.isArray(body.docs) ? body.docs[0] : (body as unknown as { data?: PaymentEntry }).data
+  return {
+    name: (doc as PaymentEntry)?.name ?? name ?? "",
+    matchedPaymentRequests: body.matched_payment_requests,
+  }
+}
+
+export async function setMatchedPaymentRequests(
+  doc: Record<string, unknown>,
+  matchedPaymentRequests: string[][]
+): Promise<PaymentEntry | null> {
+  const body = await postMethodRaw<{ docs?: Array<PaymentEntry | null> }>(
+    "run_doc_method",
+    {
+      method: "set_matched_payment_requests",
+      docs: JSON.stringify(doc),
+      args: JSON.stringify({ matched_payment_requests: matchedPaymentRequests }),
     },
     { "x-frappe-doctype": encodeURIComponent("Payment Entry") }
   )
@@ -163,6 +198,7 @@ function buildPaymentDoc(
     payment_type: data.payment_type,
     party_type: data.party_type || undefined,
     party: data.party || undefined,
+    party_name: data.party_name || undefined,
     posting_date: data.posting_date,
     company: data.company,
     mode_of_payment: data.mode_of_payment || undefined,
@@ -205,7 +241,7 @@ function buildPaymentDoc(
     doc.reconcile_on_advance_payment_date = data.reconcile_on_advance_payment_date
   }
 
-  const validRefs = (data.references || []).filter((r) => r.allocated_amount > 0)
+  const validRefs = (data.references || []).filter((r) => r.reference_name)
   if (validRefs.length > 0) {
     doc.references = validRefs.map((r) => ({
       reference_doctype: r.reference_doctype,
@@ -214,9 +250,11 @@ function buildPaymentDoc(
       outstanding_amount: r.outstanding_amount,
       allocated_amount: r.allocated_amount,
       due_date: safeDate(r.due_date),
+      bill_no: r.bill_no || undefined,
       exchange_rate: r.exchange_rate || undefined,
       exchange_gain_loss: r.exchange_gain_loss || undefined,
       account: r.account || undefined,
+      payment_request: r.payment_request || undefined,
     }))
   }
 
@@ -251,6 +289,385 @@ function buildPaymentDoc(
   return doc
 }
 
+// ─── Timeline building ───────────────────────────────────────────────
+// Port of frappe/public/js/frappe/form/footer/version_timeline_content_builder.js
+// + form_timeline.js prepare_timeline_contents. Each Version doc emits one (or
+// more) combined messages — field changes are comma-joined, docstatus changes
+// become "You submitted/cancelled this document".
+
+const FIELD_LABELS: Record<string, string> = {
+  docstatus: "Document Status",
+  title: "Title",
+  party_name: "Party Name",
+  party: "Party",
+  party_type: "Party Type",
+  payment_references: "Payment References",
+  posting_date: "Posting Date",
+  company: "Company",
+  mode_of_payment: "Mode of Payment",
+  reference_no: "Reference No",
+  reference_date: "Reference Date",
+  clearance_date: "Clearance Date",
+  remarks: "Remarks",
+  custom_remarks: "Custom Remarks",
+  status: "Status",
+  paid_amount: "Paid Amount",
+  received_amount: "Received Amount",
+  base_paid_amount: "Base Paid Amount",
+  base_received_amount: "Base Received Amount",
+  paid_from: "Paid From",
+  paid_to: "Paid To",
+  paid_from_account_currency: "Paid From Account Currency",
+  paid_to_account_currency: "Paid To Account Currency",
+  source_exchange_rate: "Source Exchange Rate",
+  target_exchange_rate: "Target Exchange Rate",
+  total_allocated_amount: "Total Allocated Amount",
+  unallocated_amount: "Unallocated Amount",
+  difference_amount: "Difference Amount",
+  bank_account: "Bank Account",
+  party_bank_account: "Party Bank Account",
+  contact_person: "Contact Person",
+  contact_email: "Contact Email",
+  cost_center: "Cost Center",
+  project: "Project",
+  naming_series: "Naming Series",
+  letter_head: "Letter Head",
+  print_heading: "Print Heading",
+}
+
+export function fieldLabel(field: string): string {
+  if (FIELD_LABELS[field]) return FIELD_LABELS[field]
+  return field
+    .replace(/_/g, " ")
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replace(/^./, (c) => c.toUpperCase())
+}
+
+function stripHtml(value: string): string {
+  return value
+    .replace(/<[^>]*>/g, "")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+}
+
+// ERPNext's comment composer stores content as Quill HTML wrapped in
+// <div class="ql-editor read-mode"> (see ControlTextEditor.get_input_value).
+// Our composer is a plain textarea, so convert the typed text into the same
+// shape before calling frappe.desk.form.utils.add_comment.
+function toQuillHtml(text: string): string {
+  const escaped = sanitizeHtml(
+    text
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/\n\n/g, "</p><p>")
+      .replace(/\n/g, "<br>")
+  )
+  return `<div class="ql-editor read-mode"><p>${escaped}</p></div>`
+}
+
+// Port of version_timeline_content_builder.js format_content_for_timeline():
+// html2text → ellipsis(40) → '""' fallback. null renders as the literal "null"
+// (matching ERPNext's html2text DOM-parsing behaviour). Rendered bold by the UI.
+function formatTimelineValue(value: unknown): string {
+  const raw = value == null ? "null" : stripHtml(String(value))
+  const truncated = raw.length > 40 ? `${raw.slice(0, 40)}...` : raw
+  return truncated || '""'
+}
+
+function userDisplayName(owner: string, currentUserId: string | null, userInfo: DocInfoUserInfo): string {
+  if (currentUserId && owner === currentUserId) return "You"
+  return userInfo[owner]?.fullname || owner
+}
+
+function userSegment(owner: string, currentUserId: string | null, userInfo: DocInfoUserInfo): ActivityMessageSegment[] {
+  return [{ type: "text", text: userDisplayName(owner, currentUserId, userInfo) }]
+}
+
+function userMessage(
+  owner: string,
+  currentUserId: string | null,
+  userInfo: DocInfoUserInfo,
+  self: ActivityMessageSegment[],
+  other: ActivityMessageSegment[]
+): ActivityMessageSegment[] {
+  return currentUserId && owner === currentUserId ? self : other
+}
+
+function changedValueParts(parts: Array<{ label: string; oldValue: string; newValue: string }>): ActivityMessageSegment[] {
+  const segments: ActivityMessageSegment[] = []
+  parts.forEach((p, i) => {
+    if (i > 0) segments.push({ type: "text", text: ", " })
+    segments.push({ type: "text", text: `${p.label} from ` })
+    segments.push({ type: "bold", text: p.oldValue })
+    segments.push({ type: "text", text: " to " })
+    segments.push({ type: "bold", text: p.newValue })
+  })
+  return segments
+}
+
+function buildVersionMessages(
+  version: DocInfoVersion,
+  currentUserId: string | null,
+  userInfo: DocInfoUserInfo
+): ActivityMessageSegment[][] {
+  if (!version.data) return []
+  let data: Record<string, unknown> = {}
+  try {
+    data = JSON.parse(version.data) as Record<string, unknown>
+  } catch {
+    return []
+  }
+
+  const out: ActivityMessageSegment[][] = []
+
+  if (data.comment) {
+    out.push([{ type: "text", text: String(data.comment) }])
+    return out
+  }
+
+  // value changed in parent
+  const changed = Array.isArray(data.changed) ? (data.changed as unknown[][]) : []
+  const parts: Array<{ label: string; oldValue: string; newValue: string }> = []
+  for (const p of changed) {
+    if (!Array.isArray(p) || p.length < 3) continue
+    const field = String(p[0])
+    if (field === "docstatus") {
+      if (p[2] === 1 || p[2] === 2) {
+        const isSubmit = p[2] === 1
+        out.push(
+          userMessage(
+            version.owner,
+            currentUserId,
+            userInfo,
+            [{ type: "text", text: isSubmit ? "You submitted this document" : "You cancelled this document" }],
+            [
+              ...userSegment(version.owner, currentUserId, userInfo),
+              { type: "text", text: isSubmit ? " submitted this document" : " cancelled this document" },
+            ]
+          )
+        )
+      }
+    } else if (parts.length < 3) {
+      parts.push({
+        label: fieldLabel(field),
+        oldValue: formatTimelineValue(p[1]),
+        newValue: formatTimelineValue(p[2]),
+      })
+    }
+  }
+  if (parts.length) {
+    const detail = changedValueParts(parts)
+    out.push(
+      userMessage(
+        version.owner,
+        currentUserId,
+        userInfo,
+        [{ type: "text", text: "You changed the value of " }, ...detail],
+        [
+          ...userSegment(version.owner, currentUserId, userInfo),
+          { type: "text", text: " changed the value of " },
+          ...detail,
+        ]
+      )
+    )
+  }
+
+  // value changed in a table (child table rows)
+  const rowChanged = Array.isArray(data.row_changed) ? (data.row_changed as unknown[][]) : []
+  const rowParts: Array<{ label: string; oldValue: string; newValue: string }> = []
+  for (const row of rowChanged) {
+    if (!Array.isArray(row) || row.length < 4) continue
+    const rowIdx = Number(row[1]) + 1
+    const rowChanges = Array.isArray(row[3]) ? (row[3] as unknown[][]) : []
+    for (const p of rowChanges) {
+      if (!Array.isArray(p) || p.length < 3) continue
+      if (rowParts.length >= 3) break
+      rowParts.push({
+        label: `${fieldLabel(String(p[0]))} in row #${rowIdx}`,
+        oldValue: formatTimelineValue(p[1]),
+        newValue: formatTimelineValue(p[2]),
+      })
+    }
+    if (rowParts.length >= 3) break
+  }
+  if (rowParts.length) {
+    const detail = changedValueParts(rowParts)
+    out.push(
+      userMessage(
+        version.owner,
+        currentUserId,
+        userInfo,
+        [{ type: "text", text: "You changed the values for " }, ...detail],
+        [
+          ...userSegment(version.owner, currentUserId, userInfo),
+          { type: "text", text: " changed the values for " },
+          ...detail,
+        ]
+      )
+    )
+  }
+
+  // rows added / removed
+  for (const key of ["added", "removed"] as const) {
+    const rows = Array.isArray(data[key]) ? (data[key] as unknown[][]) : []
+    if (rows.length === 0) continue
+    const counts = new Map<string, number>()
+    for (const p of rows) {
+      if (!Array.isArray(p)) continue
+      const label = fieldLabel(String(p[0]))
+      counts.set(label, (counts.get(label) ?? 0) + 1)
+    }
+    if (counts.size === 0) continue
+    const verb = key === "added" ? "added" : "removed"
+    const prep = key === "added" ? "to" : "from"
+    const segments: ActivityMessageSegment[] = []
+    let first = true
+    for (const [tableName, count] of counts) {
+      const rowPhrase = count > 1 ? `${count} rows ${prep} ${tableName}` : `1 row ${prep} ${tableName}`
+      if (first) {
+        segments.push(
+          ...userMessage(
+            version.owner,
+            currentUserId,
+            userInfo,
+            [{ type: "text", text: `You ${verb} ${rowPhrase}` }],
+            [...userSegment(version.owner, currentUserId, userInfo), { type: "text", text: ` ${verb} ${rowPhrase}` }]
+          )
+        )
+        first = false
+      } else {
+        segments.push({ type: "text", text: `, ${rowPhrase}` })
+      }
+    }
+    out.push(segments)
+  }
+
+  return out
+}
+
+// Mirrors form_timeline.js prepare_timeline_contents: created + last-edited
+// (from the doc) always, then user comments and Version content. Callers decide
+// what to hide behind the "Show all activity" toggle.
+export function buildTimelineItems(
+  doc: PaymentEntry,
+  docinfo: DocInfo,
+  currentUserId?: string
+): PaymentActivityItem[] {
+  const currentUser = currentUserId || null
+  const userInfo = docinfo.user_info ?? {}
+  const items: PaymentActivityItem[] = []
+  let counter = 0
+  const nextId = () => `timeline-${++counter}`
+
+  if (doc.creation && doc.owner) {
+    items.push({
+      id: nextId(),
+      kind: "created",
+      author: doc.owner,
+      createdAt: doc.creation,
+      message: userMessage(
+        doc.owner,
+        currentUser,
+        userInfo,
+        [{ type: "text", text: "You created this" }],
+        [...userSegment(doc.owner, currentUser, userInfo), { type: "text", text: " created this" }]
+      ),
+    })
+  }
+
+  if (doc.modified && (doc.modified_by || doc.owner)) {
+    const modifier = doc.modified_by || doc.owner || ""
+    items.push({
+      id: nextId(),
+      kind: "modified",
+      author: modifier,
+      createdAt: doc.modified,
+      message: userMessage(
+        modifier,
+        currentUser,
+        userInfo,
+        [{ type: "text", text: "You last edited this" }],
+        [...userSegment(modifier, currentUser, userInfo), { type: "text", text: " last edited this" }]
+      ),
+    })
+  }
+
+  for (const comment of docinfo.comments ?? []) {
+    if (comment.comment_type && comment.comment_type !== "Comment") continue
+    items.push({
+      id: `comment-${comment.name}`,
+      kind: "comment",
+      author: comment.owner,
+      authorName: userDisplayName(comment.owner, currentUser, userInfo),
+      authorAvatarName: userInfo[comment.owner]?.fullname || comment.owner,
+      commentName: comment.name,
+      createdAt: comment.creation,
+      content: comment.content ?? "",
+    })
+  }
+
+  // Emails (Communication, medium "Email") — rendered as cards interleaved with
+  // comments and versions, mirroring frappe's form_timeline communications.
+  for (const comm of docinfo.communications ?? []) {
+    if (comm.communication_type === "Automated Message") continue
+    const sender = comm.sender ?? ""
+    const senderName = comm.sender_full_name || userDisplayName(sender, currentUser, userInfo)
+    // Frappe serves communication attachments as a JSON string (load.py
+    // json.dumps it); form_timeline.js JSON.parses client-side. Accept both.
+    const rawAttachments = comm.attachments
+    let attachments: Array<{ file_url: string; is_private?: number }> = []
+    if (typeof rawAttachments === "string") {
+      try {
+        const parsed = JSON.parse(rawAttachments)
+        if (Array.isArray(parsed)) attachments = parsed
+      } catch {
+        attachments = []
+      }
+    } else if (Array.isArray(rawAttachments)) {
+      attachments = rawAttachments
+    }
+    items.push({
+      id: `communication-${comm.name}`,
+      kind: "email",
+      author: sender,
+      authorName: senderName,
+      authorAvatarName: comm.sender_full_name || sender,
+      senderName,
+      senderEmail: sender,
+      communicationName: comm.name,
+      subject: comm.subject,
+      recipients: comm.recipients,
+      deliveryStatus: comm.delivery_status,
+      createdAt: comm.communication_date || comm.creation,
+      content: comm.content ?? "",
+      attachments: attachments
+        .filter((a) => a && typeof a.file_url === "string")
+        .map((a) => ({ fileUrl: a.file_url, isPrivate: a.is_private })),
+    })
+  }
+
+  for (const version of docinfo.versions ?? []) {
+    const messages = buildVersionMessages(version, currentUser, userInfo)
+    messages.forEach((message, index) => {
+      items.push({
+        id: `${version.name}-${index}`,
+        kind: "version",
+        author: version.owner,
+        versionName: version.name,
+        createdAt: version.creation,
+        message,
+      })
+    })
+  }
+
+  return items.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+}
+
 export const paymentService = {
   async list(params: PaymentListFilters = {}): Promise<PaymentEntryListResponse> {
     const page = params.page ?? 1
@@ -282,6 +699,13 @@ export const paymentService = {
 
   async getById(name: string): Promise<PaymentEntry> {
     return apiClient<PaymentEntry>(`/resource/Payment Entry/${encodeURIComponent(name)}`)
+  },
+
+  async isDocumentAmended(name: string): Promise<string | boolean> {
+    return postMethod<string | boolean>("frappe.client.is_document_amended", {
+      doctype: "Payment Entry",
+      docname: name,
+    })
   },
 
   async getPartyDetails(
@@ -342,11 +766,25 @@ export const paymentService = {
     )
   },
 
-  async getOutstandingReferences(args: GetOutstandingArgs): Promise<OutstandingReference[]> {
+async getOutstandingReferences(args: GetOutstandingArgs): Promise<OutstandingReference[]> {
     return apiClient<OutstandingReference[]>(
       `/method/erpnext.accounts.doctype.payment_entry.payment_entry.get_outstanding_reference_documents?` +
       new URLSearchParams({ args: JSON.stringify(args) }).toString()
     )
+  },
+
+  // Variant that also surfaces ERPNext `_server_messages` carried on a 200
+  // response (e.g. "No outstanding invoices found ..."), which the plain
+  // getOutstandingReferences drops.
+  async getOutstandingReferencesWithMessages(
+    args: GetOutstandingArgs
+  ): Promise<{ items: OutstandingReference[]; messages: AppMessage[] }> {
+    const body = await apiClientWithBody<{ message?: OutstandingReference[] }>(
+      `/method/erpnext.accounts.doctype.payment_entry.payment_entry.get_outstanding_reference_documents?` +
+      new URLSearchParams({ args: JSON.stringify(args) }).toString()
+    )
+    const items = Array.isArray(body.message) ? (body.message as OutstandingReference[]) : []
+    return { items, messages: serverMessagesFromBody(body) }
   },
 
   async getExchangeRate(
@@ -412,7 +850,18 @@ export const paymentService = {
         currency: t.currency ? String(t.currency) : undefined,
       }))
     } catch {
-      return []
+      throw new Error("Failed to load taxes from template.")
+    }
+  },
+
+  async getTaxRate(accountHead: string): Promise<{ tax_rate: number; account_name: string }> {
+    try {
+      return await apiClient<{ tax_rate: number; account_name: string }>(
+        "/method/erpnext.controllers.accounts_controller.get_tax_rate?" +
+          new URLSearchParams({ account_head: accountHead }).toString()
+      )
+    } catch {
+      return { tax_rate: 0, account_name: "" }
     }
   },
 
@@ -429,21 +878,6 @@ export const paymentService = {
       return (result.tax_withholding_category as string) || null
     } catch {
       return null
-    }
-  },
-
-  async getContactsForParty(partyType: string, party: string): Promise<Array<{ name: string }>> {
-    try {
-      const result = await apiClient<Array<{ value: string; description?: string }>>(
-        `/method/frappe.contacts.doctype.contact.contact.contact_query?` +
-        new URLSearchParams({
-          link_doctype: partyType,
-          link_name: party,
-        }).toString()
-      )
-      return result.map((r) => ({ name: r.value }))
-    } catch {
-      return []
     }
   },
 
@@ -511,6 +945,46 @@ export const paymentService = {
     )
   },
 
+  async getLinkedBankTransactions(paymentEntry: string): Promise<string[]> {
+    return postMethod<string[]>(
+      "erpnext.accounts.doctype.payment_entry.payment_entry.get_linked_bank_transactions",
+      { payment_entry: paymentEntry }
+    )
+  },
+
+  unreconcile: {
+    async docHasReferences(doctype: string, docname: string): Promise<number> {
+      return postMethod<number>(
+        "erpnext.accounts.doctype.unreconcile_payment.unreconcile_payment.doc_has_references",
+        { doctype, docname }
+      )
+    },
+    async getLinkedPaymentsForDoc(
+      company: string,
+      doctype: string,
+      docname: string
+    ): Promise<UnreconcileAllocation[]> {
+      return postMethod<UnreconcileAllocation[]>(
+        "erpnext.accounts.doctype.unreconcile_payment.unreconcile_payment.get_linked_payments_for_doc",
+        { company, doctype, docname }
+      )
+    },
+    async createUnreconcileDocForSelection(
+      selections: Array<{
+        company?: string
+        voucher_type: string
+        voucher_no: string
+        against_voucher_type: string
+        against_voucher_no: string
+      }>
+    ): Promise<unknown> {
+      return postMethod<unknown>(
+        "erpnext.accounts.doctype.unreconcile_payment.unreconcile_payment.create_unreconcile_doc_for_selection",
+        { selections }
+      )
+    },
+  },
+
   async getModeOfPaymentList(): Promise<string[]> {
     try {
       const items = await apiClient<Array<{ name: string }>>(
@@ -543,43 +1017,94 @@ export const paymentService = {
     }
   },
 
-  async getComments(name: string): Promise<PaymentComment[]> {
-    try {
-      const rows = await apiClient<{ name: string; content: string; owner: string; creation: string }[]>(
-        buildListUrl("Communication", {
-          fields: ["name", "content", "owner", "creation"],
-          filters: [
-            ["communication_type", "=", "Comment"],
-            ["reference_doctype", "=", "Payment Entry"],
-            ["reference_name", "=", name],
-          ],
-          limit_page_length: 100,
-          order_by: "creation desc",
-        })
-      )
-      return (rows ?? []).map((r) => ({
-        id: r.name,
-        content: r.content,
-        author: r.owner,
-        createdAt: r.creation,
-      }))
-    } catch {
-      return []
-    }
+  // Generates the Payment Entry print PDF as a Blob, so the caller can open it
+  // in a new tab. Mirrors the ERPNext print action (frappe.utils.print_format
+  // .download_pdf) and avoids raw window.open to SPA-fallback URLs.
+  async generatePDF(name: string, options?: { printFormat?: string }): Promise<Blob> {
+    const params = new URLSearchParams()
+    params.set("doctype", "Payment Entry")
+    params.set("name", name)
+    params.set("format", options?.printFormat || "Standard")
+    const res = await fetch(
+      `${API_CONFIG.baseUrl}/method/frappe.utils.print_format.download_pdf?${params.toString()}`,
+      {
+        credentials: "include",
+        headers: API_CONFIG.headers,
+      }
+    )
+    if (!res.ok) throw new Error("Failed to generate PDF")
+    return res.blob()
   },
 
-  async addComment(name: string, content: string): Promise<PaymentComment> {
-    const row = await apiClient<{ name: string; content: string; owner: string; creation: string }>(
-      "/resource/Communication",
+  // Resolves a private file (e.g. an email attachment) the way ERPNext does via
+  // frappe.utils.file_manager.download_file, returning the bytes as a Blob so we
+  // can render/open it without navigating to an SPA fallback route.
+  async openAttachment(fileUrl: string): Promise<Blob> {
+    const params = new URLSearchParams()
+    params.set("file_url", fileUrl)
+    const res = await fetch(
+      `${API_CONFIG.baseUrl}/method/frappe.utils.file_manager.download_file?${params.toString()}`,
       {
-        method: "POST",
-        body: JSON.stringify({
-          communication_type: "Comment",
-          comment_type: "Comment",
-          reference_doctype: "Payment Entry",
-          reference_name: name,
-          content,
-        }),
+        credentials: "include",
+        headers: API_CONFIG.headers,
+      }
+    )
+    if (!res.ok) throw new Error("Failed to open attachment")
+    return res.blob()
+  },
+
+  // frappe.desk.form.load.get_docinfo — the exact endpoint ERPNext's form
+  // footer uses to fetch comments + versions for the timeline.
+  async getDocInfo(name: string, doctype = "Payment Entry"): Promise<DocInfo> {
+    const body = await apiClientWithBody<{ docinfo?: DocInfo }>(
+      `/method/frappe.desk.form.load.get_docinfo?doctype=${encodeURIComponent(doctype)}&name=${encodeURIComponent(name)}`
+    )
+    return body.docinfo ?? { comments: [], versions: [] }
+  },
+
+  // ERPNext-style timeline built from get_docinfo + the doc's own timestamps.
+  // Pass the current session user id so messages use "You …" phrasing.
+  async getActivity(doc: PaymentEntry, currentUserId?: string): Promise<PaymentActivityItem[]> {
+    const docinfo = await this.getDocInfo(doc.name)
+    return buildTimelineItems(doc, docinfo, currentUserId)
+  },
+
+  // A single Version document — the target of every clickable version message
+  // (frappe.utils.get_form_link("Version", name) in version_timeline_content_builder.js).
+  async getVersion(name: string): Promise<VersionDoc> {
+    return apiClient<VersionDoc>(`/resource/Version/${encodeURIComponent(name)}`)
+  },
+
+  async getReferenceDetails(
+    reference_doctype: string,
+    reference_name: string,
+    party_account_currency: string,
+    party_type: string,
+    party: string
+  ): Promise<ReferenceDetails> {
+    return postMethod<ReferenceDetails>(
+      "erpnext.accounts.doctype.payment_entry.payment_entry.get_reference_details",
+      { reference_doctype, reference_name, party_account_currency, party_type, party }
+    )
+  },
+
+  // ERPNext comment composer uses frappe.desk.form.utils.add_comment (creates a
+  // Comment doc that get_docinfo then returns on the next load).
+  async addComment(
+    name: string,
+    content: string,
+    commentEmail: string,
+    commentBy: string,
+    doctype = "Payment Entry"
+  ): Promise<PaymentComment> {
+    const row = await postMethod<{ name: string; content: string; owner: string; creation: string }>(
+      "frappe.desk.form.utils.add_comment",
+      {
+        reference_doctype: doctype,
+        reference_name: name,
+        content: toQuillHtml(content),
+        comment_email: commentEmail,
+        comment_by: commentBy,
       }
     )
     return {
@@ -588,6 +1113,24 @@ export const paymentService = {
       author: row.owner,
       createdAt: row.creation,
     }
+  },
+
+  // ERPNext timeline edit: frappe.desk.form.utils.update_comment (owner or
+  // Administrator only). Content is stored as Quill HTML like add_comment.
+  async updateComment(name: string, content: string): Promise<{ name: string }> {
+    return postMethod<{ name: string }>("frappe.desk.form.utils.update_comment", {
+      name,
+      content: toQuillHtml(content),
+    })
+  },
+
+  // ERPNext timeline delete: frappe.client.delete on the Comment doc. Deletes
+  // are restricted to the owner / System Manager on the server.
+  async deleteComment(name: string): Promise<{ message: string }> {
+    return postMethod<{ message: string }>("frappe.client.delete", {
+      doctype: "Comment",
+      name,
+    })
   },
 
   async sendEmail(name: string, data: {

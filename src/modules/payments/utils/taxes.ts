@@ -119,7 +119,7 @@ export function calculateTaxes(input: TaxCalcInput): TaxCalcResult {
       }
     }
 
-    baseTotalTaxesAndCharges += tax.base_tax_amount ?? 0
+    baseTotalTaxesAndCharges += signedAmount
   })
 
   return {
@@ -132,7 +132,10 @@ export function calculateTaxes(input: TaxCalcInput): TaxCalcResult {
 
 export function getIncludedTaxes(taxes: PaymentEntryTax[]): number {
   return (taxes || []).reduce((sum, tax) => {
-    if (tax.included_in_paid_amount) sum += tax.base_tax_amount ?? 0
+    if (tax.included_in_paid_amount) {
+      const amount = tax.base_tax_amount ?? 0
+      sum += tax.add_deduct_tax === "Deduct" ? -amount : amount
+    }
     return sum
   }, 0)
 }
@@ -179,7 +182,7 @@ export interface DifferenceInput {
   baseReceivedAmount: number
   baseTotalAllocatedAmount: number
   deductions: Array<{ amount: number }>
-  baseTotalTaxesAndCharges: number
+  taxes: PaymentEntryTax[]
   sourceExchangeRate: number
   targetExchangeRate: number
 }
@@ -188,17 +191,18 @@ export function computeDifferenceAmount(input: DifferenceInput): number {
   const baseUnallocatedAmount =
     input.unallocatedAmount * (input.paymentType === "Receive" ? input.sourceExchangeRate : input.targetExchangeRate)
   const basePartyAmount = input.baseTotalAllocatedAmount + baseUnallocatedAmount
+  const includedTaxes = getIncludedTaxes(input.taxes)
 
   let differenceAmount = 0
   if (input.paymentType === "Receive") {
-    differenceAmount = basePartyAmount - input.baseReceivedAmount
+    differenceAmount = basePartyAmount - input.baseReceivedAmount + includedTaxes
   } else if (input.paymentType === "Pay") {
-    differenceAmount = input.basePaidAmount - basePartyAmount
+    differenceAmount = input.basePaidAmount - basePartyAmount - includedTaxes
   } else {
-    differenceAmount = input.basePaidAmount - input.baseReceivedAmount
+    differenceAmount = input.basePaidAmount - input.baseReceivedAmount - includedTaxes
   }
 
   const totalDeductions = (input.deductions || []).reduce((sum, d) => sum + (d.amount || 0), 0)
 
-  return differenceAmount - totalDeductions + (input.baseTotalTaxesAndCharges || 0)
+  return differenceAmount - totalDeductions
 }

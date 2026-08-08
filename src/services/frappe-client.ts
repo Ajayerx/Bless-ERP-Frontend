@@ -7,6 +7,10 @@ interface CacheEntry {
 
 const cache = new Map<string, CacheEntry>()
 
+export function resetDedupCache(): void {
+  cache.clear()
+}
+
 export function withDedup<T>(key: string, ttlMs: number, fn: () => Promise<T>): Promise<T> {
   const now = Date.now()
   const hit = cache.get(key)

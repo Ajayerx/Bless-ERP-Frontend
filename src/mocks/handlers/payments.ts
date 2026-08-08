@@ -69,4 +69,27 @@ export const paymentHandlers = [
 
     return HttpResponse.json({ data: newPayment, error: null }, { status: 201 })
   }),
+
+  http.post("/api/method/erpnext.controllers.stock_controller.show_accounting_ledger_preview", async ({ request }) => {
+    await delay(200)
+    const body = (await request.json().catch(() => ({}))) as { docname?: string }
+    const docname = body.docname ?? ""
+    const columns = [
+      { name: "Posting Date", editable: false, width: 110, fieldtype: "Date" },
+      { name: "Account", editable: false, width: 110, fieldtype: "Link" },
+      { name: "Debit (CAD)", editable: false, width: 110, fieldtype: "Currency" },
+      { name: "Credit (CAD)", editable: false, width: 110, fieldtype: "Currency" },
+      { name: "Against", editable: false, width: 110, fieldtype: "Data" },
+      { name: "Party Type", editable: false, width: 110, fieldtype: "Data" },
+      { name: "Party", editable: false, width: 110, fieldtype: "Data" },
+      { name: "Cost Center", editable: false, width: 110, fieldtype: "Link" },
+      { name: "Against Voucher Type", editable: false, width: 110, fieldtype: "Data" },
+      { name: "Against Voucher", editable: false, width: 110, fieldtype: "Data" },
+    ]
+    const data = [
+      ["2026-08-01", "Cash - BE", 0, 200, "Debtors - BE", "Customer", "AlphaCorp", "Main - BE", "Payment Entry", docname],
+      ["2026-08-01", "Debtors - BE", 200, 0, "Cash - BE", "Customer", "AlphaCorp", "Main - BE", "Payment Entry", docname],
+    ]
+    return HttpResponse.json({ message: { gl_columns: columns, gl_data: data }, error: null })
+  }),
 ]

@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react"
 import { ChevronDown, X, Loader2 } from "lucide-react"
+import { Link } from "react-router-dom"
 import { apiClient } from "@/services/api-client"
 import { postMethod } from "@/services/frappe-client"
 import { cn } from "@/lib/utils"
@@ -22,6 +23,7 @@ interface LinkFieldProps {
   queryMethod?: string
   searchLinkFilters?: Record<string, unknown>
   testId?: string
+  linkTo?: (value: string) => string | undefined
 }
 
 export default function LinkField({
@@ -42,6 +44,7 @@ export default function LinkField({
   queryMethod,
   searchLinkFilters,
   testId,
+  linkTo,
 }: LinkFieldProps) {
   const [query, setQuery] = useState("")
   const [options, setOptions] = useState<Array<{ name: string; label?: string }>>([])
@@ -200,7 +203,23 @@ export default function LinkField({
         onClick={() => { if (!disabled) { setOpen(true); inputRef.current?.focus() } }}
       >
         {value ? (
-          <span className="flex-1 text-body font-medium truncate">{value}</span>
+          <span className="flex-1 text-body font-medium truncate">
+            {disabled && linkTo ? (() => {
+              const to = linkTo(value)
+              return to ? (
+                <Link
+                  to={to}
+                  className="inline-flex items-center gap-1.5 text-primary-600 hover:text-primary-700 font-semibold transition-colors"
+                >
+                  {value}
+                </Link>
+              ) : (
+                value
+              )
+            })() : (
+              value
+            )}
+          </span>
         ) : (
           <input
             ref={inputRef}
@@ -247,7 +266,10 @@ export default function LinkField({
             >
               <span className="font-medium">{opt.name}</span>
               {opt.label && opt.label !== opt.name && (
-                <span className="text-xs text-muted ml-2">{opt.label}</span>
+                <span
+                  className="text-xs text-muted ml-2"
+                  dangerouslySetInnerHTML={{ __html: opt.label }}
+                />
               )}
             </button>
           ))}

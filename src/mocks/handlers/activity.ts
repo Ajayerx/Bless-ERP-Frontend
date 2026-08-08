@@ -1,0 +1,257 @@
+import { http, HttpResponse, delay } from "msw"
+
+// ERPNext-style timeline data for Payment Entry documents in dev mode,
+// served via the exact endpoints ERPNext uses:
+//   frappe.desk.form.load.get_docinfo  (reads comments + versions)
+//   frappe.desk.form.utils.add_comment (comment composer)
+
+interface CommentRow {
+  name: string
+  communication_type: string
+  content: string
+  owner: string
+  creation: string
+  reference_doctype: string
+  reference_name: string
+}
+
+interface VersionRow {
+  name: string
+  owner: string
+  creation: string
+  ref_doctype: string
+  docname: string
+  data: string
+}
+
+let comments: CommentRow[] = [
+  {
+    name: "COM-0001",
+    communication_type: "Comment",
+    content: "Please verify the payment details before submission.",
+    owner: "admin@blesserp.com",
+    creation: "2026-07-02T12:30:00",
+    reference_doctype: "Payment Entry",
+    reference_name: "PAY-2026-0001",
+  },
+  {
+    name: "COM-VER-0002",
+    communication_type: "Comment",
+    content: "Please review the remarks on this version.",
+    owner: "admin@blesserp.com",
+    creation: "2026-07-02T12:20:00",
+    reference_doctype: "Version",
+    reference_name: "VER-0002",
+  },
+]
+
+const versions: VersionRow[] = [
+  {
+    name: "VER-0001",
+    owner: "admin@blesserp.com",
+    creation: "2026-07-02T12:15:00",
+    ref_doctype: "Payment Entry",
+    docname: "PAY-2026-0001",
+    data: JSON.stringify({ changed: [["docstatus", 0, 1]] }),
+  },
+  {
+    name: "VER-0002",
+    owner: "admin@blesserp.com",
+    creation: "2026-07-02T12:10:00",
+    ref_doctype: "Payment Entry",
+    docname: "PAY-2026-0001",
+    data: JSON.stringify({
+      changed: [
+        ["party_name", "Rajesh", "Raj"],
+        [
+          "remarks",
+          "Amount CAD 100 received from Sunrise Grocery Store for invoice payment. This longer remark demonstrates the server-side HTML diff view in the ERPNext Version form.",
+          "Amount CAD 100.0 received from Sunrise Grocery Store and vendor payment pending. Please confirm the exact figure and the vendor balance after this allocation.",
+        ],
+      ],
+    }),
+  },
+  {
+    name: "VER-0003",
+    owner: "admin@blesserp.com",
+    creation: "2026-07-02T13:00:00",
+    ref_doctype: "Payment Entry",
+    docname: "ACC-PAY-0002",
+    data: JSON.stringify({
+      changed: [
+        [
+          "remarks",
+          "Amount CAD 897 received from Hemant<br>Transaction reference no dsfdgsdg dated 2026-08-11<br>Amount CAD 862 against Sales Invoice ACC-SINV-2026-00066",
+          "Amount CAD 897.0 received from Hemant<br>Transaction reference no dsfdgsdg dated 2026-08-11<br>Amount CAD 862.0 against Sales Invoice ACC-SINV-2026-00066",
+        ],
+      ],
+    }),
+  },
+  {
+    name: "VER-0004",
+    owner: "admin@blesserp.com",
+    creation: "2026-07-02T13:05:00",
+    ref_doctype: "Payment Entry",
+    docname: "ACC-PAY-0002",
+    data: JSON.stringify({
+      changed: [
+        [
+          "remarks",
+          "Short note first line<br>short note second line",
+          "Short note first line<br>short note second line updated",
+        ],
+      ],
+    }),
+  },
+]
+
+let commentCounter = 0
+
+// Approximates the difflib.HtmlDiff table frappe's Version.onload puts in
+// doc.__onload.html_diffs for long text fields such as remarks.
+function versionHtmlDiff(oldStr: string, newStr: string): string {
+  const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+  return (
+    '<table class="diff">' +
+    '<colgroup></colgroup><colgroup></colgroup><colgroup class="content"></colgroup><colgroup class="content"></colgroup>' +
+    '<tr><th colspan="2">Original</th><th colspan="2">New</th></tr>' +
+    '<tr class="replace">' +
+    '<td class="diff_header">1</td><td class="diff_next"></td>' +
+    '<td class="diff_header">1</td><td class="diff_next"></td>' +
+    `<td class="diff_sub">${esc(oldStr)}</td>` +
+    `<td class="diff_add">${esc(newStr)}</td>` +
+    "</tr>" +
+    "</table>"
+  )
+}
+
+function versionHtmlDiffs(data: string): Record<string, string> {
+  let parsed: { changed?: unknown[][] } = {}
+  try {
+    parsed = JSON.parse(data) as { changed?: unknown[][] }
+  } catch {
+    return {}
+  }
+  const out: Record<string, string> = {}
+  for (const item of parsed.changed ?? []) {
+    if (Array.isArray(item) && item.length >= 3 && typeof item[0] === "string") {
+      const oldStr = String(item[1] ?? "")
+      const newStr = String(item[2] ?? "")
+      // Mirrors Version._should_generate_html_diff: only diff long/multiline text.
+      if (oldStr && newStr && (oldStr.includes("\n") || newStr.includes("\n") || oldStr.length > 80 || newStr.length > 80)) {
+        out[item[0]] = versionHtmlDiff(oldStr, newStr)
+      }
+    }
+  }
+  return out
+}
+
+export const activityHandlers = [
+  // ── docinfo: comments + versions + user_info ──────────────────────
+  http.get("/api/method/frappe.desk.form.load.get_docinfo", async ({ request }) => {
+    await delay(60)
+    const url = new URL(request.url)
+    const name = url.searchParams.get("name") ?? ""
+    const doctype = url.searchParams.get("doctype") ?? "Payment Entry"
+    return HttpResponse.json({
+      docinfo: {
+        doctype,
+        name,
+        comments: comments
+          .filter((c) => c.reference_doctype === doctype && (!name || c.reference_name === name))
+          .map((c) => ({
+            name: c.name,
+            comment_type: "Comment",
+            comment_email: c.owner,
+            comment_by: c.owner,
+            creation: c.creation,
+            content: c.content,
+            owner: c.owner,
+          })),
+        versions: versions
+          .filter((v) => v.ref_doctype === doctype && (!name || v.docname === name))
+          .map((v) => ({ name: v.name, creation: v.creation, owner: v.owner, data: v.data })),
+        user_info: {
+          "admin@blesserp.com": { fullname: "Administrator" },
+        },
+      },
+    })
+  }),
+
+  // ── single Version doc (target of clickable version messages) ──
+  http.get("/api/resource/Version/:name", async ({ params }) => {
+    await delay(60)
+    const version = versions.find((v) => v.name === params.name)
+    if (!version) return HttpResponse.json({ message: `Version ${params.name} not found` }, { status: 404 })
+    return HttpResponse.json({
+      data: {
+        name: version.name,
+        doctype: "Version",
+        ref_doctype: version.ref_doctype,
+        docname: version.docname,
+        data: version.data,
+        owner: version.owner,
+        creation: version.creation,
+        modified: version.creation,
+        modified_by: version.owner,
+        __onload: { html_diffs: versionHtmlDiffs(version.data) },
+      },
+    })
+  }),
+
+  // ── add_comment: creates a Comment that get_docinfo returns next ──
+  http.post("/api/method/frappe.desk.form.utils.add_comment", async ({ request }) => {
+    await delay(60)
+    const body = (await request.formData().catch(() => new FormData())) as FormData
+    commentCounter += 1
+    const created: CommentRow = {
+      name: `COM-NEW-${commentCounter}`,
+      communication_type: "Comment",
+      content: String(body.get("content") ?? ""),
+      owner: "admin@blesserp.com",
+      creation: new Date().toISOString(),
+      reference_doctype: String(body.get("reference_doctype") ?? "Payment Entry"),
+      reference_name: String(body.get("reference_name") ?? ""),
+    }
+    comments = [created, ...comments]
+    return HttpResponse.json({
+      message: {
+        name: created.name,
+        content: created.content,
+        owner: created.owner,
+        creation: created.creation,
+      },
+    })
+  }),
+
+  // ── update_comment: timeline edit (owner / Administrator only) ──
+  http.post("/api/method/frappe.desk.form.utils.update_comment", async ({ request }) => {
+    await delay(60)
+    const body = (await request.formData().catch(() => new FormData())) as FormData
+    const name = String(body.get("name") ?? "")
+    const target = comments.find((c) => c.name === name)
+    if (!target) return HttpResponse.json({ message: `Comment ${name} not found` }, { status: 404 })
+    target.content = String(body.get("content") ?? "")
+    return HttpResponse.json({
+      message: {
+        name: target.name,
+        content: target.content,
+        owner: target.owner,
+        creation: target.creation,
+      },
+    })
+  }),
+
+  // ── client.delete: comment deletion ──
+  http.post("/api/method/frappe.client.delete", async ({ request }) => {
+    await delay(60)
+    const body = (await request.formData().catch(() => new FormData())) as FormData
+    const doctype = String(body.get("doctype") ?? "")
+    const name = String(body.get("name") ?? "")
+    if (doctype === "Comment") {
+      comments = comments.filter((c) => c.name !== name)
+      return HttpResponse.json({ message: name })
+    }
+    return HttpResponse.json({ message: `Cannot delete ${doctype}` }, { status: 400 })
+  }),
+]

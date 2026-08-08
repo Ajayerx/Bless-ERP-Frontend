@@ -10,12 +10,14 @@ import PaymentTable from "../components/PaymentTable"
 import { paymentService, type SalesInvoice, type PaymentEntry, type PaymentEntryListResponse } from "@/services"
 import type { PaymentListFilters } from "../services"
 import { ApiError } from "@/services/api-client"
+import { useMessageDialog, messageFromError } from "@/components/ui"
 import { formatCurrency, formatDate, cn } from "@/lib/utils"
 
 type StatusFilter = "All" | "Draft" | "Submitted" | "Cancelled"
 
 export default function Payments() {
   const navigate = useNavigate()
+  const { showMessage } = useMessageDialog()
 
   const [unpaidInvoices, setUnpaidInvoices] = useState<SalesInvoice[]>([])
   const [paymentsData, setPaymentsData] = useState<PaymentEntryListResponse | null>(null)
@@ -27,7 +29,7 @@ export default function Payments() {
 
   const [selectedPayments, setSelectedPayments] = useState<string[]>([])
   const [acting, setActing] = useState(false)
-  const [error, setError] = useState("")
+  const [error] = useState("")
   const [confirmAction, setConfirmAction] = useState<{
     type: "bulk-submit" | "bulk-cancel" | "bulk-delete" | "single-submit" | "single-cancel" | "single-delete" | "single-amend"
     target?: string
@@ -80,6 +82,7 @@ export default function Payments() {
       console.error("[Payments] Failed to fetch payments:", err)
       setPaymentsData(null)
       setAllPayments([])
+      showMessage(messageFromError(err, "Failed to load payments."))
     } finally {
       setLoadingPayments(false)
     }
@@ -180,7 +183,9 @@ export default function Payments() {
       await fetchData()
       setConfirmAction(null)
     } catch (err) {
-      setConfirmError(err instanceof ApiError ? err.message : "Action failed. Please try again.")
+      const message = err instanceof ApiError ? err.message : "Action failed. Please try again."
+      setConfirmError(message)
+      showMessage(messageFromError(err, message))
     } finally {
       setActing(false)
     }

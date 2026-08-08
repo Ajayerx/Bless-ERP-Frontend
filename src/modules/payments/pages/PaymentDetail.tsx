@@ -2,11 +2,12 @@
 
 import { useEffect, useState, useCallback, useRef } from "react"
 import { useParams, useNavigate } from "react-router-dom"
-import { BookOpen, Check, Save, Ban, GitBranch, Copy, Mail, Printer, Trash2, MoreHorizontal } from "lucide-react"
+import { BookOpen, Check, Save, Ban, GitBranch, Copy, Mail, Printer, Trash2, MoreHorizontal, Table2 } from "lucide-react"
 import { motion } from "framer-motion"
 import Topbar from "@/components/layout/Topbar"
 import PageHead from "@/components/layout/PageHead"
 import { Badge, Button, Skeleton, Modal } from "@/components/ui"
+import { useMessageDialog, messageFromError } from "@/components/ui"
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -15,22 +16,21 @@ import {
   DropdownMenuSeparator,
 } from "@/components/ui"
 import { ConfirmationDialog } from "@/components/ui"
-import { paymentService, type PaymentEntry, type LedgerPreviewData, type PaymentComment } from "@/services"
+import { paymentService, setMatchedPaymentRequests, type PaymentEntry, type LedgerPreviewData, type PaymentActivityItem, type PaymentAfterSaveResult } from "@/services"
 import { ApiError } from "@/services/api-client"
+import { useCompany } from "@/context/CompanyContext"
+import { useAuth } from "@/context/AuthContext"
 import PaymentForm, { type PaymentFormHandle } from "../components/PaymentForm"
 import { normalizeLedger } from "../components/ledgerUtils"
+import LedgerPreviewTable from "../components/LedgerPreviewTable"
 import SendPaymentEmailDialog from "../components/SendPaymentEmailDialog"
+import UnReconcileDialog from "../components/UnReconcileDialog"
+import PaymentActivity from "../components/PaymentActivity"
 
 function statusBadge(docstatus: number, status: string) {
   if (docstatus === 1) return <Badge variant="success">Submitted</Badge>
   if (docstatus === 2) return <Badge variant="danger">Cancelled</Badge>
   return <Badge variant="warning">{status || "Draft"}</Badge>
-}
-
-function formatNumber(v: unknown): string {
-  const n = Number(v)
-  if (!isFinite(n)) return String(v ?? "\u2014")
-  return new Intl.NumberFormat("en-CA", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n)
 }
 
 function formatDate(iso: string): string {
@@ -41,10 +41,38 @@ function formatDate(iso: string): string {
   }
 }
 
+// ERPNext "Ledger" action: navigates to the General Ledger report pre-filtered
+// for this voucher (mirrors payment_entry.js show_general_ledger).
+function glReportParams(p: PaymentEntry): string {
+  const qp = new URLSearchParams({
+    voucher_no: p.name,
+    from_date: p.posting_date,
+    to_date: (p.modified || new Date().toISOString().slice(0, 10)).slice(0, 10),
+    company: p.company,
+    categorize_by: "Categorize by Voucher (Consolidated)",
+    show_cancelled_entries: p.docstatus === 2 ? "1" : "0",
+  })
+  return qp.toString()
+}
+
+// ERPNext "View Exchange Gain/Loss Journals" action: opens the Journal Entry
+// list filtered to the FX gain/loss journals created for this voucher.
+function exchangeGainLossUrl(p: PaymentEntry): string {
+  const qp = new URLSearchParams({
+    voucher_type: "Exchange Gain Or Loss",
+    reference_name: p.name,
+  })
+  return `${window.location.origin}/app/journal-entry?${qp.toString()}`
+}
+
 export default function PaymentDetail() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const formRef = useRef<PaymentFormHandle>(null)
+  const { defaultCurrency } = useCompany()
+  const { showMessage } = useMessageDialog()
+  const { user } = useAuth()
+  const currentUserId = user?.id ?? null
   const [payment, setPayment] = useState<PaymentEntry | null>(null)
   const [loading, setLoading] = useState(true)
   const [acting, setActing] = useState(false)
@@ -57,8 +85,28 @@ export default function PaymentDetail() {
   const [ledgerLoading, setLedgerLoading] = useState(false)
   const [ledgerError, setLedgerError] = useState<string | null>(null)
   const [ledgerData, setLedgerData] = useState<LedgerPreviewData | null>(null)
-  const [comments, setComments] = useState<PaymentComment[]>([])
+  const [comments, setComments] = useState<PaymentActivityItem[]>([])
   const [commentsLoading, setCommentsLoading] = useState(false)
+
+  // Open the Payment Entry print PDF in a new tab by fetching it as a Blob,
+  // rather than navigating to an SPA fallback route.
+  const openPrint = useCallback(async () => {
+    if (!payment) return
+    try {
+      const blob = await paymentService.generatePDF(payment.name)
+      const blobUrl = URL.createObjectURL(blob)
+      window.open(blobUrl, "_blank")
+    } catch {
+      showMessage("Failed to generate PDF", "error")
+    }
+  }, [payment, showMessage])
+
+  // ERPNext header actions
+  const [unreconcileAvailable, setUnreconcileAvailable] = useState(false)
+  const [unreconcileOpen, setUnreconcileOpen] = useState(false)
+  const [bankLinked, setBankLinked] = useState<string[] | null>(null)
+  const [amendedAs, setAmendedAs] = useState<string | boolean>(false)
+  const [matchedRequests, setMatchedRequests] = useState<string[][] | null>(null)
 
   const fetchPayment = useCallback(async () => {
     if (!id) return
@@ -66,8 +114,9 @@ export default function PaymentDetail() {
     try {
       const p = await paymentService.getById(id)
       setPayment(p)
-    } catch {
+    } catch (err) {
       setPayment(null)
+      showMessage(messageFromError(err, "Failed to load the payment entry."))
     } finally {
       setLoading(false)
     }
@@ -83,17 +132,19 @@ export default function PaymentDetail() {
       setLedgerData(data)
     } catch (err) {
       setLedgerError(err instanceof ApiError ? err.message : "Failed to load ledger preview.")
+      showMessage(messageFromError(err, "Failed to load the accounting ledger preview."))
     } finally {
       setLedgerLoading(false)
     }
   }, [])
 
-  const loadComments = useCallback(async (name: string) => {
+  const loadComments = useCallback(async (doc: PaymentEntry, currentUser: string | null) => {
     setCommentsLoading(true)
     try {
-      setComments(await paymentService.getComments(name))
-    } catch {
+      setComments(await paymentService.getActivity(doc, currentUser ?? undefined))
+    } catch (err) {
       setComments([])
+      showMessage(messageFromError(err, "Failed to load activity."))
     } finally {
       setCommentsLoading(false)
     }
@@ -101,9 +152,50 @@ export default function PaymentDetail() {
 
   useEffect(() => {
     if (!payment) return
-    loadComments(payment.name)
-    loadLedger(payment.company, payment.name)
-  }, [payment, loadComments, loadLedger])
+    loadComments(payment, currentUserId)
+  }, [payment, currentUserId, loadComments])
+
+  // UnReconcile is only shown for submitted entries that actually reference
+  // other documents (mirrors unreconcile.js add_unreconcile_btn).
+  useEffect(() => {
+    if (!payment || payment.docstatus !== 1) {
+      setUnreconcileAvailable(false)
+      return
+    }
+    let cancelled = false
+    paymentService.unreconcile
+      .docHasReferences("Payment Entry", payment.name)
+      .then((count) => {
+        if (!cancelled) setUnreconcileAvailable(count > 0)
+      })
+      .catch(() => {
+        if (!cancelled) setUnreconcileAvailable(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [payment])
+
+  // A Cancelled Payment Entry that already has an amended copy cannot be
+  // amended again (mirrors ERPNext toolbar.js is_document_amended).
+  useEffect(() => {
+    if (!payment || payment.docstatus !== 2) {
+      setAmendedAs(false)
+      return
+    }
+    let cancelled = false
+    paymentService
+      .isDocumentAmended(payment.name)
+      .then((amended) => {
+        if (!cancelled) setAmendedAs(typeof amended === "string" ? amended : false)
+      })
+      .catch(() => {
+        if (!cancelled) setAmendedAs(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [payment])
 
   const handleConfirm = async () => {
     if (!payment || !confirmAction) return
@@ -116,8 +208,13 @@ export default function PaymentDetail() {
         await paymentService.submitPayment(savedName)
         await fetchPayment()
       } else if (confirmAction === "cancel") {
-        await paymentService.cancelPayment(payment.name)
-        await fetchPayment()
+        const linked = await paymentService.getLinkedBankTransactions(payment.name)
+        if (linked.length) {
+          setBankLinked(linked)
+        } else {
+          await paymentService.cancelPayment(payment.name)
+          await fetchPayment()
+        }
       } else if (confirmAction === "delete") {
         await paymentService.deletePayment(payment.name)
         navigate("/payments")
@@ -127,7 +224,59 @@ export default function PaymentDetail() {
       }
       setConfirmAction(null)
     } catch (err) {
-      setConfirmError(err instanceof ApiError ? err.message : "Action failed. Please try again.")
+      const message = err instanceof ApiError ? err.message : "Action failed. Please try again."
+      setConfirmError(message)
+      showMessage(messageFromError(err, message))
+    } finally {
+      setActing(false)
+    }
+  }
+
+  // A submitted Payment Entry reconciled with Bank Transactions can only be
+  // cancelled if the user accepts that reconciliation will be removed.
+  const confirmCancelWithBankTx = async () => {
+    if (!payment) return
+    setActing(true)
+    setConfirmError(null)
+    try {
+      await paymentService.cancelPayment(payment.name)
+      setBankLinked(null)
+      await fetchPayment()
+    } catch (err) {
+      const message = err instanceof ApiError ? err.message : "Failed to cancel the Payment Entry."
+      setConfirmError(message)
+      showMessage(messageFromError(err, message))
+    } finally {
+      setActing(false)
+    }
+  }
+
+  const openGeneralLedger = () => {
+    if (payment) navigate(`/reports/general-ledger?${glReportParams(payment)}`)
+  }
+
+  const openExchangeGainLoss = () => {
+    if (payment) window.open(exchangeGainLossUrl(payment), "_blank", "noopener,noreferrer")
+  }
+
+  const handleAfterSave = (result: PaymentAfterSaveResult) => {
+    if (result.matchedPaymentRequests && result.matchedPaymentRequests.length > 0) {
+      setMatchedRequests(result.matchedPaymentRequests)
+    }
+  }
+
+  const handleAllocateMatched = async () => {
+    if (!payment || !matchedRequests) return
+    setActing(true)
+    setConfirmError(null)
+    try {
+      await setMatchedPaymentRequests(payment as unknown as Record<string, unknown>, matchedRequests)
+      setMatchedRequests(null)
+      setDirty(true)
+    } catch (err) {
+      const message = err instanceof ApiError ? err.message : "Failed to allocate the matched payment requests."
+      setConfirmError(message)
+      showMessage(messageFromError(err, message))
     } finally {
       setActing(false)
     }
@@ -145,8 +294,20 @@ export default function PaymentDetail() {
 
   const handleAddComment = async (content: string) => {
     if (!payment) return
-    const created = await paymentService.addComment(payment.name, content)
-    setComments((prev) => [created, ...prev])
+    await paymentService.addComment(payment.name, content, user?.id ?? "", user?.name ?? "")
+    await loadComments(payment, currentUserId)
+  }
+
+  const handleUpdateComment = async (commentName: string, content: string) => {
+    if (!payment) return
+    await paymentService.updateComment(commentName, content)
+    await loadComments(payment, currentUserId)
+  }
+
+  const handleDeleteComment = async (commentName: string) => {
+    if (!payment) return
+    await paymentService.deleteComment(commentName)
+    await loadComments(payment, currentUserId)
   }
 
   const confirmTitle = confirmAction
@@ -174,6 +335,7 @@ export default function PaymentDetail() {
   const isDraft = docstatus === 0
   const isSubmitted = docstatus === 1
   const isCancelled = docstatus === 2
+  const hasExchangeGainLoss = (payment.references ?? []).some((r) => r.exchange_gain_loss !== 0)
 
   return (
     <>
@@ -190,39 +352,22 @@ export default function PaymentDetail() {
         backTo="/payments"
         actions={
           <>
-            {/* ERPNext get_action_status: draft clean -> Submit, draft dirty -> Save */}
-            {isDraft && (dirty ? (
-              <Button variant="primary" size="md" onClick={handleSave} data-testid="save_button">
-                <Save size={16} /> Save
-              </Button>
-            ) : (
-              <Button variant="primary" size="md" onClick={() => setConfirmAction("submit")}>
-                <Check size={16} /> Submit
-              </Button>
-            ))}
-
-            {/* Submitted: Cancel (secondary) or Update (primary when dirty) */}
-            {isSubmitted && (dirty ? (
-              <Button variant="primary" size="md" onClick={handleSave}>
-                <Save size={16} /> Update
-              </Button>
-            ) : (
-              <Button variant="secondary" size="md" onClick={() => setConfirmAction("cancel")}>
-                <Ban size={16} /> Cancel
-              </Button>
-            ))}
-
-            {/* Cancelled: Amend (primary) */}
-            {isCancelled && (
-              <Button variant="primary" size="md" onClick={() => setConfirmAction("amend")}>
-                <GitBranch size={16} /> Amend
-              </Button>
-            )}
-
             {/* Draft: Accounting Ledger Preview */}
             {isDraft && (
               <Button variant="secondary" size="md" onClick={openLedgerPreview}>
-                <BookOpen size={16} /> Accounting Ledger Preview
+                <BookOpen size={16} /> Accounting Ledger
+              </Button>
+            )}
+            {/* Submitted/Cancelled: General Ledger report (ERPNext "Ledger") */}
+            {!isDraft && (
+              <Button variant="secondary" size="md" onClick={openGeneralLedger}>
+                <Table2 size={16} /> Ledger
+              </Button>
+            )}
+            {/* Any doc with FX gain/loss references: journal list (ERPNext) */}
+            {hasExchangeGainLoss && (
+              <Button variant="secondary" size="md" onClick={openExchangeGainLoss}>
+                <BookOpen size={16} /> View Exchange Gain/Loss
               </Button>
             )}
 
@@ -234,40 +379,30 @@ export default function PaymentDetail() {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                {isDraft && (
-                  <>
-                    <DropdownMenuItem onClick={() => setConfirmAction("delete")}>
-                      <Trash2 size={14} className="text-danger-600" /> Delete
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                  </>
-                )}
-                {isSubmitted && (
-                  <>
-                    <DropdownMenuItem onClick={() => setConfirmAction("amend")}>
-                      <GitBranch size={14} /> Amend
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => navigate("/payments/new", { state: { copyFrom: payment } })}>
-                      <Copy size={14} /> Duplicate
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                  </>
-                )}
-                {isCancelled && (
-                  <>
-                    <DropdownMenuItem onClick={() => navigate("/payments/new", { state: { copyFrom: payment } })}>
-                      <Copy size={14} /> Duplicate
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                  </>
-                )}
-                <DropdownMenuItem onClick={() => window.open(`/printview?doctype=Payment Entry&name=${payment.name}`, "_blank")}>
+                {/* Duplicate: ERPNext shows it for all docstatus (can_create && !allow_copy) */}
+                <DropdownMenuItem onClick={() => navigate("/payments/new", { state: { copyFrom: payment } })}>
+                  <Copy size={14} /> Duplicate
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => void openPrint()}>
                   <Printer size={14} /> Print
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setEmailOpen(true)}>
-                  <Mail size={14} /> Email
-                </DropdownMenuItem>
-                {(isSubmitted || isCancelled) && (
+                {/* Email: ERPNext shows it for docstatus < 2 (draft + submitted) */}
+                {(isDraft || isSubmitted) && (
+                  <DropdownMenuItem onClick={() => setEmailOpen(true)}>
+                    <Mail size={14} /> Email
+                  </DropdownMenuItem>
+                )}
+                {unreconcileAvailable && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={() => setUnreconcileOpen(true)}>
+                      <GitBranch size={14} /> UnReconcile
+                    </DropdownMenuItem>
+                  </>
+                )}
+                {/* Delete: ERPNext hides it for submitted (docstatus == 1) */}
+                {(isDraft || isCancelled) && (
                   <>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem onClick={() => setConfirmAction("delete")}>
@@ -277,6 +412,37 @@ export default function PaymentDetail() {
                 )}
               </DropdownMenuContent>
             </DropdownMenu>
+
+            {/* Primary action last, on the far right (ERPNext primary action placement) */}
+            {isDraft && (dirty ? (
+              <Button variant="primary" size="md" onClick={handleSave} data-testid="save_button">
+                <Save size={16} /> Save
+              </Button>
+            ) : (
+              <Button variant="primary" size="md" onClick={() => setConfirmAction("submit")}>
+                <Check size={16} /> Submit
+              </Button>
+            ))}
+            {isSubmitted && (dirty ? (
+              <Button variant="primary" size="md" onClick={handleSave}>
+                <Save size={16} /> Update
+              </Button>
+            ) : (
+              <Button variant="secondary" size="md" onClick={() => setConfirmAction("cancel")}>
+                <Ban size={16} /> Cancel
+              </Button>
+            ))}
+            {isCancelled && (
+              <Button
+                variant="primary"
+                size="md"
+                onClick={() => setConfirmAction("amend")}
+                disabled={!!amendedAs}
+                title={amendedAs ? `Already amended as ${amendedAs}` : undefined}
+              >
+                <GitBranch size={16} /> Amend
+              </Button>
+            )}
           </>
         }
       />
@@ -290,13 +456,19 @@ export default function PaymentDetail() {
             onSaved={() => fetchPayment()}
             onCancel={() => navigate("/payments")}
             onDirtyChange={setDirty}
+            onAfterSave={handleAfterSave}
             hideFooter={true}
             ledger={ledgerData ? { data: ledgerData, loading: ledgerLoading, error: ledgerError } : undefined}
-            comments={comments}
-            commentsLoading={commentsLoading}
-            onAddComment={handleAddComment}
           />
         </div>
+        <PaymentActivity
+          activity={comments}
+          loading={commentsLoading}
+          onAddComment={handleAddComment}
+          onUpdateComment={handleUpdateComment}
+          onDeleteComment={handleDeleteComment}
+          currentUserId={currentUserId}
+        />
       </motion.div>
 
       {/* Confirmation dialog */}
@@ -321,9 +493,9 @@ export default function PaymentDetail() {
       <Modal
         open={ledgerOpen}
         onClose={() => setLedgerOpen(false)}
-        title={`Accounting Ledger \u2014 ${payment.name}`}
-        description={payment.company}
+        title="Accounting Ledger Preview"
         size="xl"
+        className="max-w-[1140px]"
       >
         {ledgerLoading && (
           <div className="space-y-3">
@@ -339,39 +511,7 @@ export default function PaymentDetail() {
         )}
         {!ledgerLoading && !ledgerError && ledgerData && (() => {
           const { columns, rows } = normalizeLedger(ledgerData)
-          return (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-border/50">
-                    {columns.map((col) => (
-                      <th key={col.key} className="text-left py-2 px-2 text-xs font-semibold text-muted whitespace-nowrap">
-                        {col.label}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.length === 0 && (
-                    <tr>
-                      <td colSpan={columns.length} className="py-4 text-center text-xs text-muted">
-                        No ledger entries found.
-                      </td>
-                    </tr>
-                  )}
-                  {rows.map((row, i) => (
-                    <tr key={i} className="border-b border-border/30">
-                      {columns.map((col, colIdx) => (
-                        <td key={col.key} className="py-2 px-2 text-xs text-body whitespace-nowrap tabular-nums">
-                          {formatNumber(row[colIdx])}
-                        </td>
-                      ))}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )
+          return <LedgerPreviewTable columns={columns} rows={rows} defaultCurrency={defaultCurrency} />
         })()}
       </Modal>
 
@@ -380,6 +520,51 @@ export default function PaymentDetail() {
         onOpenChange={setEmailOpen}
         paymentName={payment.name}
         contactEmail={payment.contact_email}
+      />
+
+      {/* UnReconcile (ERPNext unreconcile.js) */}
+      <UnReconcileDialog
+        open={unreconcileOpen}
+        onOpenChange={setUnreconcileOpen}
+        company={payment.company}
+        docname={payment.name}
+        onDone={() => {
+          setUnreconcileOpen(false)
+          setDirty(true)
+        }}
+      />
+
+      {/* Cancel blocked by linked Bank Transactions */}
+      <ConfirmationDialog
+        open={bankLinked !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setBankLinked(null)
+            setConfirmError(null)
+          }
+        }}
+        onConfirm={confirmCancelWithBankTx}
+        title="Bank Transactions are Linked to this Payment"
+        description={`The following Bank Transaction(s) are matched with this Payment Entry. Cancelling will automatically remove the reconciliation: ${(bankLinked ?? []).join(", ")}. Proceed?`}
+        confirmLabel="Cancel Payment"
+        variant="danger"
+        loading={acting}
+        error={confirmError}
+      />
+
+      {/* Matched Payment Requests prompt (ERPNext after_save) */}
+      <ConfirmationDialog
+        open={matchedRequests !== null}
+        onOpenChange={(open) => {
+          if (!open) setMatchedRequests(null)
+        }}
+        onConfirm={handleAllocateMatched}
+        title="Allocate Matched Payment Requests?"
+        description={`${(matchedRequests ?? []).length} payment request(s) matched this Payment Entry. Allocate them and link the resulting bank transaction to this entry?`}
+        confirmLabel="Allocate"
+        variant="warning"
+        loading={acting}
+        error={confirmError}
       />
     </>
   )

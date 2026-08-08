@@ -7,6 +7,7 @@ import { Save } from "lucide-react"
 import Topbar from "@/components/layout/Topbar"
 import PageHead from "@/components/layout/PageHead"
 import { Button, Skeleton } from "@/components/ui"
+import { useMessageDialog, messageFromError } from "@/components/ui"
 import PaymentForm, { type PaymentFormHandle } from "../components/PaymentForm"
 import { paymentService, type PaymentEntry, type SalesInvoice } from "@/services"
 
@@ -21,6 +22,7 @@ export default function RecordPaymentPage() {
   const [searchParams] = useSearchParams()
   const invoiceId = searchParams.get("invoice")
   const formRef = useRef<PaymentFormHandle>(null)
+  const { showMessage } = useMessageDialog()
 
   const amendState = (location.state as AmendState | null)?.amendFrom
   const copyState = (location.state as AmendState | null)?.copyFrom
@@ -41,7 +43,7 @@ export default function RecordPaymentPage() {
       .then((list) => {
         if (list.length > 0) setInvoice(list[0])
       })
-      .catch(() => {})
+      .catch((err) => showMessage(messageFromError(err, "Failed to load the invoice.")))
       .finally(() => setLoading(false))
   }, [invoiceId, amendState, copyState])
 

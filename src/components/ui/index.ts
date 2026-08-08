@@ -31,6 +31,11 @@ export { Switch } from "./switch"
 export { default as Modal } from "./Modal"
 export { ModalFooter } from "./Modal"
 export { ToastProvider, useToast } from "./toast"
+export {
+  MessageDialogProvider,
+  useMessageDialog,
+  messageFromError,
+} from "./message-dialog"
 export { Select } from "./select"
 export type { SelectProps } from "./select"
 export { Textarea } from "./textarea"

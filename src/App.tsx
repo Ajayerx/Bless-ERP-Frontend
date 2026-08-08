@@ -7,8 +7,8 @@ import { Dashboard } from "./modules/dashboard/pages";
 import { Customers, NewCustomer, CustomerDetail, EditCustomer } from "./modules/customers/pages";
 import { Products, NewProduct, ProductDetail, EditProduct } from "./modules/products/pages";
 import { Invoices, InvoiceDetail, CreateInvoice, EditInvoice } from "./modules/invoices/pages";
-import { Payments, PaymentDetail, RecordPaymentPage } from "./modules/payments/pages";
-import { SalesReportPage, ARReportPage, InventoryReportPage, ProfitLossPage, BalanceSheetPage, GSTSummaryPage } from "./modules/reports/pages";
+import { Payments, PaymentDetail, RecordPaymentPage, VersionDetail } from "./modules/payments/pages";
+import { SalesReportPage, ARReportPage, InventoryReportPage, ProfitLossPage, BalanceSheetPage, GSTSummaryPage, GeneralLedgerPage } from "./modules/reports/pages";
 import { Expenses, NewExpense, ExpenseDetail, EditExpense } from "./modules/expenses/pages";
 import { Suppliers, NewSupplier, SupplierDetail, EditSupplier } from "./modules/suppliers/pages";
 import { Bills, BillDetail, CreateBill, EditBill } from "./modules/bills/pages";
@@ -91,6 +91,7 @@ function App() {
         <Route path="payments" element={<Payments />} />
         <Route path="payments/new" element={<RecordPaymentPage />} />
         <Route path="payments/:id" element={<PaymentDetail />} />
+        <Route path="versions/:id" element={<VersionDetail />} />
         <Route path="quotations" element={<Quotations />} />
         <Route path="quotations/new" element={<NewQuotation />} />
         <Route path="quotations/:id" element={<QuotationDetail />} />
@@ -158,6 +159,7 @@ function App() {
         <Route path="reports/profit-loss" element={<ProfitLossPage />} />
         <Route path="reports/balance-sheet" element={<BalanceSheetPage />} />
         <Route path="reports/gst" element={<GSTSummaryPage />} />
+        <Route path="reports/general-ledger" element={<GeneralLedgerPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>

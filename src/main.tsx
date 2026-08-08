@@ -6,6 +6,7 @@ import { AppProvider } from "./context/AppContext"
 import { ThemeProvider } from "./context/ThemeContext"
 import { CompanyProvider } from "./context/CompanyContext"
 import { ToastProvider } from "./components/ui/toast"
+import { MessageDialogProvider } from "./components/ui/message-dialog"
 import ErrorBoundary from "./components/ErrorBoundary"
 import { NotificationProvider } from "./modules/notifications/context/NotificationContext"
 import App from "./App"
@@ -31,15 +32,17 @@ async function bootstrap() {
         <BrowserRouter>
           <ThemeProvider>
             <ToastProvider>
-              <AuthProvider>
-                <CompanyProvider>
-                  <AppProvider>
-                    <NotificationProvider>
-                      <App />
-                    </NotificationProvider>
-                  </AppProvider>
-                </CompanyProvider>
-              </AuthProvider>
+              <MessageDialogProvider>
+                <AuthProvider>
+                  <CompanyProvider>
+                    <AppProvider>
+                      <NotificationProvider>
+                        <App />
+                      </NotificationProvider>
+                    </AppProvider>
+                  </CompanyProvider>
+                </AuthProvider>
+              </MessageDialogProvider>
             </ToastProvider>
           </ThemeProvider>
         </BrowserRouter>

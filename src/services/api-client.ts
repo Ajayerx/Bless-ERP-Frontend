@@ -1,13 +1,21 @@
 import { API_CONFIG } from "../config/api.config"
 
+export interface AppMessage {
+  title?: string
+  message: string
+  indicator?: string
+}
+
 export class ApiError extends Error {
   public status: number
   public rawMessage: string
+  public serverMessage: AppMessage | null
 
-  constructor(status: number, message: string, rawMessage?: string) {
+  constructor(status: number, message: string, rawMessage?: string, serverMessage?: AppMessage | null) {
     super(message)
     this.status = status
     this.rawMessage = rawMessage ?? message
+    this.serverMessage = serverMessage ?? null
     this.name = "ApiError"
   }
 }
@@ -50,37 +58,75 @@ export function registerUnauthorizedHandler(fn: UnauthorizedHandler) {
 
 // --- ERPNext error message unwrapping ----------------------------------
 // ERPNext puts the real, human-readable error in `_server_messages`, which
-// is a JSON-encoded array of JSON-encoded strings (sometimes double-encoded).
-// Falling back to `body.message` alone misses almost all validation errors.
-function extractServerMessages(raw: unknown): string[] {
+// is a JSON-encoded array of JSON-encoded objects (sometimes double-encoded),
+// each like { message, title, indicator, raise_exception }. We surface both
+// the plain text (for inline contexts/regex) and the structured shape (title
+// + indicator) so the UI can render an ERPNext-style "Message" dialog.
+function parseServerMessageItem(item: unknown): AppMessage {
+  let data = item
+  if (typeof item === "string") {
+    try {
+      data = JSON.parse(item)
+    } catch {
+      data = item
+    }
+  }
+  if (data && typeof data === "object" && "message" in (data as Record<string, unknown>)) {
+    const record = data as Record<string, unknown>
+    return {
+      title: typeof record.title === "string" ? record.title : undefined,
+      message: String(record.message),
+      indicator: typeof record.indicator === "string" ? record.indicator : undefined,
+    }
+  }
+  if (typeof data === "string") return { message: data }
+  return { message: String(data) }
+}
+
+export function extractServerMessages(raw: unknown): AppMessage[] {
   if (typeof raw !== "string") return []
+  let parsed: unknown
   try {
-    const arr = JSON.parse(raw)
-    if (!Array.isArray(arr)) return []
-    return arr.map((item) => {
-      if (typeof item !== "string") return String(item)
-      try {
-        const parsed = JSON.parse(item)
-        if (parsed && typeof parsed === "object" && "message" in parsed) {
-          return String(parsed.message)
-        }
-        return item
-      } catch {
-        return item
-      }
-    })
+    parsed = JSON.parse(raw)
   } catch {
     return []
   }
+  if (!Array.isArray(parsed)) return []
+  return parsed.map(parseServerMessageItem).filter((m) => m.message.trim().length > 0)
 }
 
-function stripHtml(s: string): string {
+const DEFAULT_APP_MESSAGE: AppMessage = { message: "Something went wrong" }
+
+// ERPNext puts a "red/orange/green/blue" indicator string on the message.
+// Map ERPNext indicators onto our semantic tone for the message dialog.
+export type AppMessageTone = "error" | "warning" | "success" | "info"
+
+export function messageTone(indicator?: string): AppMessageTone {
+  const normalized = (indicator ?? "").toLowerCase().replace(/[^a-z]+/gi, " ").trim()
+  if (/red/i.test(normalized)) return "error"
+  if (/orange|yellow/i.test(normalized)) return "warning"
+  if (/green/i.test(normalized)) return "success"
+  return "info"
+}
+
+export function stripHtml(s: string): string {
   return s.replace(/<[^>]*>/g, "").trim()
+}
+
+// Server messages carried on a *successful* (200) response. ERPNext puts
+// `frappe.msgprint` output into `_server_messages` even when `message` is a
+// normal payload, and the UI should surface them (e.g. "No outstanding
+// invoices found ..."). See UserForm/Get Outstanding flow.
+export function serverMessagesFromBody(body: unknown): AppMessage[] {
+  if (body && typeof body === "object") {
+    return extractServerMessages((body as Record<string, unknown>)?._server_messages)
+  }
+  return []
 }
 
 export function parseErrorMessage(body: any, fallback = "Something went wrong"): string {
   const serverMessages = extractServerMessages(body?._server_messages)
-  if (serverMessages.length > 0) return stripHtml(serverMessages.join(" "))
+  if (serverMessages.length > 0) return stripHtml(serverMessages.map((m) => m.message).join(" "))
   if (typeof body?._error_message === "string") return stripHtml(body._error_message)
   if (typeof body?.message === "string") return stripHtml(body.message)
   if (typeof body?.exception === "string") return stripHtml(body.exception)
@@ -89,11 +135,22 @@ export function parseErrorMessage(body: any, fallback = "Something went wrong"):
 
 export function parseRawErrorMessage(body: any, fallback = "Something went wrong"): string {
   const serverMessages = extractServerMessages(body?._server_messages)
-  if (serverMessages.length > 0) return serverMessages.join(" ")
+  if (serverMessages.length > 0) return serverMessages.map((m) => m.message).join(" ")
   if (typeof body?._error_message === "string") return body._error_message
   if (typeof body?.message === "string") return body.message
   if (typeof body?.exception === "string") return body.exception
   return fallback
+}
+
+// Structured variant of parseErrorMessage: returns the first ERPNext server
+// message as { title, message, indicator } so components can show a modal.
+export function firstServerMessage(body: any, fallback?: string): AppMessage | null {
+  const messages = extractServerMessages(body?._server_messages)
+  if (messages.length > 0) return messages[0]
+  if (typeof body?._error_message === "string") return { message: body._error_message }
+  if (typeof body?.message === "string") return { message: String(body.message) }
+  if (typeof body?.exception === "string") return { message: String(body.exception) }
+  return fallback ? { message: fallback } : DEFAULT_APP_MESSAGE
 }
 
 // --- Safe JSON parsing --------------------------------------------------
@@ -149,7 +206,7 @@ async function fetchJson(endpoint: string, options: RequestInit = {}): Promise<a
         unauthorizing = false
       }
     }
-    throw new ApiError(res.status, parseErrorMessage(body), parseRawErrorMessage(body))
+    throw new ApiError(res.status, parseErrorMessage(body), parseRawErrorMessage(body), firstServerMessage(body))
   }
 
   return body

@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react"
 import { CheckCircle2, Clock, FileText, DollarSign, Send, XCircle, RotateCcw, Trash2, X } from "lucide-react"
 import DataTable, { type Column } from "@/components/ui/DataTable"
-import { Card, Badge } from "@/components/ui"
+import { Badge } from "@/components/ui"
 import { type PaymentEntry, type PaymentEntryListResponse } from "@/services"
 import { paymentService } from "@/services"
 import { formatCurrency, formatDate, cn } from "@/lib/utils"

@@ -1,6 +1,7 @@
 export { default as Reports } from "./Reports"
 export { default as ARReportPage } from "./ARReportPage"
 export { default as BalanceSheetPage } from "./BalanceSheetPage"
+export { default as GeneralLedgerPage } from "./GeneralLedgerPage"
 export { default as GSTSummaryPage } from "./GSTSummaryPage"
 export { default as InventoryReportPage } from "./InventoryReportPage"
 export { default as ProfitLossPage } from "./ProfitLossPage"

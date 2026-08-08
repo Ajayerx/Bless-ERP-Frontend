@@ -1,15 +1,18 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from "react"
+import { useState, useEffect, useCallback, useMemo, useRef, forwardRef, useImperativeHandle } from "react"
+import { useNavigate, Link } from "react-router-dom"
 import {
-  Loader2, Plus, Trash2, FileText, RefreshCw, Save,
-  Check, Ban, GitBranch, Printer, Mail, Copy,
+  Loader2, Trash2, FileText, RefreshCw, Save,
+  Check, Ban, GitBranch, Printer, Mail, Copy, ChevronDown,
 } from "lucide-react"
-import { paymentService, getValue, getAccountingDimensions, searchLink } from "@/services"
+import { paymentService, getValue, getAccountingDimensions, searchLink, savePaymentRaw, allocateAmountToReferences } from "@/services"
 import { validateLink } from "@/services/frappe-client"
 import { getCompanyDefaults } from "@/services/company"
 import { ApiError } from "@/services/api-client"
+import { useMessageDialog, useToast, messageFromError } from "@/components/ui"
 import { cn } from "@/lib/utils"
+import { useAutoGrowTextarea } from "@/hooks/useAutoGrowTextarea"
 import LinkField from "./LinkField"
-import GetOutstandingDialog from "./GetOutstandingDialog"
+import GetOutstandingDialog, { type GetOutstandingFilters } from "./GetOutstandingDialog"
 import CollapsibleSection from "./CollapsibleSection"
 import ChildTableGrid, {
   type GridColumn,
@@ -19,16 +22,19 @@ import {
   computeUnallocatedAmount,
   computeDifferenceAmount,
 } from "../utils/taxes"
+import { allocateReferences } from "../utils/allocation"
+import { moneyInWords } from "../utils/moneyInWords"
 import type { AccountingDimension } from "@/services"
 import type {
   InvoiceAllocation,
   PaymentDeductionForm,
   PaymentEntryTax,
-  OutstandingReference,
   PartyDetails,
   AccountDetails,
   PaymentEntry,
   RecordPaymentData,
+  LedgerPreviewData,
+  PaymentAfterSaveResult,
 } from "../types"
 import type { SalesInvoice } from "@/modules/invoices/services"
 
@@ -40,14 +46,15 @@ function isValidDateString(s: string): boolean {
   return !isNaN(d.getTime())
 }
 
-function formatCurrency(n: number, currency?: string): string {
+function formatCurrency(n: number | null | undefined, currency?: string): string {
   const cur = currency || "CAD"
+  const num = n ?? 0
   try {
     return new Intl.NumberFormat("en-CA", {
       style: "currency",
       currency: cur,
       minimumFractionDigits: 2,
-    }).format(n)
+    }).format(num)
   } catch {
     return `$${n.toFixed(2)}`
   }
@@ -57,6 +64,10 @@ export type PaymentFormMode = "new" | "existing"
 
 export type PaymentToolbarAction = "submit" | "cancel" | "delete" | "amend" | "print" | "email" | "duplicate"
 
+export interface PaymentFormHandle {
+  save: () => Promise<string | undefined>
+}
+
 export interface PaymentFormProps {
   initialValues?: PaymentEntry
   invoice?: SalesInvoice | null
@@ -65,6 +76,10 @@ export interface PaymentFormProps {
   mode?: PaymentFormMode
   onToolbarAction?: (action: PaymentToolbarAction) => void
   duplicate?: boolean
+  onDirtyChange?: (dirty: boolean) => void
+  hideFooter?: boolean
+  ledger?: { data: LedgerPreviewData | null; loading: boolean; error: string | null }
+  onAfterSave?: (result: PaymentAfterSaveResult) => void
 }
 
 type PaymentType = "Receive" | "Pay" | "Internal Transfer"
@@ -86,7 +101,7 @@ const inputClass =
 
 const labelClass = "block text-[13px] font-medium text-body/70 mb-1.5"
 
-export default function PaymentForm({
+export default forwardRef<PaymentFormHandle, PaymentFormProps>(function PaymentForm({
   initialValues,
   invoice,
   onSaved,
@@ -94,12 +109,22 @@ export default function PaymentForm({
   mode = "new",
   onToolbarAction,
   duplicate = false,
-}: PaymentFormProps) {
+  onDirtyChange,
+  hideFooter = false,
+  ledger,
+  onAfterSave,
+}: PaymentFormProps, ref) {
+  const { showMessage } = useMessageDialog()
+  const { addToast } = useToast()
+  const navigate = useNavigate()
   const isAmend = !!initialValues && mode !== "existing" && !duplicate
   const isExisting = mode === "existing" && !!initialValues
   const docstatus = isExisting ? initialValues.docstatus : 0
   const isReadOnly = isExisting && docstatus !== 0
+  const isSubmitted = isExisting && docstatus === 1
   const readOnlyLinkProps = isReadOnly ? { disabled: true } : {}
+  const dimensionLinkProps = isSubmitted ? {} : readOnlyLinkProps
+  const isCancelled = isExisting && docstatus === 2
 
   const [namingSeries, setNamingSeries] = useState("ACC-PAY-.YYYY.-")
   const [paymentType, setPaymentType] = useState<PaymentType>("Receive")
@@ -113,7 +138,7 @@ export default function PaymentForm({
   const [partyTypes, setPartyTypes] = useState<Array<{ name: string; account_type: string | null }>>([])
   const [party, setParty] = useState("")
   const [partyName, setPartyName] = useState("")
-  const [partyBalance, setPartyBalance] = useState(0)
+  const [partyBalance, setPartyBalance] = useState<number | null>(null)
 
   const partyAccountTypes = useMemo(() => {
     const map: Record<string, string> = { ...PARTY_ACCOUNT_TYPES }
@@ -132,12 +157,12 @@ export default function PaymentForm({
 
   const [paidFrom, setPaidFrom] = useState("")
   const [paidFromCurrency, setPaidFromCurrency] = useState("")
-  const [paidFromBalance, setPaidFromBalance] = useState(0)
+  const [paidFromBalance, setPaidFromBalance] = useState<number | null>(null)
   const [paidFromType, setPaidFromType] = useState("")
 
   const [paidTo, setPaidTo] = useState("")
   const [paidToCurrency, setPaidToCurrency] = useState("")
-  const [paidToBalance, setPaidToBalance] = useState(0)
+  const [paidToBalance, setPaidToBalance] = useState<number | null>(null)
   const [paidToType, setPaidToType] = useState("")
 
   const [paidAmount, setPaidAmount] = useState(0)
@@ -176,6 +201,11 @@ export default function PaymentForm({
 
   const companyRef = useRef(initialValues?.company ?? null)
   const bankAccountFromAccountRef = useRef(false)
+  const allocatePaymentAmountRef = useRef(true)
+  const prevSalesTaxesTemplateRef = useRef(initialValues?.sales_taxes_and_charges_template || "")
+  const prevPurchaseTaxesTemplateRef = useRef(initialValues?.purchase_taxes_and_charges_template || "")
+
+  const remarksRef = useAutoGrowTextarea()
 
   const [outstandingDialogOpen, setOutstandingDialogOpen] = useState(false)
   const [outstandingDialogTitle, setOutstandingDialogTitle] = useState("")
@@ -246,7 +276,6 @@ export default function PaymentForm({
   }, [taxes, basePaidAmount, paymentType, sourceExchangeRate, targetExchangeRate, paidFromCurrency, paidToCurrency])
 
   const computedTaxes = taxCalc?.taxes ?? taxes
-  const paidAmountAfterTax = taxCalc?.paidAmountAfterTax ?? basePaidAmount
   const totalTaxesAndCharges = taxCalc?.totalTaxesAndCharges ?? 0
   const baseTotalTaxesAndCharges = taxCalc?.baseTotalTaxesAndCharges ?? 0
 
@@ -271,11 +300,11 @@ export default function PaymentForm({
       baseReceivedAmount,
       baseTotalAllocatedAmount: baseTotalAllocated,
       deductions,
-      baseTotalTaxesAndCharges,
+      taxes: computedTaxes,
       sourceExchangeRate,
       targetExchangeRate,
     }),
-    [paymentType, unallocated, basePaidAmount, baseReceivedAmount, baseTotalAllocated, deductions, baseTotalTaxesAndCharges, sourceExchangeRate, targetExchangeRate]
+    [paymentType, unallocated, basePaidAmount, baseReceivedAmount, baseTotalAllocated, deductions, computedTaxes, sourceExchangeRate, targetExchangeRate]
   )
 
   // --- Initialize company + company default currency ---
@@ -299,11 +328,10 @@ export default function PaymentForm({
     paymentService.getPartyTypes().then(setPartyTypes).catch(() => {})
   }, [])
 
-  // --- Mirror ERPNext onload: fetch accounting dimensions ---
+  // --- Mirror ERPNext onload: fetch accounting dimensions (new AND existing docs) ---
   useEffect(() => {
-    if (isExisting) return
     getAccountingDimensions(true).then((result) => setDimensions(result.dimensions)).catch(() => {})
-  }, [isExisting])
+  }, [])
 
   // --- Mirror ERPNext fetch_from: company advance-payment flags + letter head ---
   useEffect(() => {
@@ -349,7 +377,7 @@ export default function PaymentForm({
       setPartyType(v.party_type || "Customer")
       setParty(v.party)
       setPartyName(v.party_name || "")
-      setPartyBalance(v.party_balance || 0)
+      setPartyBalance(v.party_balance ?? null)
       setBankAccount(v.bank_account || "")
       setBankName(v.bank || "")
       setBankAccountNo(v.bank_account_no || "")
@@ -358,11 +386,11 @@ export default function PaymentForm({
       setContactEmail(v.contact_email || "")
       setPaidFrom(v.paid_from)
       setPaidFromCurrency(v.paid_from_account_currency)
-      setPaidFromBalance(v.paid_from_account_balance || 0)
+      setPaidFromBalance(v.paid_from_account_balance ?? null)
       setPaidFromType(v.paid_from_account_type || "")
       setPaidTo(v.paid_to)
       setPaidToCurrency(v.paid_to_account_currency)
-      setPaidToBalance(v.paid_to_account_balance || 0)
+      setPaidToBalance(v.paid_to_account_balance ?? null)
       setPaidToType(v.paid_to_account_type || "")
       setPaidAmount(v.paid_amount)
       setReceivedAmount(v.received_amount)
@@ -377,7 +405,7 @@ export default function PaymentForm({
       setProject(v.project || "")
       setLetterHead(v.letter_head || "")
       setPrintHeading(v.print_heading || "")
-      setIsOpening(!!v.is_opening)
+      setIsOpening(v.is_opening === "Yes")
       setBookAdvancePayments(!!v.book_advance_payments_in_separate_party_account)
       setReconcileOnAdvancePaymentDate(!!v.reconcile_on_advance_payment_date)
       setSalesTaxesTemplate(v.sales_taxes_and_charges_template || "")
@@ -434,7 +462,6 @@ export default function PaymentForm({
         setShowTaxes(true)
       } else {
         setTaxes([])
-        setShowTaxes(false)
       }
     } else if (invoice) {
       setPartyType("Customer")
@@ -469,7 +496,7 @@ export default function PaymentForm({
       setPartyType("Customer")
       setParty("")
       setPartyName("")
-      setPartyBalance(0)
+      setPartyBalance(null)
       setReferences([])
       setPaidAmount(0)
       setReceivedAmount(0)
@@ -502,11 +529,11 @@ export default function PaymentForm({
       setContactEmail("")
       setPaidFrom("")
       setPaidFromCurrency("")
-      setPaidFromBalance(0)
+      setPaidFromBalance(null)
       setPaidFromType("")
       setPaidTo("")
       setPaidToCurrency("")
-      setPaidToBalance(0)
+      setPaidToBalance(null)
       setPaidToType("")
       setSourceExchangeRate(1)
       setTargetExchangeRate(1)
@@ -514,7 +541,6 @@ export default function PaymentForm({
       setShowDeductions(false)
       setReferenceNo("")
       setReferenceDate("")
-      setShowTaxes(false)
       setShowAccountingDimensions(false)
       setShowMoreInfo(false)
       setShowAccounts(false)
@@ -523,6 +549,68 @@ export default function PaymentForm({
     setError("")
   }, [initialValues, invoice])
 
+  // --- Dirty tracking (drives the Update/Cancel toggle in the header) ---
+  const initialDirtyRef = useRef(false)
+  useEffect(() => {
+    if (!isExisting || !initialValues) return
+    const v = initialValues
+    const refsKey = (refs: Array<{ reference_doctype?: string; reference_name?: string; allocated_amount?: number }>) =>
+      refs
+        .map((r) => `${r.reference_doctype}|${r.reference_name}|${r.allocated_amount}`)
+        .join(",")
+    const changed =
+      paymentType !== (v.payment_type || "Receive") ||
+      postingDate !== (v.posting_date || "") ||
+      modeOfPayment !== (v.mode_of_payment || "") ||
+      party !== (v.party || "") ||
+      partyName !== (v.party_name || "") ||
+      paidAmount !== (v.paid_amount ?? 0) ||
+      receivedAmount !== (v.received_amount ?? 0) ||
+      sourceExchangeRate !== (v.source_exchange_rate ?? 1) ||
+      targetExchangeRate !== (v.target_exchange_rate ?? 1) ||
+      referenceNo !== (v.reference_no || "") ||
+      referenceDate !== (v.reference_date || "") ||
+      remarks !== (v.remarks || "") ||
+      customRemarks !== !!v.custom_remarks ||
+      costCenter !== (v.cost_center || "") ||
+      project !== (v.project || "") ||
+      letterHead !== (v.letter_head || "") ||
+      printHeading !== (v.print_heading || "") ||
+      refsKey(references) !==
+        refsKey(
+          (v.references || []).map((r) => ({
+            reference_doctype: r.reference_doctype,
+            reference_name: r.reference_name,
+            allocated_amount: r.allocated_amount,
+          }))
+        )
+    if (!initialDirtyRef.current && !changed) return
+    initialDirtyRef.current = true
+    onDirtyChange?.(changed)
+  }, [
+    isExisting,
+    initialValues,
+    paymentType,
+    postingDate,
+    modeOfPayment,
+    party,
+    partyName,
+    paidAmount,
+    receivedAmount,
+    sourceExchangeRate,
+    targetExchangeRate,
+    referenceNo,
+    referenceDate,
+    remarks,
+    customRemarks,
+    costCenter,
+    project,
+    letterHead,
+    printHeading,
+    references,
+    onDirtyChange,
+  ])
+
   // --- Payment type change (ERPNext parity: payment_type handler) ---
   useEffect(() => {
     if (isExisting) return
@@ -530,14 +618,14 @@ export default function PaymentForm({
       setParty("")
       setPartyType("")
       setPartyName("")
-      setPartyBalance(0)
+      setPartyBalance(null)
       setPaidFrom("")
       setPaidFromCurrency("")
-      setPaidFromBalance(0)
+      setPaidFromBalance(null)
       setPaidFromType("")
       setPaidTo("")
       setPaidToCurrency("")
-      setPaidToBalance(0)
+      setPaidToBalance(null)
       setPaidToType("")
       setPartyBankAccount("")
       setContactPerson("")
@@ -575,7 +663,7 @@ export default function PaymentForm({
         setContactPerson("")
         setContactEmail("")
         setPartyName("")
-        setPartyBalance(0)
+        setPartyBalance(null)
         setReferences([])
         return
       }
@@ -592,7 +680,7 @@ export default function PaymentForm({
         const partyCurrency = details.party_account_currency || ""
 
         setPartyName(details.party_name || "")
-        setPartyBalance(details.party_balance || 0)
+        setPartyBalance(details.party_balance ?? null)
 
         if (isReceive) {
           setPaidFrom(partyAccount)
@@ -634,16 +722,16 @@ export default function PaymentForm({
     if (!party) return
     setParty("")
     setPartyName("")
-    setPartyBalance(0)
+    setPartyBalance(null)
     setContactPerson("")
     setContactEmail("")
     setPaidFrom("")
     setPaidFromCurrency("")
-    setPaidFromBalance(0)
+    setPaidFromBalance(null)
     setPaidFromType("")
     setPaidTo("")
     setPaidToCurrency("")
-    setPaidToBalance(0)
+    setPaidToBalance(null)
     setPaidToType("")
     setReferences([])
   }
@@ -662,7 +750,7 @@ export default function PaymentForm({
       account: string,
       side: "paid_from" | "paid_to",
       setCurrency: (v: string) => void,
-      setBalance: (v: number) => void,
+      setBalance: (v: number | null) => void,
       setType: (v: string) => void,
       setRate: (v: number) => void
     ) => {
@@ -671,7 +759,7 @@ export default function PaymentForm({
         const details: AccountDetails = await paymentService.getAccountDetails(account, postingDate, costCenter)
         const currency = details.account_currency || ""
         setCurrency(currency)
-        setBalance(details.account_balance || 0)
+        setBalance(details.account_balance ?? null)
         setType(details.account_type || "")
 
         if (currency && company && postingDate) {
@@ -683,7 +771,7 @@ export default function PaymentForm({
         }
       } catch {
         setCurrency("")
-        setBalance(0)
+        setBalance(null)
         setType("")
       }
     },
@@ -735,9 +823,9 @@ export default function PaymentForm({
         cost_center: costCenter || undefined,
       })
       .then((res) => {
-        setPaidFromBalance(res.paid_from_account_balance ?? 0)
-        setPaidToBalance(res.paid_to_account_balance ?? 0)
-        setPartyBalance(res.party_balance ?? 0)
+        setPaidFromBalance(res.paid_from_account_balance ?? null)
+        setPaidToBalance(res.paid_to_account_balance ?? null)
+        setPartyBalance(res.party_balance ?? null)
       })
       .catch(() => {})
   }, [costCenter, postingDate, paidFrom, paidTo, company, partyType, party, isExisting])
@@ -869,20 +957,87 @@ export default function PaymentForm({
   }, [bankAccount, modeOfPayment, company, isPay, isReceive, isExisting])
 
   // --- Fetch outstanding references ---
+  const reallocateReferences = useCallback(
+    (entryAmount: number, refs: InvoiceAllocation[]): InvoiceAllocation[] => {
+      if (!allocatePaymentAmountRef.current) {
+        return refs.map((r) => ({ ...r, allocated_amount: 0 }))
+      }
+      return allocateReferences({ paymentType, partyType, references: refs, entryAmount, deductions })
+    },
+    [paymentType, partyType, deductions]
+  )
+
+  // ERPNext parity: allocations are computed on the server via
+  // `allocate_amount_to_references` (payment_entry.py). The fetched doc
+  // snapshot is POSTed through `run_doc_method`; on failure we fall back to
+  // the client-side parity allocator so the form stays usable offline.
+  const serverAllocateReferences = useCallback(
+    async (entryAmount: number, refs: InvoiceAllocation[], paidAmountChange: boolean): Promise<InvoiceAllocation[]> => {
+      if (!allocatePaymentAmountRef.current) {
+        return refs.map((r) => ({ ...r, allocated_amount: 0 }))
+      }
+      try {
+        const hasName = isExisting && !!initialValues?.name && !!initialValues?.modified
+        const updated = await allocateAmountToReferences(
+          {
+            doctype: "Payment Entry",
+            ...(hasName
+              ? { name: initialValues!.name, modified: initialValues!.modified }
+              : { __islocal: 1 }),
+            payment_type: paymentType,
+            party_type: partyType,
+            company,
+            party,
+            paid_amount: entryAmount,
+            received_amount: isPay ? receivedAmount : undefined,
+            references: refs.map((r) => ({
+              reference_doctype: r.reference_doctype,
+              reference_name: r.reference_name,
+              outstanding_amount: r.outstanding_amount,
+              allocated_amount: r.allocated_amount,
+              payment_term: r.payment_term,
+              payment_request: r.payment_request,
+            })),
+            deductions: (deductions ?? []).map((d) => ({ amount: d.amount })),
+          },
+          { paid_amount: entryAmount, paid_amount_change: paidAmountChange, allocate_payment_amount: true }
+        )
+        const serverRefs = updated?.references
+        if (serverRefs?.length) {
+          return refs.map((r) => {
+            const match = serverRefs.find(
+              (u) => u.reference_name === r.reference_name && u.reference_doctype === r.reference_doctype
+            )
+            return match ? { ...r, allocated_amount: match.allocated_amount ?? r.allocated_amount } : r
+          })
+        }
+      } catch {
+        // Server allocation unavailable (e.g. unsaved doc) — fall back to client-side parity allocation.
+      }
+      return reallocateReferences(entryAmount, refs)
+    },
+    [paymentType, partyType, company, party, isPay, receivedAmount, deductions, isExisting, initialValues, reallocateReferences]
+  )
+
   const handleFetchOutstanding = useCallback(
-    async (filters: { from_posting_date: string; to_posting_date: string; from_due_date: string; to_due_date: string; outstanding_amt_greater_than: number; outstanding_amt_less_than: number; allocate_payment_amount: boolean }) => {
+    async (filters: GetOutstandingFilters) => {
       if (!party || !partyType || !company) return
       setFetchingOutstanding(true)
+      setCostCenter(filters.dimensions.cost_center || "")
       try {
         const partyAccount = isReceive ? paidFrom : paidTo
-        const results: OutstandingReference[] = await paymentService.getOutstandingReferences({
+        const isInvoices = outstandingDialogTitle.includes("Invoice")
+        const isOrders = outstandingDialogTitle.includes("Orders")
+        const { items: results, messages } = await paymentService.getOutstandingReferencesWithMessages({
           posting_date: postingDate,
           company,
           party_type: partyType,
           payment_type: paymentType,
           party,
           party_account: partyAccount,
-          get_outstanding_invoices: outstandingDialogTitle.includes("Invoice"),
+          cost_center: filters.dimensions.cost_center || undefined,
+          get_outstanding_invoices: isInvoices || undefined,
+          get_orders_to_be_billed: isOrders || undefined,
           from_posting_date: filters.from_posting_date || undefined,
           to_posting_date: filters.to_posting_date || undefined,
           from_due_date: filters.from_due_date || undefined,
@@ -892,55 +1047,134 @@ export default function PaymentForm({
           allocate_payment_amount: filters.allocate_payment_amount,
         })
 
+        if (messages.length > 0) {
+          showMessage({
+            title: messages[0].title || "Message",
+            message: messages[0].message,
+            indicator: messages[0].indicator || "blue",
+          })
+        }
+
         const newRefs: InvoiceAllocation[] = results.map((r) => ({
           reference_doctype: r.voucher_type,
           reference_name: r.voucher_no,
           due_date: r.due_date,
+          bill_no: r.bill_no,
           total_amount: r.invoice_amount,
           outstanding_amount: r.outstanding_amount,
-          allocated_amount: r.allocated_amount || r.outstanding_amount,
+          allocated_amount: 0,
           exchange_rate: r.exchange_rate,
           exchange_gain_loss: r.exchange_gain_loss,
           account: r.account,
         }))
 
-        setReferences(newRefs)
-
         const totalPositive = results.filter((r) => r.outstanding_amount > 0).reduce((s, r) => s + r.outstanding_amount, 0)
         const totalNegative = results.filter((r) => r.outstanding_amount < 0).reduce((s, r) => s + Math.abs(r.outstanding_amount), 0)
         const netOutstanding = totalPositive - totalNegative
 
-        if (isReceive && netOutstanding > 0) {
-          setPaidAmount(netOutstanding)
-          setReceivedAmount(showReceivedAmount ? netOutstanding : netOutstanding)
-        } else if (isPay && netOutstanding > 0) {
-          setReceivedAmount(netOutstanding)
-          if (!showReceivedAmount) setPaidAmount(netOutstanding)
+        const allocatePaymentAmount = filters.allocate_payment_amount ?? true
+        allocatePaymentAmountRef.current = allocatePaymentAmount
+
+        let entryAmount = isReceive ? paidAmount : receivedAmount
+        if (netOutstanding > 0) {
+          if (isReceive && !paidAmount) {
+            setPaidAmount(netOutstanding)
+            setReceivedAmount(netOutstanding)
+            entryAmount = netOutstanding
+          } else if (isPay && !receivedAmount) {
+            setReceivedAmount(netOutstanding)
+            if (!showReceivedAmount) setPaidAmount(netOutstanding)
+            entryAmount = netOutstanding
+          }
         }
 
+        setReferences(await serverAllocateReferences(entryAmount, newRefs, false))
+
         setOutstandingDialogOpen(false)
-      } catch {
-        setError("Failed to fetch outstanding documents.")
+      } catch (err) {
+        const message = err instanceof ApiError ? err.message : "Failed to fetch outstanding documents."
+        setError(message)
+        showMessage(messageFromError(err, message))
       } finally {
         setFetchingOutstanding(false)
       }
     },
-    [party, partyType, company, postingDate, paymentType, paidFrom, paidTo, isReceive, isPay, showReceivedAmount, outstandingDialogTitle]
+    [party, partyType, company, postingDate, paymentType, paidFrom, paidTo, isReceive, isPay, showReceivedAmount, outstandingDialogTitle, paidAmount, receivedAmount, deductions]
   )
 
-  // --- Allocation helpers ---
-  const updateAllocation = (refName: string, amount: number) => {
-    setReferences((prev) =>
-      prev.map((r) =>
-        r.reference_name === refName
-          ? { ...r, allocated_amount: Math.min(Math.max(0, amount), r.outstanding_amount) }
-          : r
-      )
-    )
+  // --- Reference doctype options (ERPNext parity: reference_doctype set_query) ---
+  const referenceDoctypeOptions = useMemo(() => {
+    if (partyType === "Customer") return ["Sales Order", "Sales Invoice", "Journal Entry", "Dunning"]
+    if (partyType === "Supplier") return ["Purchase Order", "Purchase Invoice", "Journal Entry"]
+    return ["Journal Entry"]
+  }, [partyType])
+
+  const fetchReferenceDetails = useCallback(
+    async (reference_doctype: string, reference_name: string, index: number) => {
+      try {
+        const details = await paymentService.getReferenceDetails(
+          reference_doctype,
+          reference_name,
+          partyAccountCurrency,
+          partyType,
+          party
+        )
+        setReferences((prev) =>
+          prev.map((r, i) => {
+            if (i !== index) return r
+            const outstanding = details.outstanding_amount ?? r.outstanding_amount
+            const allocated = Math.min(Math.max(0, outstanding), Math.max(0, unallocated))
+            return {
+              ...r,
+              due_date: details.due_date ?? r.due_date,
+              total_amount: details.total_amount ?? r.total_amount,
+              outstanding_amount: outstanding,
+              exchange_rate: details.exchange_rate ?? r.exchange_rate,
+              account: details.account ?? r.account,
+              allocated_amount: allocated,
+            }
+          })
+        )
+      } catch (err) {
+        const message = err instanceof ApiError ? err.message : "Failed to fetch reference details."
+        setError(message)
+        showMessage(messageFromError(err, message))
+      }
+    },
+    [partyAccountCurrency, partyType, party, unallocated]
+  )
+
+  const handleReferencesGridChange = (rows: InvoiceAllocation[]) => {
+    const prev = references
+    let next = rows
+
+    for (let i = 0; i < next.length; i++) {
+      const row = next[i]
+      if (row.reference_doctype && !referenceDoctypeOptions.includes(row.reference_doctype)) {
+        setError(`Row ${i + 1}: Reference Document Type must be one of ${referenceDoctypeOptions.join(", ")}`)
+        next = next.map((r, idx) => (idx === i ? { ...r, reference_doctype: "" } : r))
+      }
+    }
+    setReferences(next)
+
+    for (let i = 0; i < next.length; i++) {
+      const row = next[i]
+      if (!row.reference_name || !row.reference_doctype) continue
+      const prevRow = prev[i]
+      const nameChanged =
+        !prevRow ||
+        prevRow.reference_name !== row.reference_name ||
+        prevRow.reference_doctype !== row.reference_doctype
+      if (nameChanged) fetchReferenceDetails(row.reference_doctype, row.reference_name, i)
+    }
   }
 
-  const removeAllocation = (refName: string) => {
-    setReferences((prev) => prev.filter((r) => r.reference_name !== refName))
+  const emptyReferenceRow: InvoiceAllocation = {
+    reference_doctype: "",
+    reference_name: "",
+    total_amount: 0,
+    outstanding_amount: 0,
+    allocated_amount: 0,
   }
 
   // --- Tax helpers (mirrors ERPNext taxes_and_charges grid) ---
@@ -948,59 +1182,110 @@ export default function PaymentForm({
     charge_type: "",
     add_deduct_tax: "Add",
     account_head: "",
+    description: "",
+    rate: 0,
+    row_id: "",
     included_in_paid_amount: 0,
   }
 
   const handleTaxGridChange = (rows: PaymentEntryTax[]) => {
     setShowTaxes(true)
+    const invalidFirstRow = rows.findIndex(
+      (r, i) =>
+        i === 0 &&
+        (r.charge_type === "On Previous Row Amount" || r.charge_type === "On Previous Row Total")
+    )
+    if (invalidFirstRow !== -1) {
+      setError("Cannot select charge type as 'On Previous Row Amount' or 'On Previous Row Total' for the first row")
+      return
+    }
     setTaxes((prev) => {
       if (rows.length !== prev.length) return rows
       return prev.map((t, i) => {
         const incoming = rows[i]
         const display = computedTaxes[i] ?? t
         const patch: Partial<PaymentEntryTax> = {}
-        ;(Object.keys(display) as (keyof PaymentEntryTax)[]).forEach((k) => {
+        const keys = Array.from(
+          new Set([...Object.keys(display), ...Object.keys(incoming)])
+        ) as (keyof PaymentEntryTax)[]
+        keys.forEach((k) => {
           if (incoming[k] !== display[k]) (patch as Record<string, unknown>)[k] = incoming[k]
         })
         if (Object.keys(patch).length === 0) return t
         const next = { ...t, ...patch }
         if (patch.charge_type) {
-          if (
-            (patch.charge_type === "On Previous Row Amount" || patch.charge_type === "On Previous Row Total") &&
-            i > 0
-          ) {
+          if (patch.charge_type === "On Previous Row Amount" || patch.charge_type === "On Previous Row Total") {
             next.row_id = String(i)
           } else {
             next.row_id = ""
           }
         }
+        if (patch.account_head && !next.description) {
+          next.description = patch.account_head.split(" - ").slice(0, -1).join(" - ")
+        }
         return next
+      })
+    })
+    // Mirrors erpnext accounts.js account_head handler: require Charge Type first,
+    // then auto-fill Tax Rate + Description from the selected Account via get_tax_rate.
+    rows.forEach((r, i) => {
+      const before = computedTaxes[i]
+      if (!r.account_head || r.account_head === before?.account_head) return
+      if (!r.charge_type) {
+        setError("Please select Charge Type first")
+        setTimeout(() => {
+          setTaxes((prev) =>
+            prev.map((p, j) =>
+              j === i ? { ...p, account_head: before?.account_head ?? "", description: before?.description } : p
+            )
+          )
+        }, 0)
+        return
+      }
+      paymentService.getTaxRate(r.account_head).then(({ tax_rate, account_name }) => {
+        setTaxes((prev) =>
+          prev.map((p, j) => {
+            if (j !== i || p.account_head !== r.account_head) return p
+            const next = { ...p }
+            if (p.charge_type !== "Actual") next.rate = tax_rate || 0
+            if (account_name) next.description = account_name
+            return next
+          })
+        )
       })
     })
   }
 
   // --- Fetch taxes from template (mirrors fetch_taxes_from_template) ---
+  // ERPNext fires the template handler on change for new AND existing docs, and
+  // does NOT re-fetch on load. Only fetch when the template value actually changes.
   useEffect(() => {
-    if (isExisting) return
-    if (partyType !== "Supplier" || !purchaseTaxesTemplate) return
+    if (partyType !== "Supplier") return
+    const prev = prevPurchaseTaxesTemplateRef.current
+    prevPurchaseTaxesTemplateRef.current = purchaseTaxesTemplate || ""
+    if (prev === purchaseTaxesTemplate) return
+    if (!purchaseTaxesTemplate) return
     paymentService.fetchTaxesAndCharges("Purchase Taxes and Charges Template", purchaseTaxesTemplate)
       .then((rows) => {
         setTaxes(rows)
         setShowTaxes(true)
       })
-      .catch(() => {})
-  }, [purchaseTaxesTemplate, partyType, isExisting])
+      .catch(() => setError("Failed to load taxes from template."))
+  }, [purchaseTaxesTemplate, partyType])
 
   useEffect(() => {
-    if (isExisting) return
-    if (partyType !== "Customer" || !salesTaxesTemplate) return
+    if (partyType !== "Customer") return
+    const prev = prevSalesTaxesTemplateRef.current
+    prevSalesTaxesTemplateRef.current = salesTaxesTemplate || ""
+    if (prev === salesTaxesTemplate) return
+    if (!salesTaxesTemplate) return
     paymentService.fetchTaxesAndCharges("Sales Taxes and Charges Template", salesTaxesTemplate)
       .then((rows) => {
         setTaxes(rows)
         setShowTaxes(true)
       })
-      .catch(() => {})
-  }, [salesTaxesTemplate, partyType, isExisting])
+      .catch(() => setError("Failed to load taxes from template."))
+  }, [salesTaxesTemplate, partyType])
 
   // --- Withholding (mirrors apply_tax_withholding_amount handler) ---
   useEffect(() => {
@@ -1017,16 +1302,8 @@ export default function PaymentForm({
   }, [applyTaxWithholding, partyType, party, isExisting])
 
   // --- Deduction helpers ---
-  const addDeduction = () => {
-    setDeductions((prev) => [...prev, { id: createDeductionId(), account: "", cost_center: "", amount: 0, description: "" }])
-  }
-
-  const updateDeduction = (id: string, field: keyof PaymentDeductionForm, value: string | number) => {
-    setDeductions((prev) => prev.map((d) => d.id === id ? { ...d, [field]: value } : d))
-  }
-
-  const removeDeduction = (id: string) => {
-    setDeductions((prev) => prev.filter((d) => d.id !== id))
+  const handleDeductionsChange = (rows: PaymentDeductionForm[]) => {
+    setDeductions(rows)
   }
 
   // --- Exchange gain/loss auto-deduction (mirrors set_exchange_gain_loss_deduction) ---
@@ -1056,7 +1333,7 @@ export default function PaymentForm({
               account: defaults.exchangeGainLossAccount,
               cost_center: defaults.costCenter,
               amount: exchangeGainLoss,
-              description: "Exchange Gain/Loss",
+              description: "",
               is_exchange_gain_loss: 1,
             },
           ]
@@ -1091,7 +1368,7 @@ export default function PaymentForm({
               account: defaults.writeOffAccount,
               cost_center: defaults.costCenter,
               amount: diff,
-              description: "Write Off",
+              description: "",
             },
           ]
         })
@@ -1101,25 +1378,62 @@ export default function PaymentForm({
   }
 
   // --- Submit ---
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
+  const performSave = async (): Promise<string | undefined> => {
     setError("")
-    if (isReadOnly) return
+    if (isCancelled) return undefined
 
-    if (!isInternal && !party) { setError("Please select a party."); return }
-    if (!paidFrom) { setError("Please select a Paid From account."); return }
-    if (!paidTo) { setError("Please select a Paid To account."); return }
-    if (paidAmount <= 0 && receivedAmount <= 0) { setError("Payment amount must be greater than zero."); return }
-    if (needRefNo && !referenceNo) { setError("Reference No is required for bank accounts."); return }
-    if (needRefDate && !referenceDate) { setError("Reference Date is required for bank accounts."); return }
-    if (referenceDate && !isValidDateString(referenceDate)) { setError("Reference Date must be a valid date (YYYY-MM-DD)."); return }
-    if (applyTaxWithholding && !taxWithholdingCategory) { setError("Tax Withholding Category is required when applying withholding."); return }
+    if (!isInternal && !party) { setError("Please select a party."); return undefined }
+    if (!paidFrom) { setError("Please select a Paid From account."); return undefined }
+    if (!paidTo) { setError("Please select a Paid To account."); return undefined }
+    if (paidAmount <= 0 && receivedAmount <= 0) { setError("Payment amount must be greater than zero."); return undefined }
+    if (needRefNo && !referenceNo) { setError("Reference No is required for bank accounts."); return undefined }
+    if (needRefDate && !referenceDate) { setError("Reference Date is required for bank accounts."); return undefined }
+    if (referenceDate && !isValidDateString(referenceDate)) { setError("Reference Date must be a valid date (YYYY-MM-DD)."); return undefined }
+    if (applyTaxWithholding && !taxWithholdingCategory) { setError("Tax Withholding Category is required when applying withholding."); return undefined }
+
+    const taxRows = computedTaxes.filter((t) => t.account_head)
+    for (let i = 0; i < taxRows.length; i += 1) {
+      const tax = taxRows[i]
+      if (tax.charge_type === "On Previous Row Amount" || tax.charge_type === "On Previous Row Total") {
+        if (i === 0) {
+          setError("Cannot select charge type as 'On Previous Row Amount' or 'On Previous Row Total' for the first row")
+          return undefined
+        }
+        const rowId = Number(tax.row_id || "0")
+        if (!rowId || rowId > i) {
+          setError(`Row ${i + 1}: Please select a valid Reference Row # for the '${tax.charge_type}' tax.`)
+          return undefined
+        }
+      }
+      if (tax.included_in_paid_amount) {
+        if (tax.charge_type === "Actual") {
+          setError(`Row ${i + 1}: Charge of type 'Actual' cannot be included in the paid amount.`)
+          return undefined
+        }
+        if (tax.charge_type === "On Previous Row Amount") {
+          const referenced = taxRows[Number(tax.row_id || "1") - 1]
+          if (!referenced?.included_in_paid_amount) {
+            setError(`Row ${i + 1}: To include tax in the paid amount, the referenced row must also be included.`)
+            return undefined
+          }
+        }
+        if (tax.charge_type === "On Previous Row Total") {
+          const rowId = Number(tax.row_id || "1")
+          const preceding = taxRows.slice(0, rowId)
+          if (preceding.length === 0 || !preceding.every((t) => t.included_in_paid_amount)) {
+            setError(`Row ${i + 1}: To include tax in the paid amount, rows 1 to ${rowId} must also be included.`)
+            return undefined
+          }
+        }
+      }
+    }
 
     const payload: RecordPaymentData = {
       naming_series: namingSeries,
       payment_type: paymentType,
       party_type: isInternal ? "" : partyType,
       party: isInternal ? "" : party,
+      party_name: partyName || undefined,
       posting_date: postingDate,
       company,
       mode_of_payment: modeOfPayment || undefined,
@@ -1145,7 +1459,7 @@ export default function PaymentForm({
       project: project || undefined,
       letter_head: letterHead || undefined,
       print_heading: printHeading || undefined,
-      is_opening: isOpening ? 1 : 0,
+      is_opening: isOpening ? "Yes" : "No",
       book_advance_payments_in_separate_party_account: bookAdvancePayments ? 1 : 0,
       reconcile_on_advance_payment_date: reconcileOnAdvancePaymentDate ? 1 : 0,
       reference_no: referenceNo || undefined,
@@ -1154,7 +1468,7 @@ export default function PaymentForm({
       custom_remarks: customRemarks ? 1 : 0,
       remarks: remarks || undefined,
       amended_from: isExisting ? undefined : isAmend ? initialValues?.amended_from || initialValues?.name : undefined,
-      references: referencesWithGainLoss.filter((r) => r.allocated_amount > 0),
+      references: referencesWithGainLoss.filter((r) => r.reference_name),
       deductions: deductions
         .filter((d) => d.account && d.amount > 0)
         .map((d) => ({ account: d.account, cost_center: d.cost_center, amount: d.amount, description: d.description || undefined, is_exchange_gain_loss: d.is_exchange_gain_loss })),
@@ -1177,16 +1491,30 @@ export default function PaymentForm({
 
     setSaving(true)
     try {
-      const saved = isExisting
-        ? await paymentService.updatePayment(initialValues.name, payload)
-        : await paymentService.saveDraft(payload)
+      const saved = await savePaymentRaw(payload, isExisting ? initialValues.name : undefined)
       onSaved(saved.name)
+      onAfterSave?.(saved)
+      if (isSubmitted) addToast("Submitted", "success")
+      else if (isExisting && docstatus === 0) addToast("Saved", "success")
+      return saved.name
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Failed to save payment. Please try again.")
+      const message = err instanceof ApiError ? err.message : "Failed to save payment. Please try again."
+      setError(message)
+      showMessage(messageFromError(err, message))
+      return undefined
     } finally {
       setSaving(false)
     }
   }
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    await performSave()
+  }
+
+  const performSaveRef = useRef(performSave)
+  performSaveRef.current = performSave
+  useImperativeHandle(ref, () => ({ save: () => performSaveRef.current() }), [])
 
   const openOutstandingDialog = (title: string) => {
     setOutstandingDialogTitle(title)
@@ -1212,16 +1540,9 @@ export default function PaymentForm({
         <p className="text-sm font-semibold text-heading pb-2.5 border-b border-border/60 mb-0.5">Type of Payment</p>
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
           <div className="space-y-3">
-            <div>
-              <label className={labelClass}>{isExisting ? "Series" : <>Series <span className="text-danger-500">*</span></>}</label>
-              {isExisting ? (
-                <input
-                  type="text"
-                  value={namingSeries}
-                  readOnly
-                  className={`${inputClass} bg-gray-50`}
-                />
-              ) : (
+            {!isExisting && (
+              <div>
+                <label className={labelClass}>Series <span className="text-danger-500">*</span></label>
                 <select
                   value={namingSeries}
                   onChange={(e) => setNamingSeries(e.target.value)}
@@ -1229,8 +1550,8 @@ export default function PaymentForm({
                 >
                   <option value="ACC-PAY-.YYYY.-">ACC-PAY-.YYYY.-</option>
                 </select>
-              )}
-            </div>
+              </div>
+            )}
             <div>
               <label className={labelClass}>Payment Type <span className="text-danger-500">*</span></label>
               <select
@@ -1251,23 +1572,25 @@ export default function PaymentForm({
               <label className={labelClass}>Posting Date <span className="text-danger-500">*</span></label>
               <input type="date" value={postingDate} onChange={(e) => setPostingDate(e.target.value)} disabled={isReadOnly} className={inputClass} />
             </div>
-            <div>
-              <label className={labelClass}>Mode of Payment</label>
-              <LinkField
-                {...readOnlyLinkProps}
-                doctype="Mode of Payment"
-                value={modeOfPayment}
-                onChange={setModeOfPayment}
-                placeholder="Select mode..."
-                searchMethod="search_link"
-                referenceDoctype="Payment Entry"
-                pageLength={10}
-                testId="mop"
-              />
-              {modeOfPaymentError && (
-                <p className="text-xs text-red-600 mt-1">{modeOfPaymentError}</p>
-              )}
-            </div>
+            {(!isReadOnly || modeOfPayment) && (
+              <div>
+                <label className={labelClass}>Mode of Payment</label>
+                <LinkField
+                  {...readOnlyLinkProps}
+                  doctype="Mode of Payment"
+                  value={modeOfPayment}
+                  onChange={setModeOfPayment}
+                  placeholder="Select mode..."
+                  searchMethod="search_link"
+                  referenceDoctype="Payment Entry"
+                  pageLength={10}
+                  testId="mop"
+                />
+                {modeOfPaymentError && (
+                  <p className="text-xs text-red-600 mt-1">{modeOfPaymentError}</p>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -1278,19 +1601,21 @@ export default function PaymentForm({
           <p className="text-sm font-semibold text-heading pb-2.5 border-b border-border/60 mb-0.5">Payment From/To</p>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
             <div className="space-y-3">
-              <div>
-                <label className={labelClass}>Party Type</label>
-                <select value={partyType} onChange={(e) => { handlePartyTypeChange(e.target.value) }} disabled={isReadOnly} data-testid="party_type" className={inputClass}>
-                  <option value="">Select Party Type</option>
-                  {partyTypes.length > 0
-                    ? partyTypes.map((pt) => (
-                        <option key={pt.name} value={pt.name}>{pt.name}</option>
-                      ))
-                    : ["Customer", "Supplier", "Employee"].map((t) => (
-                        <option key={t} value={t}>{t}</option>
-                      ))}
-                </select>
-              </div>
+              {!isReadOnly && (
+                <div>
+                  <label className={labelClass}>Party Type</label>
+                  <select value={partyType} onChange={(e) => { handlePartyTypeChange(e.target.value) }} disabled={isReadOnly} data-testid="party_type" className={inputClass}>
+                    <option value="">Select Party Type</option>
+                    {partyTypes.length > 0
+                      ? partyTypes.map((pt) => (
+                          <option key={pt.name} value={pt.name}>{pt.name}</option>
+                        ))
+                      : ["Customer", "Supplier", "Employee"].map((t) => (
+                          <option key={t} value={t}>{t}</option>
+                        ))}
+                  </select>
+                </div>
+              )}
               {partyType && (
               <div>
                 <label className={labelClass}>Party</label>
@@ -1305,18 +1630,31 @@ export default function PaymentForm({
                   pageLength={10}
                   testId="party"
                   queryMethod={partyType === "Employee" ? "erpnext.controllers.queries.employee_query" : undefined}
+                  linkTo={(v) => {
+                    if (partyType === "Customer") return `/customers/${encodeURIComponent(v)}`
+                    if (partyType === "Supplier") return `/suppliers/${encodeURIComponent(v)}`
+                    if (partyType === "Employee") return `/hrms/employees/${encodeURIComponent(v)}`
+                    return undefined
+                  }}
                 />
               </div>
               )}
               {partyType && (
               <div>
                 <label className={labelClass}>Party Name</label>
-                <input type="text" value={partyName} readOnly className={`${inputClass} bg-gray-50`} />
+                <input
+                  type="text"
+                  value={partyName}
+                  onChange={(e) => setPartyName(e.target.value)}
+                  disabled={isCancelled}
+                  className={cn(inputClass, isCancelled && "bg-gray-50")}
+                  data-testid="party_name"
+                />
               </div>
               )}
             </div>
             <div className="space-y-3">
-              {party && (
+              {party && (!isReadOnly || bankAccount) && (
                 <div>
                   <label className={labelClass}>Company Bank Account</label>
                   <LinkField
@@ -1349,7 +1687,7 @@ export default function PaymentForm({
                   )}
                 </div>
               )}
-              {party && (
+              {party && (!isReadOnly || partyBankAccount) && (
                 <div>
                   <label className={labelClass}>Party Bank Account</label>
                   <LinkField
@@ -1366,7 +1704,7 @@ export default function PaymentForm({
                   />
                 </div>
               )}
-              {party && partyType !== "Employee" && (
+              {party && partyType !== "Employee" && (!isReadOnly || contactPerson) && (
                 <div>
                   <label className={labelClass}>Contact Person</label>
                   <LinkField
@@ -1403,7 +1741,7 @@ export default function PaymentForm({
       >
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
           <div className="space-y-3">
-            {party && (
+            {party && (!isReadOnly || partyBalance != null) && (
               <div>
                 <label className={labelClass}>Party Balance</label>
                 <div className={`${inputClass} bg-gray-50 tabular-nums`}>
@@ -1432,10 +1770,18 @@ export default function PaymentForm({
                 />
                 {paidFrom && (
                   <>
-                    <label className={labelClass}>Account Currency (From)</label>
-                    <div className={`${inputClass} bg-gray-50`}>{paidFromCurrency || "—"}</div>
-                    <label className={labelClass}>Account Balance (From)</label>
-                    <div className={`${inputClass} bg-gray-50 tabular-nums`}>{formatCurrency(paidFromBalance, paidFromCurrency)}</div>
+                    {(!isReadOnly || paidFromCurrency) && (
+                      <>
+                        <label className={labelClass}>Account Currency (From)</label>
+                        <div className={`${inputClass} bg-gray-50`}>{paidFromCurrency || "—"}</div>
+                      </>
+                    )}
+                    {(!isReadOnly || paidFromBalance != null) && (
+                      <>
+                        <label className={labelClass}>Account Balance (From)</label>
+                        <div className={`${inputClass} bg-gray-50 tabular-nums`}>{formatCurrency(paidFromBalance, paidFromCurrency)}</div>
+                      </>
+                    )}
                   </>
                 )}
               </div>
@@ -1463,10 +1809,18 @@ export default function PaymentForm({
                 />
                 {paidTo && (
                   <>
-                    <label className={labelClass}>Account Currency (To)</label>
-                    <div className={`${inputClass} bg-gray-50`}>{paidToCurrency || "—"}</div>
-                    <label className={labelClass}>Account Balance (To)</label>
-                    <div className={`${inputClass} bg-gray-50 tabular-nums`}>{formatCurrency(paidToBalance, paidToCurrency)}</div>
+                    {(!isReadOnly || paidToCurrency) && (
+                      <>
+                        <label className={labelClass}>Account Currency (To)</label>
+                        <div className={`${inputClass} bg-gray-50`}>{paidToCurrency || "—"}</div>
+                      </>
+                    )}
+                    {(!isReadOnly || paidToBalance != null) && (
+                      <>
+                        <label className={labelClass}>Account Balance (To)</label>
+                        <div className={`${inputClass} bg-gray-50 tabular-nums`}>{formatCurrency(paidToBalance, paidToCurrency)}</div>
+                      </>
+                    )}
                   </>
                 )}
               </div>
@@ -1485,12 +1839,18 @@ export default function PaymentForm({
                 <label className={labelClass}>Paid Amount ({paidFromCurrency || companyCurrency}) <span className="text-danger-500">*</span></label>
                 <input
                   type="number" min={0} step={0.01}
-                  value={paidAmount}
+                  value={paidAmount || ""}
                   data-testid="paid_amount"
                   onChange={(e) => {
                     const v = parseFloat(e.target.value) || 0
                     setPaidAmount(v)
                     if (!showReceivedAmount) setReceivedAmount(v)
+                  }}
+                  onBlur={() => {
+                    if (!isReadOnly) {
+                      const entryAmount = isReceive || !showReceivedAmount ? paidAmount : receivedAmount
+                      serverAllocateReferences(entryAmount, references, true).then(setReferences).catch(() => {})
+                    }
                   }}
                   disabled={isReadOnly}
                   className={inputClass}
@@ -1522,9 +1882,17 @@ export default function PaymentForm({
                   <label className={labelClass}>Received Amount ({paidToCurrency || companyCurrency}) <span className="text-danger-500">*</span></label>
                   <input
                     type="number" min={0} step={0.01}
-                    value={receivedAmount}
+                    value={receivedAmount || ""}
                     data-testid="received_amount"
-                    onChange={(e) => setReceivedAmount(parseFloat(e.target.value) || 0)}
+                    onChange={(e) => {
+                      const v = parseFloat(e.target.value) || 0
+                      setReceivedAmount(v)
+                    }}
+                    onBlur={() => {
+                      if (!isReadOnly && isPay) {
+                        serverAllocateReferences(receivedAmount, references, true).then(setReferences).catch(() => {})
+                      }
+                    }}
                     disabled={isReadOnly}
                     className={inputClass}
                   />
@@ -1551,91 +1919,127 @@ export default function PaymentForm({
               </div>
             )}
           </div>
-          {computedTaxes.length > 0 && (
-            <div>
-              <label className={labelClass}>Paid Amount After Tax ({companyCurrency})</label>
-              <input type="text" value={formatCurrency(paidAmountAfterTax, companyCurrency)} readOnly className={`${inputClass} bg-gray-50`} />
-            </div>
-          )}
         </div>
       )}
 
       {/* Section 5: References */}
-      {!!(party && paidFrom && paidTo && paidAmount && receivedAmount) && (
+      {!!(party && paidFrom && paidTo && paidAmount && receivedAmount) && (!isReadOnly || referencesWithGainLoss.length > 0) && (
         <div className="bg-gray-50/50 rounded-[14px] p-4 space-y-3 border border-border/50">
           <div className="flex items-center justify-between">
             <p className="text-sm font-semibold text-heading pb-2.5 border-b border-border/60 mb-0.5">References</p>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => openOutstandingDialog("Get Outstanding Invoices")}
-                disabled={isReadOnly}
-                className="flex items-center gap-1 text-xs font-semibold text-primary-600 hover:text-primary-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                <FileText size={12} /> Get Outstanding Invoices
-              </button>
-              <button
-                type="button"
-                onClick={() => openOutstandingDialog("Get Outstanding Orders")}
-                disabled={isReadOnly}
-                className="flex items-center gap-1 text-xs font-semibold text-primary-600 hover:text-primary-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                <RefreshCw size={12} /> Get Outstanding Orders
-              </button>
-            </div>
+            {!isSubmitted && (
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => openOutstandingDialog("Get Outstanding Invoices")}
+                  disabled={isReadOnly}
+                  className="flex items-center gap-1 text-xs font-semibold text-primary-600 hover:text-primary-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  <FileText size={12} /> Get Outstanding Invoices
+                </button>
+                <button
+                  type="button"
+                  onClick={() => openOutstandingDialog("Get Outstanding Orders")}
+                  disabled={isReadOnly}
+                  className="flex items-center gap-1 text-xs font-semibold text-primary-600 hover:text-primary-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  <RefreshCw size={12} /> Get Outstanding Orders
+                </button>
+              </div>
+            )}
           </div>
 
-          {references.length > 0 ? (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-border/50">
-                    <th className="text-left py-1.5 text-xs font-semibold text-muted">Type</th>
-                    <th className="text-left py-1.5 text-xs font-semibold text-muted">Name</th>
-                    <th className="text-left py-1.5 text-xs font-semibold text-muted hidden md:table-cell">Due Date</th>
-                    <th className="text-right py-1.5 text-xs font-semibold text-muted">Total</th>
-                    <th className="text-right py-1.5 text-xs font-semibold text-muted">Outstanding</th>
-                    {multiCurrency && (
-                      <th className="text-right py-1.5 text-xs font-semibold text-muted">Exchange Gain/Loss</th>
-                    )}
-                    <th className="text-right py-1.5 text-xs font-semibold text-muted w-[110px]">Allocate</th>
-                    <th className="w-8" />
-                  </tr>
-                </thead>
-                <tbody>
-                  {referencesWithGainLoss.map((r) => (
-                    <tr key={r.reference_name} className="border-b border-border/30">
-                      <td className="py-1.5 text-xs text-muted">{r.reference_doctype}</td>
-                      <td className="py-1.5 font-medium text-heading">{r.reference_name}</td>
-                      <td className="py-1.5 text-xs text-muted hidden md:table-cell">{r.due_date || "—"}</td>
-                      <td className="py-1.5 text-right text-muted tabular-nums">{formatCurrency(r.total_amount, partyAccountCurrency)}</td>
-                      <td className="py-1.5 text-right text-muted tabular-nums">{formatCurrency(r.outstanding_amount, partyAccountCurrency)}</td>
-                      {multiCurrency && (
-                        <td className="py-1.5 text-right text-muted tabular-nums">
-                          {r.exchange_gain_loss != null ? formatCurrency(r.exchange_gain_loss, partyAccountCurrency) : "—"}
-                        </td>
-                      )}
-                      <td className="py-1.5 text-right">
-                        <input
-                          type="number" min={0} max={r.outstanding_amount} step={0.01}
-                          value={r.allocated_amount}
-                          onChange={(e) => updateAllocation(r.reference_name, parseFloat(e.target.value) || 0)}
-                          disabled={isReadOnly}
-                          className="w-24 px-2 py-1 text-sm text-right border border-border rounded-[8px] focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 disabled:bg-gray-50 disabled:cursor-not-allowed"
-                        />
-                      </td>
-                      <td className="py-1.5 text-right">
-                        <button type="button" onClick={() => removeAllocation(r.reference_name)} className="p-1 text-muted hover:text-danger-600 transition-colors">
-                          <Trash2 size={12} />
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <p className="text-xs text-muted text-center py-3">Click "Get Outstanding Invoices" or "Get Outstanding Orders" to fetch references.</p>
+          {(!isReadOnly || referencesWithGainLoss.length > 0) && (
+          <ChildTableGrid<InvoiceAllocation>
+            title="Payment References"
+            rows={referencesWithGainLoss}
+            onChange={handleReferencesGridChange}
+            emptyRow={emptyReferenceRow}
+            readOnly={isReadOnly}
+            minWidth="720px"
+            footer={
+              referencesWithGainLoss.length > 0 ? (
+                <div className="flex items-center justify-end gap-6 border-t border-[#ededed] bg-[#fafafa] px-3 py-2 text-xs">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-muted">Total Allocated ({partyAccountCurrency || companyCurrency})</span>
+                    <span className="font-bold text-heading tabular-nums">{formatCurrency(totalAllocated, partyAccountCurrency)}</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-muted">Unallocated ({partyAccountCurrency || companyCurrency})</span>
+                    <span className="font-bold tabular-nums">{formatCurrency(unallocated, partyAccountCurrency)}</span>
+                  </div>
+                </div>
+              ) : undefined
+            }
+            columns={[
+              {
+                key: "reference_doctype",
+                label: "Type",
+                type: "link",
+                weight: 2,
+                searchFn: (q) =>
+                  searchLink("DocType", q, "Payment Entry", [["name", "in", referenceDoctypeOptions]]).then((items) => ({ items })),
+              },
+              {
+                key: "reference_name",
+                label: "Name",
+                type: "link",
+                weight: 2,
+                docType: (row) => row.reference_doctype || "",
+                searchFn: (q, row) => {
+                  const dt = row?.reference_doctype
+                  if (!dt) return Promise.resolve({ items: [] })
+                  const filters: unknown[][] = [["docstatus", "=", 1], ["company", "=", company]]
+                  if (["Sales Invoice", "Sales Order", "Purchase Invoice", "Purchase Order", "Dunning"].includes(dt)) {
+                    const partyField =
+                      partyType === "Customer" ? "customer" : partyType === "Supplier" ? "supplier" : ""
+                    if (partyField && party) filters.push([partyField, "=", party])
+                  }
+                  return searchLink(dt, q, "Payment Entry", filters).then((items) => ({ items }))
+                },
+              },
+              {
+                key: "total_amount",
+                label: `Grand Total (${partyAccountCurrency || companyCurrency})`,
+                type: "readonly",
+                weight: 2,
+                align: "right",
+                render: (r) => <span className="text-xs tabular-nums">{formatCurrency(r.total_amount, partyAccountCurrency)}</span>,
+              },
+              {
+                key: "outstanding_amount",
+                label: `Outstanding (${partyAccountCurrency || companyCurrency})`,
+                type: "readonly",
+                weight: 2,
+                align: "right",
+                render: (r) => <span className="text-xs tabular-nums">{formatCurrency(r.outstanding_amount, partyAccountCurrency)}</span>,
+              },
+              ...(multiCurrency
+                ? [{
+                    key: "exchange_gain_loss" as keyof InvoiceAllocation,
+                    label: "Exchange Gain/Loss",
+                    type: "readonly" as const,
+                    weight: 2 as const,
+                    align: "right" as const,
+                    render: (r: InvoiceAllocation) =>
+                      r.exchange_gain_loss != null ? (
+                        <span className="text-xs tabular-nums">{formatCurrency(r.exchange_gain_loss, partyAccountCurrency)}</span>
+                      ) : (
+                        <span className="text-xs text-muted">—</span>
+                      ),
+                  }]
+                : []),
+              {
+                                key: "allocated_amount",
+                label: `Allocated (${partyAccountCurrency || companyCurrency})`,
+                type: "number",
+                weight: 2,
+                align: "right",
+                formatter: (r) => formatCurrency(r.allocated_amount, partyAccountCurrency),
+                disabled: (row) => !row.reference_name,
+              },
+            ]}
+          />
           )}
         </div>
       )}
@@ -1643,29 +2047,29 @@ export default function PaymentForm({
       {/* Section 6: Writeoff */}
       {!!(paidAmount && receivedAmount) && (
         <div className="bg-gray-50/50 rounded-[14px] p-4 space-y-3 border border-border/50">
-          <p className="text-sm font-semibold text-heading pb-2.5 border-b border-border/60 mb-0.5">Write Off</p>
+          <p className="text-sm font-semibold text-heading pb-2.5 border-b border-border/60 mb-0.5">Writeoff</p>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 text-sm">
             <div className="space-y-3">
-              {!!(paidAmount && receivedAmount && references.length > 0) && (
-                <div>
-                  <span className="text-muted">Total Allocated ({partyAccountCurrency || companyCurrency})</span>
-                  <p className="font-bold text-heading tabular-nums">{formatCurrency(totalAllocated, partyAccountCurrency)}</p>
+              <div>
+                <span className="text-xs text-muted">Total Allocated Amount ({partyAccountCurrency || companyCurrency})</span>
+                <div className="mt-1 rounded-[10px] border border-border bg-white px-3 py-2 text-sm font-bold text-heading tabular-nums">
+                  {formatCurrency(totalAllocated, partyAccountCurrency)}
                 </div>
-              )}
+              </div>
             </div>
             <div className="space-y-3">
-              {!!(paidAmount && receivedAmount && references.length > 0) && (
-                <div>
-                  <span className="text-muted">Unallocated ({partyAccountCurrency || companyCurrency})</span>
-                  <p className="font-bold text-heading tabular-nums">{formatCurrency(unallocated, partyAccountCurrency)}</p>
+              <div>
+                <span className="text-xs text-muted">Unallocated Amount ({partyAccountCurrency || companyCurrency})</span>
+                <div className="mt-1 rounded-[10px] border border-border bg-white px-3 py-2 text-sm text-heading tabular-nums">
+                  {formatCurrency(unallocated, partyAccountCurrency)}
                 </div>
-              )}
-              {!!(paidAmount && receivedAmount) && (
-                <div>
-                  <span className="text-muted">Difference ({companyCurrency})</span>
-                  <p className={cn("font-bold tabular-nums", differenceAmount !== 0 ? "text-danger-600" : "text-heading")}>{formatCurrency(differenceAmount, companyCurrency)}</p>
+              </div>
+              <div>
+                <span className="text-xs text-muted">Difference Amount (Company Currency) ({companyCurrency})</span>
+                <div className={cn("mt-1 rounded-[10px] border border-border bg-white px-3 py-2 text-sm font-bold tabular-nums", differenceAmount !== 0 ? "text-danger-600" : "text-heading")}>
+                  {formatCurrency(differenceAmount, companyCurrency)}
                 </div>
-              )}
+              </div>
               {showWriteOffButton && (
                 <button
                   type="button"
@@ -1681,277 +2085,59 @@ export default function PaymentForm({
         </div>
       )}
 
-      {/* Section 7: Deductions or Loss */}
-      {!!(paidAmount && receivedAmount) && (
-      <CollapsibleSection
-        title="Deductions or Loss"
-        open={showDeductions || deductions.length > 0}
-        onToggle={() => setShowDeductions(!(showDeductions || deductions.length > 0))}
-        badge={deductions.length > 0 ? `(${deductions.length})` : ""}
-      >
-        <div className="space-y-2">
-          {deductions.map((d) => (
-            <div key={d.id} className="grid grid-cols-[1fr_1fr_100px_1fr_auto] gap-2 items-start">
-              <LinkField
-                {...readOnlyLinkProps}
-                doctype="Account"
-                value={d.account}
-                onChange={(v) => updateDeduction(d.id, "account", v)}
-                placeholder="Account"
-                filters={[["is_group", "=", 0], ["company", "=", company]]}
-              />
-              <LinkField
-                {...readOnlyLinkProps}
-                doctype="Cost Center"
-                value={d.cost_center}
-                onChange={(v) => updateDeduction(d.id, "cost_center", v)}
-                placeholder="Cost Center"
-                filters={[["company", "=", company], ["is_group", "=", 0]]}
-              />
-              <input
-                type="number" min={0} step={0.01}
-                value={d.amount || ""}
-                onChange={(e) => updateDeduction(d.id, "amount", parseFloat(e.target.value) || 0)}
-                placeholder="Amount"
-                disabled={isReadOnly}
-                className={inputClass}
-              />
-              <input
-                type="text"
-                value={d.description}
-                onChange={(e) => updateDeduction(d.id, "description", e.target.value)}
-                placeholder="Description"
-                disabled={isReadOnly}
-                className={inputClass}
-              />
-              <button type="button" onClick={() => removeDeduction(d.id)} className="p-2 text-muted hover:text-danger-600 transition-colors">
-                <Trash2 size={14} />
-              </button>
-            </div>
-          ))}
+      {/* Section 7: Taxes and Charges */}
+      {!isInternal && (partyType === "Customer" || partyType === "Supplier") && (!isReadOnly || computedTaxes.length > 0 || salesTaxesTemplate || purchaseTaxesTemplate || applyTaxWithholding) && (
+        <div className="bg-gray-50/50 rounded-[14px] p-4 border border-border/50">
           <button
             type="button"
-            onClick={addDeduction}
-            disabled={isReadOnly}
-            className="flex items-center gap-1 text-sm font-semibold text-primary-600 hover:text-primary-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            onClick={() => setShowTaxes(!showTaxes)}
+            aria-expanded={showTaxes}
+            className="w-full flex items-center justify-between gap-2 text-left pb-2.5 border-b border-border/60"
           >
-            <Plus size={14} /> Add Deduction
+            <span className="flex items-center gap-1.5 text-sm font-semibold text-heading">
+              <ChevronDown size={12} className={cn("transition-transform", showTaxes && "rotate-180")} />
+              Taxes and Charges
+              {taxes.length > 0 && <span className="text-primary-600 normal-case">({taxes.length})</span>}
+            </span>
           </button>
-        </div>
-      </CollapsibleSection>
-      )}
 
-      {/* Section 8: Taxes and Charges */}
-      {!isInternal && (partyType === "Customer" || partyType === "Supplier") && (
-        <CollapsibleSection
-          title="Taxes and Charges"
-          open={showTaxes}
-          onToggle={() => setShowTaxes(!showTaxes)}
-          badge={taxes.length > 0 ? `(${taxes.length})` : ""}
-        >
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {partyType === "Supplier" && (
-              <div>
-                <label className={labelClass}>Purchase Taxes and Charges Template</label>
-                <LinkField
-                  {...readOnlyLinkProps}
-                  doctype="Purchase Taxes and Charges Template"
-                  value={purchaseTaxesTemplate}
-                  onChange={setPurchaseTaxesTemplate}
-                  placeholder="Select template..."
-                  searchMethod="search_link"
-                  referenceDoctype="Payment Entry"
-                  pageLength={10}
-                  searchLinkFilters={{ company, disabled: false }}
-                />
+          {showTaxes && (
+            <div className="mt-3">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {partyType === "Supplier" && (
+                  <div>
+                    <label className={labelClass}>Purchase Taxes and Charges Template</label>
+                    <LinkField
+                      {...readOnlyLinkProps}
+                      doctype="Purchase Taxes and Charges Template"
+                      value={purchaseTaxesTemplate}
+                      onChange={setPurchaseTaxesTemplate}
+                      placeholder="Select template..."
+                      searchMethod="search_link"
+                      referenceDoctype="Payment Entry"
+                      pageLength={10}
+                      searchLinkFilters={{ company, disabled: false }}
+                    />
+                  </div>
+                )}
+                {partyType === "Customer" && (
+                  <div>
+                    <label className={labelClass}>Sales Taxes and Charges Template</label>
+                    <LinkField
+                      {...readOnlyLinkProps}
+                      doctype="Sales Taxes and Charges Template"
+                      value={salesTaxesTemplate}
+                      onChange={setSalesTaxesTemplate}
+                      placeholder="Select template..."
+                      searchMethod="search_link"
+                      referenceDoctype="Payment Entry"
+                      pageLength={10}
+                      searchLinkFilters={{ company, disabled: false }}
+                    />
+                  </div>
+                )}
               </div>
-            )}
-            {partyType === "Customer" && (
-              <div>
-                <label className={labelClass}>Sales Taxes and Charges Template</label>
-                <LinkField
-                  {...readOnlyLinkProps}
-                  doctype="Sales Taxes and Charges Template"
-                  value={salesTaxesTemplate}
-                  onChange={setSalesTaxesTemplate}
-                  placeholder="Select template..."
-                  searchMethod="search_link"
-                  referenceDoctype="Payment Entry"
-                  pageLength={10}
-                  searchLinkFilters={{ company, disabled: false }}
-                />
-              </div>
-            )}
-          </div>
-        </CollapsibleSection>
-      )}
 
-      {/* Section 8b: Advance Taxes and Charges (standalone grid like ERPNext child table) */}
-      {!isInternal && (partyType === "Customer" || partyType === "Supplier") && (
-        <div className="bg-gray-50/50 rounded-[14px] p-4 space-y-3 border border-border/50">
-          <ChildTableGrid<PaymentEntryTax>
-            title="Advance Taxes and Charges"
-            rows={computedTaxes}
-            onChange={handleTaxGridChange}
-            emptyRow={emptyTaxRow}
-            readOnly={isReadOnly}
-            columns={[
-              { key: "charge_type", label: "Type", type: "link", options: CHARGE_TYPES },
-              {
-                key: "account_head",
-                label: "Account Head",
-                type: "link",
-                docType: "Account",
-                searchFn: (q) => searchLink("Account", q, undefined, [["is_group", "=", 0], ["company", "=", company]]).then((items) => ({ items })),
-                validate: (v) => validateLink("Account", v),
-              },
-              { key: "rate", label: "Tax Rate", type: "number", placeholder: "Tax Rate", disabled: (row) => row.charge_type === "Actual" },
-              { key: "tax_amount", label: "Amount", type: "number", disabled: (row) => row.charge_type !== "Actual" },
-              { key: "total", label: "Total", type: "readonly" },
-            ] as GridColumn<PaymentEntryTax>[]}
-          />
-
-          {computedTaxes.length > 0 && totalTaxesAndCharges !== 0 && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
-              <div>
-                <span className="text-muted">Total Taxes and Charges ({partyAccountCurrency || companyCurrency})</span>
-                <p className="font-bold text-heading tabular-nums">{formatCurrency(totalTaxesAndCharges, partyAccountCurrency)}</p>
-              </div>
-              {partyAccountCurrency && partyAccountCurrency !== companyCurrency && (
-                <div>
-                  <span className="text-muted">Total Taxes and Charges ({companyCurrency})</span>
-                  <p className="font-bold text-heading tabular-nums">{formatCurrency(baseTotalTaxesAndCharges, companyCurrency)}</p>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Section 9: Transaction ID */}
-      {!!(paidFrom && paidTo) && (
-      <div className="bg-gray-50/50 rounded-[14px] p-4 space-y-3 border border-border/50">
-        <p className="text-sm font-semibold text-heading pb-2.5 border-b border-border/60 mb-0.5">Transaction ID</p>
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-          <div className="space-y-3">
-            <div>
-              <label className={labelClass}>Reference No {needRefNo && <span className="text-danger-500">*</span>}</label>
-              <input
-                type="text"
-                value={referenceNo}
-                onChange={(e) => setReferenceNo(e.target.value)}
-                disabled={isReadOnly}
-                className={inputClass}
-                placeholder="Cheque/Reference No"
-                data-testid="reference_no"
-              />
-            </div>
-          </div>
-          <div className="space-y-3">
-            <div>
-              <label className={labelClass}>Reference Date {needRefDate && <span className="text-danger-500">*</span>}</label>
-              <input type="date" value={referenceDate} onChange={(e) => setReferenceDate(e.target.value)} disabled={isReadOnly} pattern="\d{4}-\d{2}-\d{2}" data-testid="reference_date" className={inputClass} />
-            </div>
-            <div>
-              <label className={labelClass}>Clearance Date</label>
-              <input
-                type="date"
-                value={clearanceDate}
-                onChange={(e) => setClearanceDate(e.target.value)}
-                disabled={isReadOnly}
-                data-testid="clearance_date"
-                className={inputClass}
-              />
-            </div>
-          </div>
-        </div>
-      </div>
-      )}
-
-      {/* Section 10: More Information (gated like ERPNext) */}
-      {!!(paidFrom && paidTo && paidAmount && receivedAmount) && (
-        <CollapsibleSection
-          title="More Information"
-          open={showMoreInfo}
-          onToggle={() => setShowMoreInfo(!showMoreInfo)}
-        >
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-            <div className="space-y-3">
-              <div>
-                <label className={labelClass}>Remarks</label>
-                <textarea
-                  value={remarks}
-                  onChange={(e) => setRemarks(e.target.value)}
-                  rows={2}
-                  disabled={isReadOnly}
-                  className={inputClass}
-                  placeholder="Payment remarks..."
-                />
-              </div>
-            </div>
-            <div className="space-y-3">
-              <div>
-                <label className={labelClass}>Letter Head</label>
-                <LinkField
-                  {...readOnlyLinkProps}
-                  doctype="Letter Head"
-                  value={letterHead}
-                  onChange={setLetterHead}
-                  placeholder="Select letter head..."
-                />
-              </div>
-              <div>
-                <label className={labelClass}>Print Heading</label>
-                <LinkField
-                  {...readOnlyLinkProps}
-                  doctype="Print Heading"
-                  value={printHeading}
-                  onChange={setPrintHeading}
-                  placeholder="Select print heading..."
-                />
-              </div>
-              <div className="flex flex-col gap-2">
-                <label className="flex items-center gap-2 text-[13px] font-medium text-body/70">
-                  <input
-                    type="checkbox"
-                    checked={isOpening}
-                    onChange={(e) => setIsOpening(e.target.checked)}
-                    disabled={isReadOnly}
-                    className="h-4 w-4 rounded border-border text-primary-600 focus:ring-primary-500/20 disabled:opacity-40"
-                  />
-                  Opening Entry
-                </label>
-                <label className="flex items-center gap-2 text-[13px] font-medium text-body/70">
-                  <input
-                    type="checkbox"
-                    checked={bookAdvancePayments}
-                    onChange={(e) => setBookAdvancePayments(e.target.checked)}
-                    disabled={isReadOnly}
-                    className="h-4 w-4 rounded border-border text-primary-600 focus:ring-primary-500/20 disabled:opacity-40"
-                  />
-                  Book Advance Payments in Separate Party Account
-                </label>
-                <label className="flex items-center gap-2 text-[13px] font-medium text-body/70">
-                  <input
-                    type="checkbox"
-                    checked={reconcileOnAdvancePaymentDate}
-                    onChange={(e) => setReconcileOnAdvancePaymentDate(e.target.checked)}
-                    disabled={isReadOnly}
-                    className="h-4 w-4 rounded border-border text-primary-600 focus:ring-primary-500/20 disabled:opacity-40"
-                  />
-                  Reconcile on Advance Payment Date
-                </label>
-                <label className="flex items-center gap-2 text-[13px] font-medium text-body/70">
-                  <input
-                    type="checkbox"
-                    checked={customRemarks}
-                    onChange={(e) => setCustomRemarks(e.target.checked)}
-                    disabled={isReadOnly}
-                    className="h-4 w-4 rounded border-border text-primary-600 focus:ring-primary-500/20 disabled:opacity-40"
-                  />
-                  Custom Remarks
-                </label>
-              </div>
               {partyType === "Supplier" && (
                 <div className="space-y-3">
                   <label className="flex items-center gap-2 text-[13px] font-medium text-body/70">
@@ -1960,6 +2146,7 @@ export default function PaymentForm({
                       checked={applyTaxWithholding}
                       onChange={(e) => setApplyTaxWithholding(e.target.checked)}
                       disabled={isReadOnly}
+                      data-testid="apply_tax_withholding"
                       className="h-4 w-4 rounded border-border text-primary-600 focus:ring-primary-500/20 disabled:opacity-40"
                     />
                     Apply Tax Withholding Amount
@@ -1976,11 +2163,150 @@ export default function PaymentForm({
                 </div>
               )}
             </div>
+          )}
+
+          <div className={cn("mt-3", !showTaxes && "mt-0 pt-0")}>
+            {(!isReadOnly || computedTaxes.length > 0) && (
+            <ChildTableGrid<PaymentEntryTax>
+              title="Advance Taxes and Charges"
+              rows={computedTaxes}
+              onChange={handleTaxGridChange}
+              emptyRow={emptyTaxRow}
+              readOnly={isReadOnly}
+              testId="taxes_grid"
+              columns={[
+                { key: "charge_type", label: "Type", type: "link", options: CHARGE_TYPES },
+                {
+                  key: "account_head",
+                  label: "Account Head",
+                  type: "link",
+                  docType: "Account",
+                  searchFn: (q) =>
+                    searchLink(
+                      "Account",
+                      q,
+                      "Advance Taxes and Charges",
+                      {
+                        account_type: ["Tax", "Chargeable", "Income Account", "Expenses Included In Valuation"],
+                        company,
+                      },
+                      "erpnext.controllers.queries.tax_account_query"
+                    ).then((items) => ({ items })),
+                  validate: (v) => validateLink("Account", v),
+                },
+                { key: "rate", label: "Tax Rate", type: "number", placeholder: "Tax Rate", disabled: (row) => row.charge_type === "Actual" },
+                { key: "tax_amount", label: "Amount", type: "number", disabled: (row) => row.charge_type !== "Actual" },
+                { key: "total", label: "Total", type: "readonly" },
+              ] as GridColumn<PaymentEntryTax>[]}
+            />
+            )}
           </div>
-        </CollapsibleSection>
+
+          <div className="flex flex-col gap-1 text-sm md:items-end">
+            <div className="flex items-center justify-between gap-4 md:justify-end">
+              <span className="text-muted">Total Taxes and Charges ({partyAccountCurrency || companyCurrency})</span>
+              <p className="font-bold text-heading tabular-nums">{formatCurrency(totalTaxesAndCharges, partyAccountCurrency)}</p>
+            </div>
+            {partyAccountCurrency && partyAccountCurrency !== companyCurrency && (
+              <div className="flex items-center justify-between gap-4 md:justify-end">
+                <span className="text-muted">Total Taxes and Charges ({companyCurrency})</span>
+                <p className="font-bold text-heading tabular-nums">{formatCurrency(baseTotalTaxesAndCharges, companyCurrency)}</p>
+              </div>
+            )}
+          </div>
+        </div>
       )}
 
-      {/* Section 11: Accounting Dimensions */}
+      {/* Section 8: Deductions or Loss */}
+      {!!(paidAmount && receivedAmount) && (!isReadOnly || deductions.length > 0) && (
+      <CollapsibleSection
+        title="Deductions or Loss"
+        open={showDeductions || deductions.length > 0}
+        onToggle={() => setShowDeductions(!(showDeductions || deductions.length > 0))}
+        badge={deductions.length > 0 ? `(${deductions.length})` : ""}
+      >
+        {(!isReadOnly || deductions.length > 0) && (
+        <ChildTableGrid<PaymentDeductionForm>
+          title="Payment Deductions or Loss"
+          rows={deductions}
+          onChange={handleDeductionsChange}
+          emptyRow={{ id: createDeductionId(), account: "", cost_center: "", amount: 0, description: "" }}
+          readOnly={isReadOnly}
+          testId="deductions_grid"
+          canDelete={(d) => !d.is_exchange_gain_loss || !d.amount}
+          onDeleteBlocked={() => setError("Cannot delete Exchange Gain/Loss row")}
+          columns={[
+            {
+              key: "account",
+              label: "Account",
+              type: "link",
+              docType: "Account",
+              searchFn: (q) =>
+                searchLink("Account", q, "Payment Entry", { company, is_group: 0 }).then((items) => ({ items })),
+              validate: (v) => validateLink("Account", v),
+            },
+            {
+              key: "cost_center",
+              label: "Cost Center",
+              type: "link",
+              docType: "Cost Center",
+              searchFn: (q) =>
+                searchLink("Cost Center", q, "Payment Entry", { company, is_group: 0 }).then((items) => ({ items })),
+              validate: (v) => validateLink("Cost Center", v),
+            },
+            { key: "amount", label: "Amount (Company Currency)", type: "number", placeholder: "Amount" },
+          ] as GridColumn<PaymentDeductionForm>[]}
+        />
+        )}
+      </CollapsibleSection>
+      )}
+
+      {/* Section 9: Transaction ID */}
+      {!!(paidFrom && paidTo) && (!isReadOnly || referenceNo || referenceDate || (isSubmitted && clearanceDate)) && (
+      <div className="bg-gray-50/50 rounded-[14px] p-4 space-y-3 border border-border/50">
+        <p className="text-sm font-semibold text-heading pb-2.5 border-b border-border/60 mb-0.5">Transaction ID</p>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+          <div className="space-y-3">
+            {(!isReadOnly || referenceNo) && (
+            <div>
+              <label className={labelClass}>Reference No {needRefNo && <span className="text-danger-500">*</span>}</label>
+              <input
+                type="text"
+                value={referenceNo}
+                onChange={(e) => setReferenceNo(e.target.value)}
+                disabled={isReadOnly}
+                className={inputClass}
+                placeholder="Cheque/Reference No"
+                data-testid="reference_no"
+              />
+            </div>
+            )}
+          </div>
+          <div className="space-y-3">
+            {(!isReadOnly || referenceDate) && (
+            <div>
+              <label className={labelClass}>Reference Date {needRefDate && <span className="text-danger-500">*</span>}</label>
+              <input type="date" value={referenceDate} onChange={(e) => setReferenceDate(e.target.value)} disabled={isReadOnly} pattern="\d{4}-\d{2}-\d{2}" data-testid="reference_date" className={inputClass} />
+            </div>
+            )}
+            {isSubmitted && clearanceDate && (
+              <div>
+                <label className={labelClass}>Clearance Date</label>
+                <input
+                  type="date"
+                  value={clearanceDate}
+                  readOnly
+                  data-testid="clearance_date"
+                  className={`${inputClass} bg-gray-50`}
+                />
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+      )}
+
+      {/* Section 10: Accounting Dimensions */}
       {(isExisting || dimensions.length > 0) && (
         <CollapsibleSection
           title="Accounting Dimensions"
@@ -1993,7 +2319,7 @@ export default function PaymentForm({
                 <div>
                   <label className={labelClass}>Project</label>
                   <LinkField
-                    {...readOnlyLinkProps}
+                    {...dimensionLinkProps}
                     doctype="Project"
                     value={project}
                     onChange={setProject}
@@ -2011,7 +2337,7 @@ export default function PaymentForm({
                 <div>
                   <label className={labelClass}>Cost Center</label>
                   <LinkField
-                    {...readOnlyLinkProps}
+                    {...dimensionLinkProps}
                     doctype="Cost Center"
                     value={costCenter}
                     onChange={setCostCenter}
@@ -2023,20 +2349,132 @@ export default function PaymentForm({
                   />
                 </div>
               )}
-              {isExisting && (
-                <div>
-                  <label className={labelClass}>Status</label>
-                  <input
-                    type="text"
-                    value={initialValues.status || (docstatus === 1 ? "Submitted" : docstatus === 2 ? "Cancelled" : "Draft")}
-                    readOnly
-                    className={`${inputClass} bg-gray-50`}
-                  />
-                </div>
-              )}
             </div>
           </div>
         </CollapsibleSection>
+      )}
+
+      {/* Section 11: More Information */}
+      {!!(paidFrom && paidTo && paidAmount && receivedAmount) && (
+        <CollapsibleSection
+          title="More Information"
+          open={showMoreInfo}
+          onToggle={() => setShowMoreInfo(!showMoreInfo)}
+        >
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+            <div className="space-y-3">
+              <div>
+                <label className={labelClass}>Status</label>
+                <input
+                  type="text"
+                  value={initialValues?.status || (docstatus === 1 ? "Submitted" : docstatus === 2 ? "Cancelled" : "Draft")}
+                  readOnly
+                  className={`${inputClass} bg-gray-50`}
+                />
+              </div>
+              <div>
+                <label className="flex items-center gap-2 text-[13px] font-medium text-body/70">
+                  <input
+                    type="checkbox"
+                    checked={customRemarks}
+                    onChange={(e) => setCustomRemarks(e.target.checked)}
+                    disabled={isReadOnly}
+                    data-testid="custom_remarks"
+                    className="h-4 w-4 rounded border-border text-primary-600 focus:ring-primary-500/20 disabled:opacity-40"
+                  />
+                  Custom Remarks
+                </label>
+              </div>
+              {(!isReadOnly || remarks) && (
+              <div>
+                <label className={labelClass}>Remarks</label>
+                <textarea
+                  ref={remarksRef}
+                  value={remarks}
+                  onChange={(e) => setRemarks(e.target.value)}
+                  rows={2}
+                  disabled={isReadOnly || !customRemarks}
+                  data-testid="remarks"
+                  className={`${inputClass} resize-none overflow-hidden`}
+                  placeholder="Payment remarks..."
+                />
+              </div>
+              )}
+              <div>
+                <label className={labelClass}>In Words (Company Currency)</label>
+                <textarea
+                  value={moneyInWords(isPay ? basePaidAmount : baseReceivedAmount, companyCurrency)}
+                  rows={2}
+                  readOnly
+                  className={`${inputClass} bg-gray-50 resize-none`}
+                />
+              </div>
+            </div>
+            <div className="space-y-3">
+              {(!isReadOnly || letterHead) && (
+              <div>
+                <label className={labelClass}>Letter Head</label>
+                <LinkField
+                  {...readOnlyLinkProps}
+                  doctype="Letter Head"
+                  value={letterHead}
+                  onChange={setLetterHead}
+                  placeholder="Select letter head..."
+                />
+              </div>
+              )}
+              {(!isReadOnly || printHeading) && (
+              <div>
+                <label className={labelClass}>Print Heading</label>
+                <LinkField
+                  {...readOnlyLinkProps}
+                  doctype="Print Heading"
+                  value={printHeading}
+                  onChange={setPrintHeading}
+                  placeholder="Select print heading..."
+                />
+              </div>
+              )}
+              <div>
+                <label className={labelClass}>In Words</label>
+                <textarea
+                  value={moneyInWords(isPay ? paidAmount : receivedAmount, isPay ? paidFromCurrency : paidToCurrency)}
+                  rows={2}
+                  readOnly
+                  className={`${inputClass} bg-gray-50 resize-none`}
+                />
+              </div>
+            </div>
+          </div>
+        </CollapsibleSection>
+      )}
+
+      {/* Section 12: Subscription */}
+      {(initialValues?.amended_from || initialValues?.auto_repeat) && (
+        <div className="bg-gray-50/50 rounded-[14px] p-4 space-y-3 border border-border/50">
+          <p className="text-sm font-semibold text-heading pb-2.5 border-b border-border/60 mb-0.5">Subscription Section</p>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 text-sm">
+            {initialValues?.amended_from && (
+              <div>
+                <label className={labelClass}>Amended From</label>
+                <div>
+                  <Link
+                    to={`/payments/${initialValues.amended_from}`}
+                    className="inline-flex items-center gap-1.5 text-primary-600 hover:text-primary-700 font-semibold transition-colors"
+                  >
+                    {initialValues.amended_from}
+                  </Link>
+                </div>
+              </div>
+            )}
+            {initialValues?.auto_repeat && (
+              <div>
+                <label className={labelClass}>Auto Repeat</label>
+                <div className={`${inputClass} bg-gray-50`}>{initialValues.auto_repeat}</div>
+              </div>
+            )}
+          </div>
+        </div>
       )}
 
       {/* Error */}
@@ -2047,6 +2485,7 @@ export default function PaymentForm({
       )}
 
       {/* Footer */}
+      {!hideFooter && (
       <div className="flex items-center justify-end gap-3 pt-4 border-t border-border">
         {isExisting ? (
           isReadOnly ? (
@@ -2156,6 +2595,7 @@ export default function PaymentForm({
           </>
         )}
       </div>
+      )}
 
       {/* Outstanding Dialog */}
       <GetOutstandingDialog
@@ -2168,4 +2608,4 @@ export default function PaymentForm({
       />
     </form>
   )
-}
+})

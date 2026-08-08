@@ -10,6 +10,7 @@ export interface PaymentEntryReference {
   exchange_gain_loss?: number
   bill_no?: string
   account?: string
+  payment_request?: string
 }
 
 export interface PaymentEntryDeduction {
@@ -49,9 +50,111 @@ export interface PaymentComment {
   createdAt: string
 }
 
+// Message rendered in a timeline item. Values changed by a Version are bold
+// (mirrors version_timeline_content_builder.js format_content_for_timeline).
+export type ActivityMessageSegment =
+  | { type: "text"; text: string }
+  | { type: "bold"; text: string }
+
+export interface PaymentActivityItem {
+  kind: "comment" | "created" | "modified" | "version" | "email"
+  id: string
+  author?: string
+  authorName?: string
+  authorAvatarName?: string
+  commentName?: string
+  versionName?: string
+  createdAt: string
+  content?: string
+  message?: ActivityMessageSegment[]
+  // Email (Communication) timeline items.
+  senderName?: string
+  senderEmail?: string
+  subject?: string
+  recipients?: string
+  deliveryStatus?: string
+  communicationName?: string
+  attachments?: EmailAttachment[]
+}
+
+export interface EmailAttachment {
+  fileUrl: string
+  isPrivate?: number
+}
+
+// frappe.desk.form.load.get_docinfo response shape (DocInfo).
+export interface DocInfoComment {
+  name: string
+  comment_type?: string
+  comment_email?: string
+  comment_by?: string
+  creation: string
+  content?: string
+  owner: string
+}
+
+// A Communication of communication_type "Communication" + medium "Email"
+// returned by frappe.desk.form.load.get_docinfo (get_communication_data). Its
+// attachments arrive as a pre-parsed array of { file_url, is_private }.
+export interface DocInfoCommunication {
+  name: string
+  communication_type?: string
+  communication_medium?: string
+  communication_date?: string
+  content?: string
+  sender?: string
+  sender_full_name?: string
+  recipients?: string
+  cc?: string
+  bcc?: string
+  subject?: string
+  delivery_status?: string
+  creation: string
+  attachments?: Array<{ file_url: string; is_private?: number }> | string
+}
+
+export interface DocInfoVersion {
+  name: string
+  creation: string
+  owner: string
+  data: string
+}
+
+// A Version document (frappe /api/resource/Version/<name>), which the ERPNext
+// timeline links to when a version message is clicked.
+export interface VersionDoc {
+  name: string
+  doctype: string
+  ref_doctype: string
+  docname: string
+  data: string
+  owner: string
+  creation: string
+  modified?: string
+  modified_by?: string
+  // frappe populates __onload.html_diffs on Version load (Version.onload in
+  // version.py): server-generated difflib HTML for long text fields, which the
+  // Version form renders instead of the raw old/new values.
+  __onload?: { html_diffs?: Record<string, string> }
+}
+
+export interface DocInfoUserInfo {
+  [user: string]: { fullname?: string; first_name?: string; image?: string }
+}
+
+export interface DocInfo {
+  doctype?: string
+  name?: string
+  comments?: DocInfoComment[]
+  communications?: DocInfoCommunication[]
+  versions?: DocInfoVersion[]
+  user_info?: DocInfoUserInfo
+}
+
 export interface PaymentEntry {
   name: string
   modified?: string
+  modified_by?: string
   naming_series?: string
   payment_type: string
   payment_order_status?: string
@@ -104,7 +207,7 @@ export interface PaymentEntry {
   project?: string
   letter_head?: string
   print_heading?: string
-  is_opening?: number
+  is_opening?: string
   book_advance_payments_in_separate_party_account?: number
   reconcile_on_advance_payment_date?: number
   reference_no?: string
@@ -120,6 +223,7 @@ export interface PaymentEntry {
   deductions?: PaymentEntryDeduction[]
   taxes?: PaymentEntryTax[]
   amended_from?: string
+  auto_repeat?: string
 }
 
 export interface PaymentEntryListResponse {
@@ -193,6 +297,7 @@ export interface GetOutstandingArgs {
   party_account: string
   cost_center?: string
   get_outstanding_invoices?: boolean
+  get_orders_to_be_billed?: boolean
   from_posting_date?: string
   to_posting_date?: string
   from_due_date?: string
@@ -206,12 +311,32 @@ export interface InvoiceAllocation {
   reference_doctype: string
   reference_name: string
   due_date?: string
+  bill_no?: string
   total_amount: number
   outstanding_amount: number
   allocated_amount: number
   exchange_rate?: number
   exchange_gain_loss?: number
   account?: string
+  payment_request?: string
+  payment_term?: string
+}
+
+export interface UnreconcileAllocation {
+  company?: string
+  account?: string
+  party_type?: string
+  party?: string
+  reference_doctype?: string
+  reference_name?: string
+  allocated_amount?: number
+  account_currency?: string
+  checked?: boolean
+}
+
+export interface PaymentAfterSaveResult {
+  name: string
+  matchedPaymentRequests?: string[][]
 }
 
 export interface PaymentDeductionForm {
@@ -241,6 +366,7 @@ export interface RecordPaymentData {
   payment_type: "Receive" | "Pay" | "Internal Transfer"
   party_type: string
   party: string
+  party_name?: string
   posting_date: string
   company: string
   mode_of_payment?: string
@@ -266,7 +392,7 @@ export interface RecordPaymentData {
   project?: string
   letter_head?: string
   print_heading?: string
-  is_opening?: number
+  is_opening?: string
   book_advance_payments_in_separate_party_account?: number
   reconcile_on_advance_payment_date?: number
   reference_no?: string

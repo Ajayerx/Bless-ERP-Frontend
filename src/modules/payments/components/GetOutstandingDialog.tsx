@@ -149,7 +149,7 @@ export default function GetOutstandingDialog({
                 type="number"
                 min={0}
                 step={0.01}
-                value={filters.outstanding_amt_greater_than}
+                value={filters.outstanding_amt_greater_than || ""}
                 onChange={(e) => update("outstanding_amt_greater_than", parseFloat(e.target.value) || 0)}
                 className={inputClass}
               />

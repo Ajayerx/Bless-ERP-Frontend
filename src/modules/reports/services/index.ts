@@ -1,6 +1,7 @@
 import { apiClient } from "@/services/api-client"
-import type { TaxSummary } from "../types"
-export type { TaxBreakdownRow, TaxSummary, SalesReport, ARReport, InventoryReport, ProfitLoss, BalanceSheet } from "../types"
+import { postMethod } from "@/services/frappe-client"
+import type { TaxSummary, GeneralLedgerColumn, GeneralLedgerRow, GeneralLedgerFilters, GeneralLedgerReport } from "../types"
+export type { TaxBreakdownRow, TaxSummary, SalesReport, ARReport, InventoryReport, ProfitLoss, BalanceSheet, GeneralLedgerColumn, GeneralLedgerRow, GeneralLedgerFilters, GeneralLedgerReport } from "../types"
 
 interface FrappeTaxRow {
   account_head: string
@@ -108,5 +109,19 @@ export const reportService = {
   },
   async getBalanceSheet(): Promise<BalanceSheet> {
     return apiClient<BalanceSheet>("/reports/balance-sheet")
+  },
+
+  // Runs the ERPNext "General Ledger" query report via frappe.desk.query_report.run.
+  // All rows are returned verbatim — including the Opening / Total / Closing
+  // summary rows ERPNext computes server-side (identified by a missing
+  // posting_date and the label in `account`).
+  async getGeneralLedger(filters: GeneralLedgerFilters): Promise<GeneralLedgerReport> {
+    const message = await postMethod<{ columns: GeneralLedgerColumn[]; result: GeneralLedgerRow[] }>(
+      "frappe.desk.query_report.run",
+      { report_name: "General Ledger", filters }
+    )
+    const columns = message?.columns ?? []
+    const rows = message?.result ?? []
+    return { columns, rows }
   },
 }

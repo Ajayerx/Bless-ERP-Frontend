@@ -20,6 +20,7 @@ interface LinkSearchFieldProps {
   className?: string
   inputClassName?: string
   docType?: string
+  clearIconMode?: "always" | "hover"
 }
 
 export default function LinkSearchField({
@@ -36,6 +37,7 @@ export default function LinkSearchField({
   required = false,
   className,
   inputClassName,
+  clearIconMode = "always",
 }: LinkSearchFieldProps) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState(value ?? "")
@@ -44,6 +46,8 @@ export default function LinkSearchField({
   const [highlightedIndex, setHighlightedIndex] = useState(-1)
   const [selectedLabel, setSelectedLabel] = useState(value ?? "")
   const [validationError, setValidationError] = useState("")
+  const [hovered, setHovered] = useState(false)
+  const [focused, setFocused] = useState(false)
   const [ddPos, setDdPos] = useState<{
     left: number
     width: number
@@ -149,7 +153,7 @@ export default function LinkSearchField({
   }, [value])
 
   useEffect(() => {
-    if (value && labelFetchValueRef.current !== value && selectedLabel === value && searchFnRef.current) {
+    if (value && labelFetchValueRef.current !== value && selectedLabel === value) {
       labelFetchValueRef.current = value
       fetchedRef.current = true
       doSearch("")
@@ -196,6 +200,7 @@ export default function LinkSearchField({
   }
 
   const handleBlur = () => {
+    setFocused(false)
     if (readOnly) return
     if (!validate) return
     if (blurRef.current) clearTimeout(blurRef.current)
@@ -241,6 +246,7 @@ export default function LinkSearchField({
 
   const handleFocus = () => {
     if (readOnly) return
+    setFocused(true)
     setOpen(true)
     if (!fetchedRef.current) {
       fetchedRef.current = true
@@ -274,7 +280,10 @@ export default function LinkSearchField({
   }
 
   const showDropdown = open && !readOnly
-  const showClear = !!value && !disabled && !readOnly
+  const revealClear = clearIconMode === "hover" ? hovered || focused : true
+  const showClear = !!value && !disabled && !readOnly && revealClear
+  const reserveClearSpace =
+    clearIconMode === "hover" && !!value && !disabled && !readOnly
 
   return (
     <div className={cn("space-y-1.5", className)}>
@@ -284,7 +293,7 @@ export default function LinkSearchField({
           {required && <span className="text-danger-500 ml-0.5">*</span>}
         </label>
       )}
-      <div ref={wrapperRef} className="relative">
+      <div ref={wrapperRef} className="relative" onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}>
         <div className="relative flex items-center">
           <input
             ref={inputRef}
@@ -300,7 +309,7 @@ export default function LinkSearchField({
             className={cn(
               "w-full px-3 py-2.5 bg-white border border-border rounded-lg text-sm text-body placeholder:text-muted transition-all duration-200",
               "focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500",
-              showClear ? "pr-9" : "pr-3",
+              showClear || reserveClearSpace ? "pr-9" : "pr-3",
               (disabled || readOnly) ? "bg-gray-50 cursor-not-allowed opacity-70" : "",
               inputClassName,
             )}
@@ -308,6 +317,7 @@ export default function LinkSearchField({
           {showClear && (
             <button
               type="button"
+              onMouseDown={(e) => e.preventDefault()}
               onClick={handleClear}
               className="absolute right-2 p-1 text-muted hover:text-heading transition-colors"
               tabIndex={-1}
@@ -351,10 +361,16 @@ export default function LinkSearchField({
                           : "hover:bg-gray-50"
                       )}
                     >
-                      <div className="font-semibold text-heading">{item.label || item.value}</div>
+                      <div
+                        className="font-semibold text-heading"
+                        dangerouslySetInnerHTML={{ __html: item.label || item.value }}
+                      />
                       {item.value && (
                         <div className="text-xs text-muted mt-0.5 truncate">
-                          {item.value}{item.description ? `, ${item.description}` : ""}
+                          {item.value}
+                          {item.description ? (
+                            <span dangerouslySetInnerHTML={{ __html: `, ${item.description}` }} />
+                          ) : null}
                         </div>
                       )}
                     </button>
