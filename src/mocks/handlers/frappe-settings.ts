@@ -66,4 +66,32 @@ export const frappeSettingsHandlers = [
     await delay(200)
     return HttpResponse.json({ data: userDoc })
   }),
+
+  // ── Link options for assignments (frappe.desk.search.search_link) ──
+  http.get("/api/method/frappe.desk.search.search_link", async ({ request }) => {
+    await delay(150)
+    const url = new URL(request.url)
+    if (url.searchParams.get("doctype") !== "User") return HttpResponse.json({ message: [] })
+    const txt = (url.searchParams.get("txt") ?? "").toLowerCase()
+    const users = [
+      { name: "admin@blesserp.com", full_name: "BlessERP Admin" },
+      { name: "aarav@blesserp.com", full_name: "Aarav Mehta" },
+      { name: "priya@blesserp.com", full_name: "Priya Sharma" },
+      { name: "neha@blesserp.com", full_name: "Neha Gupta" },
+      { name: "vivek@blesserp.com", full_name: "Vivek Nair" },
+    ]
+    const filtered = users.filter(
+      (u) =>
+        !txt ||
+        u.name.toLowerCase().includes(txt) ||
+        u.full_name.toLowerCase().includes(txt)
+    )
+    return HttpResponse.json({
+      message: filtered.slice(0, 10).map((u) => ({
+        value: u.name,
+        label: u.full_name,
+        description: u.name,
+      })),
+    })
+  }),
 ]

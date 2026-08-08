@@ -146,6 +146,40 @@ function versionHtmlDiffs(data: string): Record<string, string> {
   return out
 }
 
+// ── Assignments & Tags (ERPNext form sidebar: get_docinfo + assign_to.* / tag.*) ──
+
+interface MockAssignment {
+  name: string
+  owner: string
+  description?: string
+  status: string
+}
+
+const assignmentStore: Record<string, MockAssignment[]> = {}
+const tagStore: Record<string, string[]> = {}
+let assignmentCounter = 0
+
+const docKey = (doctype: string, name: string) => `${doctype}::${name}`
+
+// Seed so the demo view shows a living state without any interaction.
+for (const [key, list] of Object.entries({
+  [docKey("Payment Entry", "PAY-2026-0001")]: [
+    { name: "Todo-PAY-0001", owner: "admin@blesserp.com", status: "Open" },
+  ],
+  [docKey("Payment Entry", "PAY-2026-0002")]: [
+    { name: "Todo-PAY-0002", owner: "aarav@blesserp.com", status: "Open" },
+    { name: "Todo-PAY-0003", owner: "jane.doe@blesserp.com", status: "Pending" },
+  ],
+} as Record<string, MockAssignment[]>)) {
+  assignmentStore[key] = list
+}
+for (const [key, list] of Object.entries({
+  [docKey("Payment Entry", "PAY-2026-0001")]: ["Audit", "Q1-Review"],
+  [docKey("Payments", "PAY-2026-0002")]: ["Follow-up"],
+})) {
+  tagStore[key] = list
+}
+
 export const activityHandlers = [
   // ── docinfo: comments + versions + user_info ──────────────────────
   http.get("/api/method/frappe.desk.form.load.get_docinfo", async ({ request }) => {
@@ -173,6 +207,19 @@ export const activityHandlers = [
           .map((v) => ({ name: v.name, creation: v.creation, owner: v.owner, data: v.data })),
         user_info: {
           "admin@blesserp.com": { fullname: "Administrator" },
+        },
+        assignments: (assignmentStore[docKey(doctype, name)] ?? []).filter(
+          (a) => a.status !== "Closed" && a.status !== "Cancelled"
+        ),
+        tags: (tagStore[docKey(doctype, name)] ?? []).join(", "),
+        permissions: {
+          read: true,
+          write: true,
+          create: true,
+          delete: true,
+          submit: true,
+          cancel: true,
+          amend: true,
         },
       },
     })
@@ -253,5 +300,91 @@ export const activityHandlers = [
       return HttpResponse.json({ message: name })
     }
     return HttpResponse.json({ message: `Cannot delete ${doctype}` }, { status: 400 })
+  }),
+
+  // ── assign_to.add: assign one doc to one or more users (form sidebar) ──
+  http.post("/api/method/frappe.desk.form.assign_to.add", async ({ request }) => {
+    await delay(60)
+    const body = (await request.formData().catch(() => new FormData())) as FormData
+    const doctype = String(body.get("doctype") ?? "Payment Entry")
+    const name = String(body.get("name") ?? "")
+    let assignees: string[] = []
+    try {
+      assignees = JSON.parse(String(body.get("assign_to") ?? "[]"))
+    } catch {
+      assignees = []
+    }
+    const key = docKey(doctype, name)
+    const list = assignmentStore[key] ?? []
+    for (const user of assignees) {
+      if (!list.some((a) => a.owner === user)) {
+        assignmentCounter += 1
+        list.push({ name: `Todo-${doctype}-${assignmentCounter}`, owner: user, status: "Open" })
+      }
+    }
+    assignmentStore[key] = list
+    return HttpResponse.json({ message: "Document assigned" })
+  }),
+
+  // ── assign_to.remove (explicit unassign) ──
+  http.post("/api/method/frappe.desk.form.assign_to.remove", async ({ request }) => {
+    await delay(60)
+    const body = (await request.formData().catch(() => new FormData())) as FormData
+    const doctype = String(body.get("doctype") ?? "Payment Entry")
+    const name = String(body.get("name") ?? "")
+    const user = String(body.get("assign_to") ?? "")
+    const key = docKey(doctype, name)
+    assignmentStore[key] = (assignmentStore[key] ?? []).filter((a) => a.owner !== user)
+    return HttpResponse.json({ message: "Assignments updated" })
+  }),
+
+  // ── assign_to.close: assignee marks their own To-do done (drops it from docinfo) ──
+  http.post("/api/method/frappe.desk.form.assign_to.close", async ({ request }) => {
+    await delay(60)
+    const body = (await request.formData().catch(() => new FormData())) as FormData
+    const doctype = String(body.get("doctype") ?? "Payment Entry")
+    const name = String(body.get("name") ?? "")
+    const user = String(body.get("assign_to") ?? "")
+    const key = docKey(doctype, name)
+    const target = (assignmentStore[key] ?? []).find((a) => a.owner === user)
+    if (target) target.status = "Closed"
+    return HttpResponse.json({ message: "Assignment closed" })
+  }),
+
+  // ── tag.add_tag / remove_tag (form sidebar TagEditor) ──
+  http.post("/api/method/frappe.desk.doctype.tag.tag.add_tag", async ({ request }) => {
+    await delay(60)
+    const body = (await request.formData().catch(() => new FormData())) as FormData
+    const dt = String(body.get("dt") ?? "Payment Entry")
+    const dn = String(body.get("dn") ?? "")
+    const tag = String(body.get("tag") ?? "").trim()
+    const key = docKey(dt, dn)
+    if (tag) {
+      const list = tagStore[key] ?? []
+      if (!list.includes(tag)) list.push(tag)
+      tagStore[key] = list
+    }
+    return HttpResponse.json({ message: "Tag added" })
+  }),
+
+  http.post("/api/method/frappe.desk.doctype.tag.tag.remove_tag", async ({ request }) => {
+    await delay(60)
+    const body = (await request.formData().catch(() => new FormData())) as FormData
+    const dt = String(body.get("dt") ?? "Payment Entry")
+    const dn = String(body.get("dn") ?? "")
+    const tag = String(body.get("tag") ?? "").trim()
+    const key = docKey(dt, dn)
+    tagStore[key] = (tagStore[key] ?? []).filter((t) => t !== tag)
+    return HttpResponse.json({ message: "Tag removed" })
+  }),
+
+  // ── tag.get_tags: augment the tag input with existing Tag master names ──
+  http.post("/api/method/frappe.desk.doctype.tag.tag.get_tags", async ({ request }) => {
+    await delay(60)
+    const body = (await request.formData().catch(() => new FormData())) as FormData
+    const txt = String(body.get("txt") ?? "").toLowerCase()
+    const all = Array.from(new Set(Object.values(tagStore).flat()))
+    const hits = all.filter((t) => t.toLowerCase().includes(txt)).slice(0, 10)
+    return HttpResponse.json({ message: hits })
   }),
 ]

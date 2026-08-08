@@ -34,6 +34,7 @@ function buildListUrl(
   params: {
     fields: string[]
     filters?: unknown[]
+    orFilters?: unknown[]
     limit_page_length?: number
     limit_start?: number
     order_by?: string
@@ -42,27 +43,58 @@ function buildListUrl(
   const qp = new URLSearchParams()
   qp.set("fields", JSON.stringify(params.fields))
   if (params.filters) qp.set("filters", JSON.stringify(params.filters))
+  if (params.orFilters && params.orFilters.length > 0) {
+    qp.set("or_filters", JSON.stringify(params.orFilters))
+  }
   qp.set("limit_page_length", String(params.limit_page_length ?? 0))
   if (params.limit_start !== undefined) qp.set("limit_start", String(params.limit_start))
   if (params.order_by) qp.set("order_by", params.order_by)
   return `/resource/${encodeURIComponent(doctype)}?${qp.toString()}`
 }
 
-async function getCount(doctype: string, filters?: unknown[]): Promise<number> {
+// count via frappe.desk.reportview.get_count: it's the endpoint ERPNext's own
+// list view uses (frappe.db.count -> reportview.get_count) and the only count
+// endpoint that accepts a top-level `or_filters` for the list search.
+async function getCount(
+  doctype: string,
+  filters?: unknown[],
+  orFilters?: unknown[]
+): Promise<number> {
   const qp = new URLSearchParams()
   qp.set("doctype", doctype)
   if (filters) qp.set("filters", JSON.stringify(filters))
-  const result = await apiClient<number | string>(`/method/frappe.client.get_count?${qp.toString()}`)
+  if (orFilters && orFilters.length > 0) qp.set("or_filters", JSON.stringify(orFilters))
+  const result = await apiClient<number | string>(
+    `/method/frappe.desk.reportview.get_count?${qp.toString()}`
+  )
   return Number(result)
 }
 
 const LIST_FIELDS = [
-  "name", "payment_type", "posting_date", "party", "party_name",
+  "name", "payment_type", "party_type", "posting_date", "party", "party_name", "title",
   "paid_amount", "received_amount", "mode_of_payment",
   "reference_no", "status", "docstatus", "company",
+  "_assign", "_user_tags",
 ]
 
-export type { PaymentEntry, PaymentEntryListResponse, RecordPaymentData, PaymentEntryReference, PartyDetails, AccountDetails, OutstandingReference, GetOutstandingArgs, LedgerPreviewData, LedgerPreviewColumn, ContactDetails, BankAccountDetails, PartyAndAccountBalance, PaymentComment, PaymentActivityItem, InvoiceAllocation, PaymentDeductionForm, UnreconcileAllocation, PaymentAfterSaveResult, DocInfo, DocInfoVersion, DocInfoUserInfo, ActivityMessageSegment, VersionDoc } from "../types"
+// Default columns for the server-side exporter. download_template 500s when
+// export_fields is null (exporter.py iterates .items()), so we always send an
+// object. Keys are the parent doctype ("Payment Entry") and the child-table
+// field name ("references" -> "Payment Entry Reference" rows), matching the
+// ERPNext Data Export format.
+export const PAYMENT_EXPORT_FIELDS: Record<string, string[]> = {
+  "Payment Entry": [
+    "name", "title", "payment_type", "party_type", "party", "party_name",
+    "posting_date", "company", "mode_of_payment", "paid_from", "paid_to",
+    "paid_amount", "received_amount", "reference_no", "status", "docstatus",
+  ],
+  references: [
+    "reference_doctype", "reference_name", "total_amount",
+    "outstanding_amount", "allocated_amount",
+  ],
+}
+
+export type { PaymentEntry, PaymentEntryListResponse, RecordPaymentData, PaymentEntryReference, PartyDetails, AccountDetails, OutstandingReference, GetOutstandingArgs, LedgerPreviewData, LedgerPreviewColumn, ContactDetails, BankAccountDetails, PartyAndAccountBalance, PaymentComment, PaymentActivityItem, InvoiceAllocation, PaymentDeductionForm, UnreconcileAllocation, PaymentAfterSaveResult, DocInfo, DocInfoVersion, DocInfoUserInfo, DocInfoAssignment, DocInfoPermissions, ActivityMessageSegment, VersionDoc } from "../types"
 
 export async function allocateAmountToReferences(
   doc: PaymentEntryDocSnapshot,
@@ -157,13 +189,31 @@ export interface PaymentListFilters {
   pageLength?: number
   status?: string
   paymentType?: string
+  partyType?: string
   modeOfPayment?: string
   party?: string
+  company?: string
   postingDateFrom?: string
   postingDateTo?: string
+  /** General search matching ID/name, party and party name (ERPNext "ID"/"Title" filters). */
+  search?: string
+  /** Filter by an assigned user id (ERPNext list "Assigned To" click filter, `_assign like %id%`). */
+  assignedTo?: string
+  /** Exact ID match — ERPNext's detached ID column click filter (`name,=,PAY-…`). */
+  name?: string
+  sortBy?: string
+  sortOrder?: "asc" | "desc"
 }
 
-function buildPaymentFilters(params: PaymentListFilters): unknown[] | undefined {
+// Frappe splits the list search into a top-level `or_filters` group; nested
+// ["OR", ...] arrays inside `filters` are rejected (get_filter treats them as
+// a doctype "OR"). buildPaymentFilters mirrors that server-side contract.
+export interface PaymentFilterSet {
+  filters?: unknown[]
+  orFilters?: unknown[]
+}
+
+export function buildPaymentFilters(params: PaymentListFilters): PaymentFilterSet | undefined {
   const filters: unknown[] = []
   if (params.status) {
     const docstatus = params.status === "draft" ? 0 : params.status === "submitted" ? 1 : 2
@@ -172,11 +222,23 @@ function buildPaymentFilters(params: PaymentListFilters): unknown[] | undefined 
   if (params.paymentType) {
     filters.push(["payment_type", "=", params.paymentType])
   }
+  if (params.partyType) {
+    filters.push(["party_type", "=", params.partyType])
+  }
   if (params.modeOfPayment) {
     filters.push(["mode_of_payment", "=", params.modeOfPayment])
   }
+  if (params.company) {
+    filters.push(["company", "=", params.company])
+  }
   if (params.party) {
     filters.push(["party_name", "like", `%${params.party}%`])
+  }
+  if (params.assignedTo) {
+    filters.push(["_assign", "like", `%${params.assignedTo}%`])
+  }
+  if (params.name) {
+    filters.push(["name", "=", params.name])
   }
   if (params.postingDateFrom) {
     filters.push(["posting_date", ">=", params.postingDateFrom])
@@ -184,7 +246,30 @@ function buildPaymentFilters(params: PaymentListFilters): unknown[] | undefined 
   if (params.postingDateTo) {
     filters.push(["posting_date", "<=", params.postingDateTo])
   }
-  return filters.length > 0 ? filters : undefined
+
+  const orFilters: unknown[] = []
+  if (params.search) {
+    const like = `%${params.search}%`
+    orFilters.push(
+      ["name", "like", like],
+      ["party", "like", like],
+      ["party_name", "like", like]
+    )
+  }
+
+  if (filters.length === 0 && orFilters.length === 0) return undefined
+  return {
+    ...(filters.length > 0 ? { filters } : {}),
+    ...(orFilters.length > 0 ? { orFilters } : {}),
+  }
+}
+
+// Plain filters only, for the server-side export. download_template passes
+// export_filters straight to frappe.get_list filters, so it cannot contain an
+// ["OR", ...] group — drop the list-search clause (ERPNext's Data Export has
+// the same limitation).
+export function buildExportFilters(params: PaymentListFilters): unknown[] | undefined {
+  return buildPaymentFilters(params)?.filters
 }
 
 function buildPaymentDoc(
@@ -391,7 +476,7 @@ function userSegment(owner: string, currentUserId: string | null, userInfo: DocI
 function userMessage(
   owner: string,
   currentUserId: string | null,
-  userInfo: DocInfoUserInfo,
+  _userInfo: DocInfoUserInfo,
   self: ActivityMessageSegment[],
   other: ActivityMessageSegment[]
 ): ActivityMessageSegment[] {
@@ -673,19 +758,23 @@ export const paymentService = {
     const page = params.page ?? 1
     const pageSize = params.pageLength ?? params.pageSize ?? 10
     const limit_start = params.start != null ? params.start : (page - 1) * pageSize
-    const filters = buildPaymentFilters(params)
+    const built = buildPaymentFilters(params)
+    const order_by = params.sortBy
+      ? `${params.sortBy} ${params.sortOrder === "asc" ? "ASC" : "DESC"}`
+      : "posting_date DESC"
 
     const [rows, total] = await Promise.all([
       apiClient<PaymentEntry[]>(
         buildListUrl("Payment Entry", {
           fields: LIST_FIELDS,
-          filters,
+          filters: built?.filters,
+          orFilters: built?.orFilters,
           limit_page_length: pageSize,
           limit_start,
-          order_by: "posting_date desc",
+          order_by,
         })
       ),
-      getCount("Payment Entry", filters),
+      getCount("Payment Entry", built?.filters, built?.orFilters),
     ])
 
     return {
@@ -933,6 +1022,269 @@ async getOutstandingReferences(args: GetOutstandingArgs): Promise<OutstandingRef
       `/resource/Payment Entry/${encodeURIComponent(name)}`,
       { method: "DELETE" }
     )
+  },
+
+  // Bulk submit/cancel via frappe.desk.doctype.bulk_update.bulk_update
+  // .submit_cancel_or_update_docs (server-side batching: sync <20 docs,
+  // enqueue 20-500, throws above 500). Mirrors ERPNext's list bulk actions.
+  // `enqueued` is true when the server pushed the batch to the background queue.
+  // `messages` carries ERPNext `_server_messages` (e.g. "Invoice already fully
+  // paid") even though the server reports HTTP 200 with the failed docnames.
+  async bulkSubmit(names: string[]): Promise<{ failed: string[]; enqueued: boolean; messages: AppMessage[] }> {
+    const result = await postMethodRaw<{ message?: string[] | null; failed?: string[] } & Record<string, unknown>>(
+      "frappe.desk.doctype.bulk_update.bulk_update.submit_cancel_or_update_docs",
+      { doctype: "Payment Entry", action: "submit", docnames: JSON.stringify(names) }
+    )
+    const msg = Array.isArray(result.message) ? result.message : []
+    return {
+      failed: Array.isArray(result.failed) ? result.failed : msg,
+      enqueued: result.message == null,
+      messages: serverMessagesFromBody(result),
+    }
+  },
+
+  async bulkCancel(names: string[]): Promise<{ failed: string[]; enqueued: boolean; messages: AppMessage[] }> {
+    const result = await postMethodRaw<{ message?: string[] | null; failed?: string[] } & Record<string, unknown>>(
+      "frappe.desk.doctype.bulk_update.bulk_update.submit_cancel_or_update_docs",
+      { doctype: "Payment Entry", action: "cancel", docnames: JSON.stringify(names) }
+    )
+    const msg = Array.isArray(result.message) ? result.message : []
+    return {
+      failed: Array.isArray(result.failed) ? result.failed : msg,
+      enqueued: result.message == null,
+      messages: serverMessagesFromBody(result),
+    }
+  },
+
+  // Bulk delete via frappe.desk.reportview.delete_items. Mirrors the ERPNext
+  // list "Delete" action (allows selected docs, falls back to filtered rows).
+  async bulkDelete(names: string[]): Promise<{ failed: string[]; messages: AppMessage[] }> {
+    const result = await postMethodRaw<{ message?: { undeleted_items?: string[] } | string[] } & Record<string, unknown>>(
+      "frappe.desk.reportview.delete_items",
+      {
+        doctype: "Payment Entry",
+        items: JSON.stringify(names),
+      }
+    )
+    const msg = result.message
+    if (Array.isArray(msg)) return { failed: msg, messages: serverMessagesFromBody(result) }
+    return {
+      failed: Array.isArray(msg?.undeleted_items) ? msg.undeleted_items : [],
+      messages: serverMessagesFromBody(result),
+    }
+  },
+
+  // Server-side export via frappe.core.doctype.data_import.data_import
+  // .download_template. Returns a Blob for the chosen file type (CSV/Excel),
+  // with optional field selection and the currently applied filters.
+  async exportRecords(options?: {
+    fileType?: "CSV" | "Excel"
+    recordMode?: "all" | "by_filter" | "5_records" | "blank_template"
+    fields?: Record<string, string[]>
+    filters?: unknown[]
+  }): Promise<Blob> {
+    const body = new URLSearchParams()
+    body.set("doctype", "Payment Entry")
+    body.set("file_type", options?.fileType ?? "CSV")
+    body.set("export_records", options?.recordMode ?? "by_filter")
+    // export_fields is required by the exporter; fall back to the default set.
+    const fields =
+      options?.fields && Object.keys(options.fields).length > 0
+        ? options.fields
+        : PAYMENT_EXPORT_FIELDS
+    body.set("export_fields", JSON.stringify(fields))
+    if (options?.filters && options.filters.length > 0) {
+      body.set("export_filters", JSON.stringify(options.filters))
+    }
+    const res = await fetch(
+      `${API_CONFIG.baseUrl}/method/frappe.core.doctype.data_import.data_import.download_template`,
+      {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          ...API_CONFIG.headers,
+          "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+        },
+        body,
+      }
+    )
+    if (!res.ok) throw new Error("Failed to export records")
+    return res.blob()
+  },
+
+  // Bulk print via frappe.utils.print_format.download_multi_pdf. Mirrors the
+  // ERPNext list "Print" foreground flow: returns the endpoint URL that the
+  // caller opens with window.open so the browser previews the PDF before the
+  // user saves it (bulk_operations.js foreground path).
+  buildMultiPdfUrl(
+    names: string[],
+    options: {
+      printFormat?: string
+      letterhead?: string
+      pageSize?: string
+      customSize?: { height: number; width: number }
+    } = {}
+  ): string {
+    const pdfOptions: Record<string, string> = {}
+    if (options.customSize && options.customSize.height > 0 && options.customSize.width > 0) {
+      pdfOptions["page-height"] = String(options.customSize.height)
+      pdfOptions["page-width"] = String(options.customSize.width)
+    } else {
+      pdfOptions["page-size"] = options.pageSize ?? "A4"
+    }
+    const params = new URLSearchParams()
+    params.set("doctype", "Payment Entry")
+    params.set("name", JSON.stringify(names))
+    params.set("format", options.printFormat ?? "Standard")
+    params.set("no_letterhead", options.letterhead ? "0" : "1")
+    if (options.letterhead) params.set("letterhead", options.letterhead)
+    params.set("options", JSON.stringify(pdfOptions))
+    return `${API_CONFIG.baseUrl}/method/frappe.utils.print_format.download_multi_pdf?${params.toString()}`
+  },
+
+  // Assignment via frappe.desk.form.assign_to (add_multiple / remove_multiple).
+  // `assign_to` must be a JSON array — assign_to.add iterates
+  // frappe.parse_json(args["assign_to"]) per assignee (assign_to.py:64).
+
+  // Search assignable users via frappe.desk.search.search_link — the same
+  // backend ERPNext's AssignToDialog populates (db.get_link_options -> User,
+  // filtered to enabled System Users). Matches name / full name / email.
+  async searchAssignableUsers(
+    query: string
+  ): Promise<{ value: string; label: string; description: string }[]> {
+    const results = await apiClient<{ value: string; label?: string; description?: string }[]>(
+      `/method/frappe.desk.search.search_link?` +
+        new URLSearchParams({
+          doctype: "User",
+          txt: query,
+          page_length: "10",
+          filters: JSON.stringify({ user_type: "System User", enabled: 1 }),
+        }).toString()
+    )
+    return (results ?? []).map((u) => ({
+      value: u.value,
+      label: u.label ?? u.value,
+      description: u.description ?? "",
+    }))
+  },
+
+  async assignTo(names: string[], user: string): Promise<void> {
+    await postMethod("frappe.desk.form.assign_to.add_multiple", {
+      assign_to: JSON.stringify([user]),
+      doctype: "Payment Entry",
+      name: JSON.stringify(names),
+    })
+  },
+
+  async removeAssignment(names: string[]): Promise<void> {
+    await postMethod("frappe.desk.form.assign_to.remove_multiple", {
+      doctype: "Payment Entry",
+      names: JSON.stringify(names),
+    })
+  },
+
+  // Add tags via frappe.desk.doctype.tag.tag.add_tags (the ERPNext list "Tags"
+  // bulk action). `tags` is JSON-stringified; Tag master rows are created
+  // server-side. The color is optional and only applied when a tag is created.
+  async addTags(names: string[], tags: string | string[], color = ""): Promise<void> {
+    const tagLabels = Array.isArray(tags) ? tags : [tags]
+    await postMethod("frappe.desk.doctype.tag.tag.add_tags", {
+      tags: JSON.stringify(tagLabels),
+      dt: "Payment Entry",
+      docs: JSON.stringify(names),
+      color,
+    })
+  },
+
+  // ── Single-document assignees (ERPNext form sidebar) ──────────────
+
+  // Resolve assignee user ids → display names for list-row avatars. Mirrors the
+  // ids/_assign the list API returns (full names are not included there).
+  // Falls back to an empty map when the lookup fails — callers then show the
+  // raw id instead of a name.
+  async resolveUserNames(
+    ids: string[]
+  ): Promise<Record<string, { full_name?: string }>> {
+    const uniqueIds = Array.from(new Set(ids.filter(Boolean)))
+    if (uniqueIds.length === 0) return {}
+    try {
+      const rows = await apiClient<Array<{ name: string; full_name?: string }>>(
+        `/resource/User?` +
+          new URLSearchParams({
+            fields: JSON.stringify(["name", "full_name"]),
+            filters: JSON.stringify([["name", "in", uniqueIds]]),
+            limit_page_length: String(uniqueIds.length),
+          }).toString()
+      )
+      const map: Record<string, { full_name?: string }> = {}
+      for (const row of rows ?? []) {
+        if (row?.name) map[row.name] = { full_name: row.full_name ?? row.name }
+      }
+      return map
+    } catch {
+      return {}
+    }
+  },
+
+  // Assign a single document to a user: frappe.desk.form.assign_to.add
+  // (whitelisted). `assign_to` must be a JSON array.
+  async assignUserToDoc(name: string, user: string): Promise<void> {
+    await postMethod("frappe.desk.form.assign_to.add", {
+      assign_to: JSON.stringify([user]),
+      doctype: "Payment Entry",
+      name,
+    })
+  },
+
+  async unassignUserFromDoc(name: string, user: string): Promise<void> {
+    await postMethod("frappe.desk.form.assign_to.remove", {
+      doctype: "Payment Entry",
+      name,
+      assign_to: user,
+    })
+  },
+
+  // Mark an assignment as done (only the assignee can complete their own).
+  async completeOwnAssignment(name: string, user: string): Promise<void> {
+    await postMethod("frappe.desk.form.assign_to.close", {
+      doctype: "Payment Entry",
+      name,
+      assign_to: user,
+    })
+  },
+
+  // Single-doc tag add/remove (frappe.desk.doctype.tag.tag.add_tag /
+  // remove_tag — the form sidebar's TagEditor methods, distinct from the list
+  // bulk add_tags).
+  async addTagToDoc(name: string, tag: string): Promise<void> {
+    await postMethod("frappe.desk.doctype.tag.tag.add_tag", {
+      tag,
+      dt: "Payment Entry",
+      dn: name,
+    })
+  },
+
+  async removeTagFromDoc(name: string, tag: string): Promise<void> {
+    await postMethod("frappe.desk.doctype.tag.tag.remove_tag", {
+      tag,
+      dt: "Payment Entry",
+      dn: name,
+    })
+  },
+
+  // Tag suggestions (TagEditor augments its input with existing Tag master
+  // names): frappe.desk.doctype.tag.tag.get_tags.
+  async searchTags(query: string): Promise<string[]> {
+    try {
+      return (
+        (await postMethod<string[] | null>("frappe.desk.doctype.tag.tag.get_tags", {
+          doctype: "Payment Entry",
+          txt: query,
+        })) ?? []
+      )
+    } catch {
+      return []
+    }
   },
 
   async getAccountingLedgerPreview(company: string, name: string): Promise<LedgerPreviewData> {

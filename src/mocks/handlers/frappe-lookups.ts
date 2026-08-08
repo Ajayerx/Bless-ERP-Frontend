@@ -20,10 +20,10 @@ const salesInvoices = [
 ]
 
 // ── Payment Entries (10 records) ──────────────────────────────────────
-const paymentEntries = [
-  { name: "PAY-2026-0001", party: "CUST-0001", party_name: "Maple Leaf Bakery", paid_amount: 2450.00, payment_type: "Receive", posting_date: "2026-07-02", creation: "2026-07-02T12:00:00", docstatus: 1 },
-  { name: "PAY-2026-0002", party: "CUST-0004", party_name: "Great Lakes Trading", paid_amount: 560.75, payment_type: "Receive", posting_date: "2026-07-03", creation: "2026-07-03T10:30:00", docstatus: 1 },
-  { name: "PAY-2026-0003", party: "CUST-0003", party_name: "Blue Mountain Supplies", paid_amount: 2220.00, payment_type: "Receive", posting_date: "2026-07-04", creation: "2026-07-04T14:15:00", docstatus: 1 },
+export const paymentEntries = [
+  { name: "PAY-2026-0001", party: "CUST-0001", party_name: "Maple Leaf Bakery", paid_amount: 2450.00, payment_type: "Receive", posting_date: "2026-07-02", creation: "2026-07-02T12:00:00", docstatus: 1, _assign: '["aarav@blesserp.com"]', _user_tags: "Audit,Q1-Review" },
+  { name: "PAY-2026-0002", party: "CUST-0004", party_name: "Great Lakes Trading", paid_amount: 560.75, payment_type: "Receive", posting_date: "2026-07-03", creation: "2026-07-03T10:30:00", docstatus: 1, _assign: '["aarav@blesserp.com","jane.doe@blesserp.com"]', _user_tags: "Follow-up" },
+  { name: "PAY-2026-0003", party: "CUST-0003", party_name: "Blue Mountain Supplies", paid_amount: 2220.00, payment_type: "Receive", posting_date: "2026-07-04", creation: "2026-07-04T14:15:00", docstatus: 1, _assign: '["priya@blesserp.com"]' },
   { name: "PAY-2026-0004", party: "CUST-0001", party_name: "Maple Leaf Bakery", paid_amount: 890.25, payment_type: "Receive", posting_date: "2026-07-04", creation: "2026-07-04T16:45:00", docstatus: 1 },
   { name: "PAY-2026-0005", party: "CUST-0002", party_name: "Northern Lights Coffee", paid_amount: 1230.00, payment_type: "Receive", posting_date: "2026-07-05", creation: "2026-07-05T11:00:00", docstatus: 1 },
   { name: "PAY-2026-0006", party: "CUST-0003", party_name: "Blue Mountain Supplies", paid_amount: 340.00, payment_type: "Receive", posting_date: "2026-07-06", creation: "2026-07-06T09:30:00", docstatus: 1 },
@@ -160,12 +160,21 @@ function safeJsonParse<T>(val: string | null, fallback: T): T {
 function parseQSParams(url: string) {
   const u = new URL(url, "http://localhost")
   const filters: unknown[] = safeJsonParse(u.searchParams.get("filters"), [])
-  return { filters }
+  const orFilters: unknown[] = safeJsonParse(u.searchParams.get("or_filters"), [])
+  return { filters, orFilters }
 }
 
-function matchesFilter(row: Record<string, unknown>, filters: unknown[]): boolean {
-  for (const f of filters) {
-    if (!Array.isArray(f) || f.length < 3) continue
+export function matchesFilter(row: Record<string, unknown>, filters: unknown[]): boolean {
+  for (const raw of filters) {
+    if (!Array.isArray(raw)) continue
+    const f = raw as unknown[]
+    if (f[0] === "OR") {
+      const orGroups = f.slice(1) as unknown[][]
+      const orMatched = orGroups.some((g) => matchesFilter(row, g))
+      if (!orMatched) return false
+      continue
+    }
+    if (f.length < 3) continue
     const [field, operator, value] = f as [string, string, unknown]
     const rowVal = row[field]
     if (operator === "=") {
@@ -181,6 +190,21 @@ function matchesFilter(row: Record<string, unknown>, filters: unknown[]): boolea
       const d = new Date(String(rowVal))
       if (d < new Date(String(value[0])) || d > new Date(String(value[1]))) return false
     }
+  }
+  return true
+}
+
+// Combines the top-level `filters` (AND) with `or_filters` (match at least one
+// group) — mirrors how Frappe's db_query applies both.
+export function matchesFilterSet(
+  row: Record<string, unknown>,
+  filters: unknown[],
+  orFilters: unknown[]
+): boolean {
+  if (filters.length > 0 && !matchesFilter(row, filters)) return false
+  if (orFilters.length > 0) {
+    const orMatched = orFilters.some((f) => matchesFilter(row, [f]))
+    if (!orMatched) return false
   }
   return true
 }
@@ -224,13 +248,17 @@ export const frappeLookupHandlers = [
       return HttpResponse.json({ data: globalDefaults })
     }
 
-    // User list
+    // User list (assignee-name resolution: resolveUserNames)
     if (doctype === "User") {
       return HttpResponse.json({
         data: [
           { name: "admin@blesserp.com", full_name: "BlessERP Admin" },
           { name: "john.smith@blesserp.com", full_name: "John Smith" },
           { name: "jane.doe@blesserp.com", full_name: "Jane Doe" },
+          { name: "aarav@blesserp.com", full_name: "Aarav Mehta" },
+          { name: "priya@blesserp.com", full_name: "Priya Sharma" },
+          { name: "neha@blesserp.com", full_name: "Neha Gupta" },
+          { name: "vivek@blesserp.com", full_name: "Vivek Nair" },
         ],
       })
     }
@@ -238,9 +266,9 @@ export const frappeLookupHandlers = [
     // Dashboard & other list doctypes
     const rows = listData[doctype]
     if (rows) {
-      const { filters } = parseQSParams(request.url)
-      const filtered = filters.length > 0
-        ? rows.filter((r) => matchesFilter(r, filters))
+      const { filters, orFilters } = parseQSParams(request.url)
+      const filtered = filters.length > 0 || orFilters.length > 0
+        ? rows.filter((r) => matchesFilterSet(r, filters, orFilters))
         : rows
       return HttpResponse.json({ data: filtered })
     }

@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef } from "react"
 import { useParams, useNavigate } from "react-router-dom"
-import { BookOpen, Check, Save, Ban, GitBranch, Copy, Mail, Printer, Trash2, MoreHorizontal, Table2 } from "lucide-react"
+import { BookOpen, Check, Save, Ban, GitBranch, Copy, Mail, Printer, Trash2, MoreHorizontal, Table2, PanelLeftClose, PanelLeftOpen } from "lucide-react"
 import { motion } from "framer-motion"
 import Topbar from "@/components/layout/Topbar"
 import PageHead from "@/components/layout/PageHead"
@@ -26,6 +26,7 @@ import LedgerPreviewTable from "../components/LedgerPreviewTable"
 import SendPaymentEmailDialog from "../components/SendPaymentEmailDialog"
 import UnReconcileDialog from "../components/UnReconcileDialog"
 import PaymentActivity from "../components/PaymentActivity"
+import PaymentMetaPanel from "../components/PaymentMetaPanel"
 
 function statusBadge(docstatus: number, status: string) {
   if (docstatus === 1) return <Badge variant="success">Submitted</Badge>
@@ -87,6 +88,29 @@ export default function PaymentDetail() {
   const [ledgerData, setLedgerData] = useState<LedgerPreviewData | null>(null)
   const [comments, setComments] = useState<PaymentActivityItem[]>([])
   const [commentsLoading, setCommentsLoading] = useState(false)
+
+  // ERPNext-style collapsible form sidebar (Assignments & Tags). Persisted;
+  // hidden on small screens where the fixed left rail leaves no room.
+  const META_SIDEBAR_KEY = "blesserp_payment_meta_sidebar"
+  const [metaOpen, setMetaOpen] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem(META_SIDEBAR_KEY) !== "0"
+    } catch {
+      return true
+    }
+  })
+
+  const toggleMeta = useCallback(() => {
+    setMetaOpen((open) => {
+      const next = !open
+      try {
+        localStorage.setItem(META_SIDEBAR_KEY, next ? "1" : "0")
+      } catch {
+        // ignore persistence failures
+      }
+      return next
+    })
+  }, [])
 
   // Open the Payment Entry print PDF in a new tab by fetching it as a Blob,
   // rather than navigating to an SPA fallback route.
@@ -352,6 +376,18 @@ export default function PaymentDetail() {
         backTo="/payments"
         actions={
           <>
+            {/* Collapsible Assignments & Tags sidebar toggle (ERPNext form sidebar);
+                labeled so it is discoverable, collapses to a plain icon on small headers */}
+            <Button
+              variant="secondary"
+              size="md"
+              className="hidden md:inline-flex"
+              aria-label={metaOpen ? "Hide assignments & tags" : "Show assignments & tags"}
+              onClick={toggleMeta}
+            >
+              {metaOpen ? <PanelLeftClose size={16} /> : <PanelLeftOpen size={16} />}
+              <span className="ml-1.5">{metaOpen ? "Hide" : "Show"} Assignments</span>
+            </Button>
             {/* Draft: Accounting Ledger Preview */}
             {isDraft && (
               <Button variant="secondary" size="md" onClick={openLedgerPreview}>
@@ -446,29 +482,34 @@ export default function PaymentDetail() {
           </>
         }
       />
-      <motion.div className="p-6 space-y-6" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.3 }}>
-        <div className="bg-white rounded-2xl shadow-card p-6">
-          {/* Form — single PaymentForm for ALL docstates */}
-          <PaymentForm
-            ref={formRef}
-            mode="existing"
-            initialValues={payment}
-            onSaved={() => fetchPayment()}
-            onCancel={() => navigate("/payments")}
-            onDirtyChange={setDirty}
-            onAfterSave={handleAfterSave}
-            hideFooter={true}
-            ledger={ledgerData ? { data: ledgerData, loading: ledgerLoading, error: ledgerError } : undefined}
-          />
+<motion.div className="p-6" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.3 }}>
+        <div className="flex items-start gap-6">
+          {metaOpen && <PaymentMetaPanel name={payment.name} onCollapse={toggleMeta} />}
+          <div className="flex-1 min-w-0 space-y-6">
+            <div className="bg-white rounded-2xl shadow-card p-6">
+              {/* Form — single PaymentForm for ALL docstates */}
+              <PaymentForm
+                ref={formRef}
+                mode="existing"
+                initialValues={payment}
+                onSaved={() => fetchPayment()}
+                onCancel={() => navigate("/payments")}
+                onDirtyChange={setDirty}
+                onAfterSave={handleAfterSave}
+                hideFooter={true}
+                ledger={ledgerData ? { data: ledgerData, loading: ledgerLoading, error: ledgerError } : undefined}
+              />
+            </div>
+            <PaymentActivity
+              activity={comments}
+              loading={commentsLoading}
+              onAddComment={handleAddComment}
+              onUpdateComment={handleUpdateComment}
+              onDeleteComment={handleDeleteComment}
+              currentUserId={currentUserId}
+            />
+          </div>
         </div>
-        <PaymentActivity
-          activity={comments}
-          loading={commentsLoading}
-          onAddComment={handleAddComment}
-          onUpdateComment={handleUpdateComment}
-          onDeleteComment={handleDeleteComment}
-          currentUserId={currentUserId}
-        />
       </motion.div>
 
       {/* Confirmation dialog */}
@@ -483,7 +524,8 @@ export default function PaymentDetail() {
         onConfirm={handleConfirm}
         title={confirmTitle ?? ""}
         description={confirmMessage ?? ""}
-        confirmLabel={confirmAction === "delete" ? "Delete" : confirmAction === "submit" ? "Submit" : confirmAction === "cancel" ? "Cancel" : "Amend"}
+        confirmLabel={confirmAction === "delete" ? "Delete" : confirmAction === "submit" ? "Submit" : confirmAction === "cancel" ? "Cancel Payment" : "Amend"}
+        cancelLabel="No, go back"
         variant={confirmAction === "delete" || confirmAction === "cancel" ? "danger" : "warning"}
         loading={acting}
         error={confirmError}
@@ -547,6 +589,7 @@ export default function PaymentDetail() {
         title="Bank Transactions are Linked to this Payment"
         description={`The following Bank Transaction(s) are matched with this Payment Entry. Cancelling will automatically remove the reconciliation: ${(bankLinked ?? []).join(", ")}. Proceed?`}
         confirmLabel="Cancel Payment"
+        cancelLabel="No, go back"
         variant="danger"
         loading={acting}
         error={confirmError}

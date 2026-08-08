@@ -1,6 +1,6 @@
 import { useState, useMemo, useRef, useCallback } from "react"
 import { motion } from "framer-motion"
-import { Search, ChevronLeft, ChevronRight, ChevronDown } from "lucide-react"
+import { Search, ChevronLeft, ChevronRight, ChevronDown, ChevronUp } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Checkbox } from "./checkbox"
 
@@ -13,6 +13,9 @@ export interface Column<T> {
   className?: string
   align?: 'left' | 'right' | 'center'
   width?: string
+  // Skip the inner `truncate` wrapper — for cells whose content must not be
+  // overflow-clipped (e.g. negative-margin avatar stacks).
+  noTruncate?: boolean
 }
 
 interface DataTableProps<T> {
@@ -38,6 +41,9 @@ interface DataTableProps<T> {
   currentPageLength?: number
   onPageLengthChange?: (size: number) => void
   onLoadMore?: () => void
+  sortField?: string
+  sortOrder?: "asc" | "desc"
+  onSortChange?: (field: string, order: "asc" | "desc") => void
 }
 
 const PAGE_SIZE_OPTIONS = [20, 100, 500, 2500]
@@ -65,6 +71,9 @@ export default function DataTable<T>({
   currentPageLength,
   onPageLengthChange,
   onLoadMore,
+  sortField,
+  sortOrder = "desc",
+  onSortChange,
 }: DataTableProps<T>) {
   const [internalPage, setInternalPage] = useState(1)
   const [internalSearch, setInternalSearch] = useState("")
@@ -138,6 +147,12 @@ export default function DataTable<T>({
 
   const hasMore = total != null ? displayedData.length < total : false
 
+  const handleSort = (key: string) => {
+    if (!onSortChange) return
+    const nextOrder = sortField === key && sortOrder === "desc" ? "asc" : "desc"
+    onSortChange(key, nextOrder)
+  }
+
   return (
     <div className="bg-surface rounded-[16px] border border-border shadow-card overflow-hidden">
       {/* Toolbar */}
@@ -206,8 +221,27 @@ export default function DataTable<T>({
                   )}
                 >
                   <div className="flex items-center gap-1.5">
-                    <span className="truncate">{col.header}</span>
-                    {col.sortable && <ChevronDown size={12} className="text-muted/50 shrink-0" />}
+                    {col.sortable && onSortChange ? (
+                      <button
+                        onClick={() => handleSort(col.key)}
+                        className="inline-flex items-center gap-1.5 min-w-0 group"
+                        title={`Sort by ${col.header}`}
+                      >
+                        <span className="truncate group-hover:text-body">{col.header}</span>
+                        {sortField === col.key ? (
+                          sortOrder === "desc"
+                            ? <ChevronDown size={12} className="text-primary-600 shrink-0" />
+                            : <ChevronUp size={12} className="text-primary-600 shrink-0" />
+                        ) : (
+                          <ChevronDown size={12} className="text-muted/40 group-hover:text-muted shrink-0" />
+                        )}
+                      </button>
+                    ) : (
+                      <>
+                        <span className="truncate">{col.header}</span>
+                        {col.sortable && <ChevronDown size={12} className="text-muted/50 shrink-0" />}
+                      </>
+                    )}
                   </div>
                 </th>
               ))}
@@ -285,11 +319,15 @@ export default function DataTable<T>({
                             col.className
                           )}
                         >
-                          <div className="truncate" title={cellTitle}>
-                            {col.render
-                              ? col.render(item)
-                              : String(raw ?? "")}
-                          </div>
+                          {col.noTruncate ? (
+                            <div title={cellTitle}>{col.render ? col.render(item) : String(raw ?? "")}</div>
+                          ) : (
+                            <div className="truncate" title={cellTitle}>
+                              {col.render
+                                ? col.render(item)
+                                : String(raw ?? "")}
+                            </div>
+                          )}
                         </td>
                       );
                     })}

@@ -142,12 +142,34 @@ export interface DocInfoUserInfo {
   [user: string]: { fullname?: string; first_name?: string; image?: string }
 }
 
+// Open ToDo rows for a document (load.py get_assignments). `owner` is the
+// assigned user id; status is "Open" until removed/closed.
+export interface DocInfoAssignment {
+  name: string
+  owner: string
+  description?: string
+  status?: string
+}
+
+// frappe.permissions.get_doc_permissions -> { write, read, create, delete, submit, ... }
+export interface DocInfoPermissions {
+  write?: boolean
+  read?: boolean
+  create?: boolean
+  delete?: boolean
+  submit?: boolean
+  amend?: boolean
+}
+
 export interface DocInfo {
   doctype?: string
   name?: string
   comments?: DocInfoComment[]
   communications?: DocInfoCommunication[]
   versions?: DocInfoVersion[]
+  assignments?: DocInfoAssignment[]
+  tags?: string
+  permissions?: DocInfoPermissions
   user_info?: DocInfoUserInfo
 }
 
@@ -224,6 +246,11 @@ export interface PaymentEntry {
   taxes?: PaymentEntryTax[]
   amended_from?: string
   auto_repeat?: string
+  // Frappe optional_fields — returned by the list API when the columns exist
+  // (see frappe/model/__init__.py optional_fields). _assign is a JSON array
+  // string of user ids; _user_tags is a comma-separated tag string.
+  _assign?: string
+  _user_tags?: string
 }
 
 export interface PaymentEntryListResponse {

@@ -1,4 +1,5 @@
 import { http, HttpResponse, delay } from "msw"
+import { paymentEntries, matchesFilterSet } from "./frappe-lookups"
 
 // ── Customers ────────────────────────────────────────────────────────
 interface CustomerRow {
@@ -226,6 +227,25 @@ function filterDynamicLinks(addr: MockAddress, filters: unknown[]): boolean {
   return true
 }
 
+// Shared get_count implementation for frappe.client.get_count and
+// frappe.desk.reportview.get_count (the reportview one also carries a
+// top-level `or_filters` param for the list search).
+async function countFor(url: string) {
+  await delay(100)
+  const u = new URL(url, "http://localhost")
+  const doctype = u.searchParams.get("doctype")
+  const filters: unknown[] = safeJsonParse(u.searchParams.get("filters"), [])
+  const orFilters: unknown[] = safeJsonParse(u.searchParams.get("or_filters"), [])
+
+  let count = 0
+  if (doctype === "Customer") {
+    count = customers.filter((c) => customerMatchesFilters(c, filters)).length
+  } else if (doctype === "Payment Entry") {
+    count = paymentEntries.filter((r) => matchesFilterSet(r, filters, orFilters)).length
+  }
+  return HttpResponse.json({ message: count })
+}
+
 // ── Handlers ─────────────────────────────────────────────────────────
 export const frappeCustomerHandlers = [
   // ── GET /api/resource/Customer?fields=...&filters=...&limit... ────
@@ -244,17 +264,12 @@ export const frappeCustomerHandlers = [
 
   // ── GET /api/method/frappe.client.get_count?doctype=... ──────────
   http.get("/api/method/frappe.client.get_count", async ({ request }) => {
-    await delay(100)
-    const url = new URL(request.url, "http://localhost")
-    const doctype = url.searchParams.get("doctype")
-    const filtersJson = url.searchParams.get("filters")
-    const filters: unknown[] = filtersJson ? safeJsonParse(filtersJson, []) : []
+    return countFor(request.url)
+  }),
 
-    let count = 0
-    if (doctype === "Customer") {
-      count = customers.filter((c) => customerMatchesFilters(c, filters)).length
-    }
-    return HttpResponse.json({ message: count })
+  // ── GET /api/method/frappe.desk.reportview.get_count?doctype=... ──
+  http.get("/api/method/frappe.desk.reportview.get_count", async ({ request }) => {
+    return countFor(request.url)
   }),
 
   // ── GET /api/resource/Customer/{name} ────────────────────────────
