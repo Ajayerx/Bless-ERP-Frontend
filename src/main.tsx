@@ -1,4 +1,3 @@
-import { StrictMode } from "react"
 import { createRoot } from "react-dom/client"
 import { BrowserRouter } from "react-router-dom"
 import { AuthProvider } from "./context/AuthContext"
@@ -27,27 +26,25 @@ async function bootstrap() {
   }
 
   createRoot(document.getElementById("root")!).render(
-    <StrictMode>
-      <ErrorBoundary>
-        <BrowserRouter>
-          <ThemeProvider>
-            <ToastProvider>
-              <MessageDialogProvider>
-                <AuthProvider>
-                  <CompanyProvider>
-                    <AppProvider>
-                      <NotificationProvider>
-                        <App />
-                      </NotificationProvider>
-                    </AppProvider>
-                  </CompanyProvider>
-                </AuthProvider>
-              </MessageDialogProvider>
-            </ToastProvider>
-          </ThemeProvider>
-        </BrowserRouter>
-      </ErrorBoundary>
-    </StrictMode>
+    <ErrorBoundary>
+      <BrowserRouter>
+        <ThemeProvider>
+          <ToastProvider>
+            <MessageDialogProvider>
+              <AuthProvider>
+                <CompanyProvider>
+                  <AppProvider>
+                    <NotificationProvider>
+                      <App />
+                    </NotificationProvider>
+                  </AppProvider>
+                </CompanyProvider>
+              </AuthProvider>
+            </MessageDialogProvider>
+          </ToastProvider>
+        </ThemeProvider>
+      </BrowserRouter>
+    </ErrorBoundary>
   )
 }
 

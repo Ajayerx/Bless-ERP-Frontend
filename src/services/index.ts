@@ -2,6 +2,7 @@
 export { apiClient, ApiError } from "./api-client"
 export { authService } from "./auth.service"
 export type { AuthService, User } from "./auth.service"
+export type { TaxTemplateResult, TaxRow } from "./tax-template"
 export {
   getValue,
   getAccountingDimensions,
@@ -29,14 +30,14 @@ export type {
   AddressInput, AllowedCompanyRow, CreditLimitRow, PartyAccountRow, SalesTeamRow, PortalUserRow, SupplierNumberRow,
 } from "@/modules/customers/services"
 
-export { invoiceService, templateRowsToEditable, invoiceTaxesToEditable, computeTaxes, createEmptyTaxRow } from "@/modules/invoices/services"
-export type { SalesInvoice, SalesInvoiceFormData, SalesInvoiceItem, SalesInvoiceTax, SalesInvoiceListResponse, EditableTaxRow, ChargeType, AccountInfo } from "@/modules/invoices/services"
+export { invoiceService, templateRowsToEditable, invoiceTaxesToEditable, erpnextTaxesToEditable, computeTaxes, computeTotalForDiscountAmount, createEmptyTaxRow, formatExchangeRateError } from "@/modules/invoices/services"
+export type { SalesInvoice, SalesInvoiceFormData, SalesInvoiceItem, SalesInvoiceTax, SalesInvoiceListResponse, EditableTaxRow, ChargeType, AccountInfo, PartyDetailsResponse } from "@/modules/invoices/services"
 
 export { paymentService, allocateAmountToReferences, savePaymentRaw, setMatchedPaymentRequests, buildTimelineItems, fieldLabel } from "@/modules/payments/services"
 export type { PaymentEntry, PaymentEntryListResponse, RecordPaymentData, InvoiceAllocation, PaymentDeductionForm, LedgerPreviewData, LedgerPreviewColumn, PaymentComment, PaymentActivityItem, ReferenceDetails, PaymentEntryDocSnapshot, UnreconcileAllocation, PaymentAfterSaveResult, VersionDoc } from "@/modules/payments/services"
 
 export { reportService } from "@/modules/reports/services"
-export type { TaxSummary, TaxBreakdownRow, SalesReport, ARReport, InventoryReport, ProfitLoss, BalanceSheet, GeneralLedgerColumn, GeneralLedgerRow, GeneralLedgerFilters, GeneralLedgerReport } from "@/modules/reports/services"
+export type { TaxSummary, TaxBreakdownRow, TaxTransactionRow, TaxSideSummary, NetRemittance, SalesReport, ARReport, InventoryReport, ProfitLoss, BalanceSheet, GeneralLedgerColumn, GeneralLedgerRow, GeneralLedgerFilters, GeneralLedgerReport } from "@/modules/reports/services"
 
 export { productService } from "@/modules/products/services"
 export type {

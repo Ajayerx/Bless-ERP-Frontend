@@ -226,3 +226,72 @@ export async function apiClientWithBody<T>(
 ): Promise<{ data?: unknown; message: unknown; docs?: unknown[] } & T> {
   return fetchJson(endpoint, options)
 }
+
+// --- ERPNext frappe.call-style form POST --------------------------------
+// Mirrors the exact bytes ERPNext's own browser sends for "selection"
+// calls (validate_link, get_party_details, get_loyalty_programs, search_link,
+// get_value, get_default_taxes_and_charges):
+//  - application/x-www-form-urlencoded body built from ordered [key, value]
+//    pairs (array/object args are pre-JSON-encoded by the caller)
+//  - X-Frappe-CMD = the method path
+//  - X-Frappe-Doctype only when a doctype argument is present (frappe sets
+//    it from args.doctype)
+//  - X-Requested-With: XMLHttpRequest
+//  - X-Frappe-CSRF-Token echoed from the cookie (non-GET)
+//  - deliberately NO X-Frappe-Company (ERPNext does not send it)
+async function fetchForm(endpoint: string, fields: Array<[string, string]>, doctype?: string): Promise<any> {
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), API_CONFIG.timeout)
+
+  const body = new URLSearchParams(fields).toString()
+  const csrf = getCsrfToken()
+
+  let res: Response
+  try {
+    res = await fetch(`${API_CONFIG.baseUrl}${endpoint}`, {
+      method: "POST",
+      credentials: "include",
+      signal: controller.signal,
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+        "X-Frappe-CMD": endpoint,
+        ...(doctype ? { "X-Frappe-Doctype": doctype } : {}),
+        "X-Requested-With": "XMLHttpRequest",
+        ...(csrf ? { "X-Frappe-CSRF-Token": csrf } : {}),
+      },
+      body,
+    })
+  } catch (err) {
+    if ((err as Error).name === "AbortError") {
+      throw new ApiError(0, "Request timed out. Please check your connection.")
+    }
+    throw new ApiError(0, "Network error. Is the ERPNext server reachable?")
+  } finally {
+    clearTimeout(timeoutId)
+  }
+
+  const bodyJson = await safeParseJson(res)
+
+  if (!res.ok) {
+    if ((res.status === 401 || res.status === 403) && !unauthorizing) {
+      unauthorizing = true
+      try {
+        onUnauthorized?.()
+      } finally {
+        unauthorizing = false
+      }
+    }
+    throw new ApiError(res.status, parseErrorMessage(bodyJson), parseRawErrorMessage(bodyJson), firstServerMessage(bodyJson))
+  }
+
+  return bodyJson
+}
+
+export async function apiFormCall<T>(
+  cmd: string,
+  fields: Array<[string, string]>,
+  opts?: { doctype?: string }
+): Promise<T> {
+  const body = await fetchForm(cmd, fields, opts?.doctype)
+  return (body.data ?? body.message) as T
+}

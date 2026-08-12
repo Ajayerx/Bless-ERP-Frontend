@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { ArrowLeft, Save, CheckCircle2 } from "lucide-react";
@@ -9,21 +9,23 @@ import { Button, Skeleton } from "@/components/ui";
 import { getCompanyDefaults } from "@/services/company";
 import {
   invoiceService,
-  customerService,
-  productService,
-  type Customer,
   type Product,
   type TaxTemplateResult,
   type EditableTaxRow,
-  type AccountInfo,
+  type PartyDetailsResponse,
   templateRowsToEditable,
+  erpnextTaxesToEditable,
   computeTaxes,
+  computeTotalForDiscountAmount,
+  formatExchangeRateError,
 } from "@/services";
 import InvoiceForm, { type InvoiceFormData, type InvoiceFieldErrors } from "../components/InvoiceForm";
+import LoyaltyProgramDialog from "../components/LoyaltyProgramDialog";
+import { useCustomerSelection } from "../hooks/useCustomerSelection";
 import InvoiceLineItems, {
   type LineItemForm,
 } from "../components/InvoiceLineItems";
-import InvoiceTotals from "../components/InvoiceTotals";
+import { applySetWarehouseToItems } from "../utils/applySetWarehouse";
 import {
   validateInvoice,
   getErrorMessages,
@@ -188,6 +190,52 @@ function toFormData(d: Partial<InvoiceFormData>): InvoiceFormData {
   };
 }
 
+function buildApplyPriceListArgs(
+  fd: InvoiceFormData,
+  li: LineItemForm[],
+  defaults: { company: string; currency: string; defaultSellingPriceList: string } | null,
+): Record<string, unknown> {
+  return {
+    items: li
+      .filter((l) => l.productId || l.sku)
+      .map((l) => ({
+        doctype: "Sales Invoice Item",
+        name: l.id,
+        child_docname: l.id,
+        item_code: l.sku || l.productId,
+        qty: l.quantity,
+        stock_qty: l.quantity,
+        uom: l.uom,
+        stock_uom: l.stockUom || l.uom,
+        warehouse: l.warehouse,
+        price_list_rate: l.priceListRate ?? l.price,
+        conversion_factor: l.conversionFactor ?? 1,
+        discount_percentage: l.discountPercentage ?? 0,
+        discount_amount: l.discountAmount ?? 0,
+      })),
+    customer: fd.customer || "",
+    customer_group: fd.customerGroup || "",
+    territory: fd.territory || "",
+    currency: fd.currency || defaults?.currency,
+    conversion_rate: fd.conversionRate ?? 1,
+    price_list: fd.sellingPriceList || defaults?.defaultSellingPriceList || "",
+    price_list_currency: fd.priceListCurrency || defaults?.currency,
+    plc_conversion_rate: fd.plcConversionRate ?? 1,
+    company: fd.company || defaults?.company || "",
+    transaction_date: fd.issueDate || new Date().toISOString().slice(0, 10),
+    campaign: fd.campaign,
+    sales_partner: fd.salesPartner,
+    ignore_pricing_rule: fd.ignorePricingRule,
+    doctype: "Sales Invoice",
+    name: "new-sales-invoice-1",
+    is_return: fd.isReturn ? 1 : 0,
+    update_stock: fd.updateStock ? 1 : 0,
+    pos_profile: fd.posProfile || "",
+    coupon_code: fd.couponCode,
+    is_internal_customer: fd.isInternalCustomer ? 1 : 0,
+  };
+}
+
 export default function CreateInvoice() {
   const navigate = useNavigate();
 
@@ -202,18 +250,6 @@ export default function CreateInvoice() {
   const lineItemsRef = useRef(lineItems);
   lineItemsRef.current = lineItems;
   const [saving, setSaving] = useState(false);
-  const [customers, setCustomers] = useState<Customer[]>([]);
-  const [products, setProducts] = useState<Product[]>([]);
-  const [productDropdowns, setProductDropdowns] = useState<
-    Record<string, { open: boolean; search: string }>
-  >({});
-  const [warehouses, setWarehouses] = useState<string[]>([]);
-  const [accounts, setAccounts] = useState<AccountInfo[]>([]);
-  const [costCenters, setCostCenters] = useState<string[]>([]);
-  const [itemTaxTemplates, setItemTaxTemplates] = useState<string[]>([]);
-  const [taxesAndChargesTemplates, setTaxesAndChargesTemplates] = useState<
-    string[]
-  >([]);
   const [taxTemplate, setTaxTemplate] = useState<TaxTemplateResult | null>(null);
   const [companyDefaults, setCompanyDefaults] = useState<{
     company: string;
@@ -228,10 +264,54 @@ export default function CreateInvoice() {
   const [errorMessages, setErrorMessages] = useState<string[]>([]);
   const [fieldErrors, setFieldErrors] = useState<InvoiceFieldErrors>({});
   const [loading, setLoading] = useState(true);
-  const [loadingPartyDetails, setLoadingPartyDetails] = useState(false);
   const [conversionRate, setConversionRate] = useState<number>(1);
   const [plcConversionRate, setPlcConversionRate] = useState<number>(1);
   const [editableTaxRows, setEditableTaxRows] = useState<EditableTaxRow[]>([]);
+
+  const defaultTaxesTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handlePartyDetailsApplied = useCallback(
+    (details: PartyDetailsResponse) => {
+      // ERPNext apply_default_taxes: only fires on a new doc with no tax rows
+      // yet, debounced 2000ms after the party-details refresh()
+      if (editableTaxRows.length > 0) return;
+      const company = companyDefaults?.company ?? formDataRef.current.company ?? "";
+      if (!company) return;
+      if (defaultTaxesTimer.current) clearTimeout(defaultTaxesTimer.current);
+      defaultTaxesTimer.current = setTimeout(() => {
+        invoiceService
+          .getDefaultTaxesAndCharges(company, details.taxes_and_charges || "")
+          .then((res) => {
+            if (res && (res.taxes_and_charges || res.taxes.length)) {
+              setTaxTemplate({
+                name: res.taxes_and_charges || "",
+                doctype: "Sales Taxes and Charges Template",
+                rows: [],
+              });
+              if (res.taxes.length) {
+                setEditableTaxRows(erpnextTaxesToEditable(res.taxes));
+              }
+            }
+          });
+      }, 2000);
+    },
+    [companyDefaults, editableTaxRows.length],
+  );
+
+  const {
+    handleSelectCustomer,
+    loadingPartyDetails,
+    loyaltyProgramOptions,
+    clearLoyaltyProgramOptions,
+  } = useCustomerSelection({
+    setFormData,
+    formDataRef,
+    companyDefaults,
+    setConversionRate,
+    setPlcConversionRate,
+    setError,
+    onPartyDetailsApplied: handlePartyDetailsApplied,
+  });
 
   // Fallback template name if template hasn't loaded yet
   const FALLBACK_TEMPLATE_NAME = "Canada GST/QST - BE";
@@ -239,27 +319,14 @@ export default function CreateInvoice() {
   const defaultTaxTemplate = taxTemplate?.name ?? FALLBACK_TEMPLATE_NAME;
 
   useEffect(() => {
-    Promise.all([
-      customerService.list({ pageSize: 100 }),
-      productService.list({ pageSize: 100 }),
-      invoiceService.getDefaultTaxTemplate(),
-      invoiceService.lookups.warehouses(),
-      invoiceService.lookups.taxAccounts(),
-      invoiceService.lookups.costCenters(),
-      invoiceService.lookups.itemTaxTemplates(),
-      invoiceService.lookups.taxesAndChargesTemplates(),
-      getCompanyDefaults(),
-    ])
-      .then(([custRes, prodRes, tmpl, wh, ac, cst, itt, tac, defaults]) => {
-        setCustomers(custRes.items);
-        setProducts(prodRes.items);
-        setTaxTemplate(tmpl);
-        setEditableTaxRows(templateRowsToEditable(tmpl?.rows ?? []));
-        setWarehouses(wh);
-        setAccounts(ac);
-        setCostCenters(cst);
-        setItemTaxTemplates(itt);
-        setTaxesAndChargesTemplates(tac);
+    return () => {
+      if (defaultTaxesTimer.current) clearTimeout(defaultTaxesTimer.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    getCompanyDefaults()
+      .then((defaults) => {
         setCompanyDefaults(defaults);
         setFormData((prev) => ({
           ...prev,
@@ -277,6 +344,7 @@ export default function CreateInvoice() {
               : line,
           ),
         );
+        loadFreshInvoiceDefaults(defaults);
       })
       .catch(() => {
         setError("Failed to load data");
@@ -304,6 +372,98 @@ export default function CreateInvoice() {
     prevSetWarehouse.current = formData.setWarehouse;
   }, [formData.setWarehouse]);
 
+  const applyPriceListToForm = async (args: Record<string, unknown>) => {
+    const result = await invoiceService.applyPriceList(args, {});
+    if (!result) return;
+    const parent = result.parent || {};
+    const children = result.children || [];
+    if (parent.price_list_currency) {
+      const plc = String(parent.price_list_currency);
+      setFormData((prev) => ({ ...prev, priceListCurrency: plc }));
+    }
+    const plcRate = parent.plc_conversion_rate != null ? Number(parent.plc_conversion_rate) : NaN;
+    if (!Number.isNaN(plcRate) && plcRate > 0) {
+      setPlcConversionRate(plcRate);
+      setFormData((prev) => ({ ...prev, plcConversionRate: plcRate }));
+    }
+    if (children.length) {
+      setLineItems((prev) =>
+        prev.map((l) => {
+          const child = children.find((c) => c.child_docname === l.id || c.name === l.id);
+          if (!child) return l;
+          const rate = child.price_list_rate != null ? Number(child.price_list_rate) : NaN;
+          if (Number.isNaN(rate)) return l;
+          return { ...l, price: rate, priceListRate: rate, total: calcTotal(l.quantity, rate) };
+        }),
+      );
+    }
+  };
+
+  const loadFreshInvoiceDefaults = (
+    defaults: {
+      company: string;
+      currency: string;
+      defaultSellingPriceList: string;
+      defaultCostCenter: string;
+    } | null,
+  ) => {
+    if (!defaults?.company) return;
+    const company = defaults.company;
+
+    invoiceService.getAccountingDimensions().then((dims) => {
+      const companyDims = dims.defaultDimensionsMap?.[company];
+      if (!companyDims) return;
+      if (companyDims.cost_center) {
+        setFormData((prev) => ({ ...prev, costCenter: companyDims.cost_center }));
+        setLineItems((prev) =>
+          prev.map((l) =>
+            !l.costCenter ? { ...l, costCenter: companyDims.cost_center } : l,
+          ),
+        );
+      }
+      if (companyDims.project) {
+        setFormData((prev) => ({ ...prev, project: companyDims.project }));
+      }
+    });
+
+    applyPriceListToForm(
+      buildApplyPriceListArgs(
+        {
+          ...formDataRef.current,
+          company,
+          currency: formDataRef.current.currency || defaults.currency,
+          sellingPriceList:
+            formDataRef.current.sellingPriceList ||
+            defaults.defaultSellingPriceList,
+          issueDate:
+            formDataRef.current.issueDate ||
+            new Date().toISOString().slice(0, 10),
+        },
+        lineItemsRef.current,
+        defaults,
+      ),
+    );
+
+    invoiceService.getDefaultCompanyAddress(company, "").then((addr) => {
+      if (addr) {
+        setFormData((prev) => ({ ...prev, companyAddress: addr }));
+      }
+    });
+
+    invoiceService.getDefaultTaxesAndCharges(company, "").then((res) => {
+      if (res && (res.taxes_and_charges || res.taxes.length)) {
+        setTaxTemplate({
+          name: res.taxes_and_charges || "",
+          doctype: "Sales Taxes and Charges Template",
+          rows: [],
+        });
+        if (res.taxes.length) {
+          setEditableTaxRows(erpnextTaxesToEditable(res.taxes));
+        }
+      }
+    });
+  };
+
   const handleTaxTemplateChange = async (templateName: string) => {
     if (!templateName) return;
     try {
@@ -314,103 +474,6 @@ export default function CreateInvoice() {
       }
     } catch {
       // keep existing rates on failure
-    }
-  };
-
-  const handleSelectCustomer = async (customer: Customer) => {
-    setFormData((prev) => ({
-      ...prev,
-      customer: customer.name,
-      customerName: customer.customer_name,
-      customerAddress: customer.customer_primary_address || undefined,
-      shippingAddressName: customer.customer_primary_address || undefined,
-      contactPerson: customer.customer_primary_contact || undefined,
-      // fetch_from: customer.* auto-link fields
-      taxId: customer.tax_id || undefined,
-      language: customer.language || undefined,
-      loyaltyProgram: customer.loyalty_program || undefined,
-      isInternalCustomer: !!customer.is_internal_customer,
-      representsCompany: customer.represents_company || undefined,
-    }));
-    if (!companyDefaults) return;
-    setLoadingPartyDetails(true);
-    try {
-      const details = await invoiceService.getPartyDetails(
-        customer.name,
-        companyDefaults.company,
-        formData.issueDate,
-      );
-      setFormData((prev) => ({
-        ...prev,
-        paymentTermsTemplate:
-          details.payment_terms_template || prev.paymentTermsTemplate,
-        customerAddress: details.customer_address || prev.customerAddress,
-        addressDisplay: details.address_display || prev.addressDisplay,
-        shippingAddressName:
-          details.shipping_address_name || prev.shippingAddressName,
-        shippingAddress: details.shipping_address || prev.shippingAddress,
-        contactPerson: details.contact_person || prev.contactPerson,
-        contactDisplay: details.contact_display || prev.contactDisplay,
-        contactEmail: details.contact_email || prev.contactEmail,
-        contactMobile: details.contact_mobile || prev.contactMobile,
-        debitTo: details.debit_to || prev.debitTo,
-        currency: details.currency || prev.currency,
-        sellingPriceList: details.selling_price_list || prev.sellingPriceList,
-        priceListCurrency:
-          details.price_list_currency || prev.priceListCurrency,
-        dueDate: details.due_date || prev.dueDate,
-        // fetch_from: customer.* fields from party details API
-        taxId: details.tax_id || prev.taxId,
-        language: details.language || prev.language,
-        territory: details.territory || prev.territory,
-        customerGroup: details.customer_group || prev.customerGroup,
-        taxCategory: details.tax_category || prev.taxCategory,
-        taxesAndCharges: details.taxes_and_charges || prev.taxesAndCharges,
-        // Company address from party details
-        companyAddress: details.company_address || prev.companyAddress,
-        companyAddressDisplay: details.company_address_display || prev.companyAddressDisplay,
-      }));
-
-      // Fetch exchange rates when currencies differ from company currency
-      const partyCurrency = details.currency;
-      const priceListCurrency = details.price_list_currency;
-      const companyCurrency = companyDefaults.currency;
-      const postingDate =
-        formData.issueDate || new Date().toISOString().slice(0, 10);
-
-      if (partyCurrency && partyCurrency !== companyCurrency) {
-        const rate = await invoiceService.getExchangeRate(
-          partyCurrency,
-          companyCurrency,
-          postingDate,
-        );
-        // TODO: handle rate === 0 (no Currency Exchange record, external API returned nothing).
-        // Do NOT silently fall back to 1 — that would cause incorrect amounts.
-        // Decided behavior TBD after checking what ERPNext Desk does in this case.
-        setConversionRate(rate);
-        setFormData((prev) => ({ ...prev, conversionRate: rate }));
-      } else {
-        setConversionRate(1);
-        setFormData((prev) => ({ ...prev, conversionRate: 1 }));
-      }
-
-      if (priceListCurrency && priceListCurrency !== companyCurrency) {
-        const plcRate = await invoiceService.getExchangeRate(
-          priceListCurrency,
-          companyCurrency,
-          postingDate,
-        );
-        // TODO: same 0.0 handling needed — see above
-        setPlcConversionRate(plcRate);
-        setFormData((prev) => ({ ...prev, plcConversionRate: plcRate }));
-      } else {
-        setPlcConversionRate(1);
-        setFormData((prev) => ({ ...prev, plcConversionRate: 1 }));
-      }
-    } catch {
-      // fallback: keep basic fields set above, don't block the form
-    } finally {
-      setLoadingPartyDetails(false);
     }
   };
 
@@ -492,9 +555,7 @@ export default function CreateInvoice() {
   };
 
   const removeLine = (id: string) =>
-    setLineItems((prev) =>
-      prev.length > 1 ? prev.filter((l) => l.id !== id) : prev,
-    );
+    setLineItems((prev) => prev.filter((l) => l.id !== id));
 
   const handleAddItems = (fetchedItems: Array<Record<string, unknown>>) => {
     if (!fetchedItems.length) return
@@ -549,6 +610,13 @@ export default function CreateInvoice() {
       }),
     );
 
+  const handleSetWarehouse = useCallback(
+    (warehouse: string | undefined) => {
+      void applySetWarehouseToItems(lineItems, updateLine, warehouse)
+    },
+    [lineItems],
+  );
+
   const selectProduct = async (lineId: string, product: Product) => {
     let incomeAccount = product.income_account || companyDefaults?.defaultIncomeAccount || "";
     let costCenter = product.cost_center || companyDefaults?.defaultCostCenter || "";
@@ -580,6 +648,9 @@ export default function CreateInvoice() {
       price: rate,
       uom: (itemDetails?.uom as string) || product.stock_uom || "Nos",
       warehouse: (itemDetails?.warehouse as string) || product.default_warehouse || "",
+      actualQty: itemDetails?.actual_qty as number | undefined,
+      projectedQty: itemDetails?.projected_qty as number | undefined,
+      reservedQty: itemDetails?.reserved_qty as number | undefined,
       incomeAccount,
       costCenter,
       discountPercentage: undefined,
@@ -587,18 +658,17 @@ export default function CreateInvoice() {
       marginType: undefined,
       marginRateOrAmount: undefined,
     });
-    setProductDropdowns((prev) => ({
-      ...prev,
-      [lineId]: { open: false, search: "" },
-    }));
   };
 
   const subtotal = lineItems.reduce((sum, l) => sum + l.total, 0);
   const totalQuantity = lineItems.reduce((sum, l) => sum + l.quantity, 0);
 
-  // Compute taxes from editable rows
-  const taxRows = computeTaxes(editableTaxRows, subtotal, totalQuantity);
-  const totalTaxesAndCharges = taxRows.reduce((sum, r) => sum + r.tax_amount, 0);
+  // First pass: taxes without discount (ERPNext recomputes after applying it)
+  const taxRowsBase = computeTaxes(editableTaxRows, subtotal, totalQuantity);
+  const totalTaxesAndChargesBase = taxRowsBase.reduce(
+    (sum, r) => sum + r.tax_amount,
+    0,
+  );
 
   // Compute additional discount
   let additionalDiscount = 0;
@@ -611,25 +681,57 @@ export default function CreateInvoice() {
     const base =
       formData.applyDiscountOn === "Net Total"
         ? subtotal
-        : subtotal + totalTaxesAndCharges;
+        : subtotal + totalTaxesAndChargesBase;
     additionalDiscount =
       Math.round(base * (formData.additionalDiscountPercentage / 100) * 100) /
       100;
   }
 
-  const grandTotal =
-    Math.round((subtotal + totalTaxesAndCharges - additionalDiscount) * 100) /
-    100;
+  const isCashOrNonTrade =
+    formData.applyDiscountOn === "Grand Total" &&
+    formData.isCashOrNonTradeDiscount;
 
-  // ERPNext-style rounding: round to nearest 0.01 (smallest currency fraction for CAD)
-  const roundedTotal = Math.round(grandTotal * 100) / 100;
-  const roundingAdjustment = roundedTotal - grandTotal;
+  // ERPNext distributes the discount over get_total_for_discount_amount()
+  // (grand total minus Actual/On Item Quantity taxes). Net Total mode uses
+  // the subtotal directly.
+  const totalForDiscount =
+    formData.applyDiscountOn === "Net Total"
+      ? subtotal
+      : computeTotalForDiscountAmount(
+          taxRowsBase,
+          subtotal,
+          totalTaxesAndChargesBase,
+        );
 
-  // Tax lines for InvoiceTotals display
-  const taxLinesForDisplay = taxRows.map((r) => ({
-    label: r.description || r.account_head,
-    amount: r.tax_amount,
-  }));
+  const netTotal =
+    isCashOrNonTrade || !totalForDiscount
+      ? subtotal
+      : Math.round(
+          (subtotal - additionalDiscount * (subtotal / totalForDiscount)) * 100,
+        ) / 100;
+
+  // Final pass: taxes with the discount applied
+  const taxRows = computeTaxes(editableTaxRows, subtotal, totalQuantity, {
+    netTotal,
+    applyDiscountOn: formData.applyDiscountOn,
+    isCashOrNonTradeDiscount: formData.isCashOrNonTradeDiscount,
+  });
+  // ERPNext total_taxes_and_charges is the sum of the discounted per-row
+  // contributions (tax_amount_after_discount_amount), not the displayed
+  // pre-discount tax_amount.
+  const totalTaxesAndCharges = taxRows.reduce(
+    (sum, r) => sum + (r.tax_amount_after_discount_amount ?? 0),
+    0,
+  );
+
+  const grandTotal = isCashOrNonTrade
+    ? Math.round((subtotal + totalTaxesAndCharges - additionalDiscount) * 100) /
+      100
+    : formData.applyDiscountOn === "Grand Total"
+      ? Math.round(
+          (subtotal + totalTaxesAndChargesBase - additionalDiscount) * 100,
+        ) / 100
+      : Math.round((netTotal + totalTaxesAndCharges) * 100) / 100;
 
   const buildPayload = () => {
     const fd = formDataRef.current;
@@ -639,7 +741,7 @@ export default function CreateInvoice() {
     company: fd.company || companyDefaults?.company || "",
     posting_date: fd.issueDate,
     posting_time: fd.postingTime || undefined,
-    set_posting_time: 1,
+    set_posting_time: true,
     due_date: fd.dueDate,
     currency: fd.currency || companyDefaults?.currency || "",
     conversion_rate: fd.conversionRate ?? conversionRate,
@@ -655,6 +757,7 @@ export default function CreateInvoice() {
     set_warehouse: fd.setWarehouse || undefined,
     set_target_warehouse: fd.setTargetWarehouse || undefined,
     debit_to: fd.debitTo || companyDefaults?.defaultReceivableAccount || "",
+    party_account_currency: fd.partyAccountCurrency || undefined,
     cost_center: fd.costCenter || undefined,
     project: fd.project || undefined,
     taxes_and_charges: taxTemplate?.name || defaultTaxTemplate,
@@ -670,7 +773,7 @@ export default function CreateInvoice() {
     contact_person: fd.contactPerson || undefined,
     po_no: fd.poNo || undefined,
     po_date: fd.poDate || undefined,
-    payment_terms_template: fd.paymentTermsTemplate || null,
+    payment_terms_template: fd.paymentTermsTemplate || undefined,
     apply_discount_on: fd.applyDiscountOn || undefined,
     discount_amount: fd.discountAmount,
     additional_discount_percentage: fd.additionalDiscountPercentage,
@@ -715,9 +818,9 @@ export default function CreateInvoice() {
     tc_name: fd.tcName || undefined,
     terms: fd.terms || undefined,
     // Returns
-    is_return: fd.isReturn ? 1 : 0,
+    is_return: !!fd.isReturn,
     return_against: fd.returnAgainst || undefined,
-    is_debit_note: fd.isDebitNote ? 1 : 0,
+    is_debit_note: !!fd.isDebitNote,
     update_billed_amount_in_sales_order:
       fd.updateBilledAmountInSalesOrder,
     update_billed_amount_in_delivery_note:
@@ -733,7 +836,7 @@ export default function CreateInvoice() {
       allocated_amount: a.allocated_amount,
     })),
     // POS
-    is_pos: fd.isPos ? 1 : 0,
+    is_pos: !!fd.isPos,
     pos_profile: fd.posProfile || undefined,
     account_for_change_amount: fd.accountForChangeAmount || undefined,
     cash_bank_account: fd.cashBankAccount || undefined,
@@ -763,11 +866,10 @@ export default function CreateInvoice() {
     title: fd.title || undefined,
     tax_id: fd.taxId || undefined,
     company_tax_id: fd.companyTaxId || undefined,
-    is_internal_customer: fd.isInternalCustomer ? 1 : 0,
+    is_internal_customer: !!fd.isInternalCustomer,
     represents_company: fd.representsCompany || undefined,
-    inter_company_invoice_reference:
-      fd.interCompanyInvoiceReference || undefined,
-    is_discounted: fd.isDiscounted ? 1 : 0,
+    inter_company_invoice_reference: fd.interCompanyInvoiceReference || undefined,
+    is_discounted: !!fd.isDiscounted,
     campaign: fd.campaign || undefined,
     source: fd.source || undefined,
     // UTM Analytics
@@ -945,9 +1047,11 @@ export default function CreateInvoice() {
           </div>
         ) : (
           <InvoiceForm
-            customers={customers}
             formData={formData}
             onChange={(updates) => {
+              if ("customer" in updates && !updates.customer) {
+                clearLoyaltyProgramOptions();
+              }
               setFormData((prev) => {
                 const next = { ...prev, ...updates };
                 if ("isReturn" in updates) {
@@ -957,6 +1061,34 @@ export default function CreateInvoice() {
                 }
                 return next;
               });
+              if ("currency" in updates && updates.currency !== formData.currency) {
+                const newCurrency = updates.currency || companyDefaults?.currency || "";
+                const companyCurrency = companyDefaults?.currency || "";
+                const postingDate = formData.issueDate || new Date().toISOString().slice(0, 10);
+                if (newCurrency && newCurrency !== companyCurrency) {
+                  invoiceService.getExchangeRate(newCurrency, companyCurrency, postingDate).then((rate) => {
+                    if (rate === 0) {
+                      setError(formatExchangeRateError(newCurrency, companyCurrency, postingDate));
+                    }
+                    setConversionRate(rate);
+                    setFormData((prev) => ({ ...prev, conversionRate: rate }));
+                  });
+                } else {
+                  setConversionRate(1);
+                  setFormData((prev) => ({ ...prev, conversionRate: 1 }));
+                }
+              }
+              if ("sellingPriceList" in updates && updates.sellingPriceList !== formData.sellingPriceList) {
+                const newPriceList = updates.sellingPriceList || "";
+                if (newPriceList) {
+                  const args = buildApplyPriceListArgs(
+                    { ...formDataRef.current, sellingPriceList: newPriceList },
+                    lineItemsRef.current,
+                    companyDefaults,
+                  );
+                  applyPriceListToForm(args);
+                }
+              }
               if (fieldErrors) {
                 const cleared = { ...fieldErrors };
                 for (const key of Object.keys(updates)) {
@@ -982,8 +1114,6 @@ export default function CreateInvoice() {
               }
             }}
             fieldErrors={fieldErrors}
-            warehouses={warehouses}
-            taxesAndChargesTemplates={taxesAndChargesTemplates}
             taxesAndChargesTemplate={taxTemplate?.name ?? ""}
             onTaxTemplateChange={handleTaxTemplateChange}
             onSelectCustomer={handleSelectCustomer}
@@ -991,32 +1121,30 @@ export default function CreateInvoice() {
             taxRows={taxRows}
             editableTaxRows={editableTaxRows}
             onTaxRowsChange={setEditableTaxRows}
-            taxAccounts={accounts}
             companyDefaults={companyDefaults}
             grandTotal={grandTotal}
             subtotal={subtotal}
             totalTaxesAndCharges={totalTaxesAndCharges}
+            totalTaxesAndChargesBase={totalTaxesAndChargesBase}
             totalQuantity={lineItems.reduce(
               (sum, l) => sum + (l.quantity ?? 0),
               0,
             )}
+            netTotal={netTotal}
             onAddItems={handleAddItems}
+            onSetWarehouse={handleSetWarehouse}
             lineItems={
               <InvoiceLineItems
                 items={lineItems}
-                products={products}
-                warehouses={warehouses}
-                accounts={accounts}
-                costCenters={costCenters}
-                itemTaxTemplates={itemTaxTemplates}
-                productDropdowns={productDropdowns}
+                customer={formData.customer}
+                company={formData.company || companyDefaults?.company}
+                currency={formData.currency || companyDefaults?.currency || "CAD"}
+                taxCategory={formData.taxCategory}
+                postingDate={formData.issueDate}
                 onUpdate={updateLine}
                 onRemove={removeLine}
                 onAdd={addLine}
                 onAddItemWithQty={addItemWithQty}
-                onProductDropdownChange={(id, dropdown) =>
-                  setProductDropdowns((prev) => ({ ...prev, [id]: dropdown }))
-                }
                 onSelectProduct={selectProduct}
                 itemDetailsContext={{
                   currency: formData.currency || companyDefaults?.currency,
@@ -1030,20 +1158,15 @@ export default function CreateInvoice() {
                 }}
               />
             }
-            totals={
-              <InvoiceTotals
-                variant="inline"
-                subtotal={subtotal}
-                totalTaxesAndCharges={totalTaxesAndCharges}
-                discountAmount={additionalDiscount}
-                grandTotal={grandTotal}
-                roundingAdjustment={roundingAdjustment}
-                roundedTotal={roundedTotal}
-                taxLines={taxLinesForDisplay}
-              />
-            }
+            mode="new"
           />
         )}
+        <LoyaltyProgramDialog
+          open={loyaltyProgramOptions.length > 1}
+          customer={formData.customer || ""}
+          programs={loyaltyProgramOptions}
+          onClose={clearLoyaltyProgramOptions}
+        />
       </motion.div>
     </>
   );

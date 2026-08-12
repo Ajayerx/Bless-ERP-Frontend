@@ -1,19 +1,22 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
-import { Search, ChevronDown, Plus, Trash2 } from "lucide-react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
+import { Plus, Trash2 } from "lucide-react";
 import {
   CollapsibleSection,
+  useToast,
 } from "@/components/ui";
+import ChildTableGrid, { type GridColumn } from "@/components/ui/ChildTableGrid";
 import LinkSearchField from "@/components/ui/LinkSearchField";
 import ReturnAgainstSearchModal from "./ReturnAgainstSearchModal";
 import GetItemsFromModal from "./GetItemsFromModal";
 import { type Customer } from "@/services";
 import { invoiceService } from "@/services";
-import { cn, formatCurrency } from "@/lib/utils";
+import { useLazyOptions, type LazyOptionsState } from "@/services/lookup-cache";
+import { formatCurrency } from "@/lib/utils";
 import type { EditableTaxRow, ChargeType } from "../types";
-import type { AccountInfo } from "../services";
-import { createEmptyTaxRow } from "../services";
+import { createEmptyTaxRow, getCurrencySmallestFraction, roundToSmallestCurrencyFraction } from "../services";
 import PaymentsTable from "./PaymentsTable";
 
 export interface InvoiceFormData {
@@ -22,6 +25,7 @@ export interface InvoiceFormData {
   company?: string;
   companyTaxId?: string;
   taxId?: string;
+  amendedFrom?: string;
   namingSeries?: string;
   issueDate: string;
   dueDate: string;
@@ -37,10 +41,18 @@ export interface InvoiceFormData {
   contactDisplay?: string;
   contactMobile?: string;
   contactEmail?: string;
+  contactPhone?: string;
+  contactDesignation?: string;
+  contactDepartment?: string;
   poNo?: string;
   poDate?: string;
   paymentTermsTemplate?: string;
   ignoreDefaultPaymentTerms?: boolean;
+  paymentScheduleRows?: Array<{
+    id: string;
+    due_date: string;
+    payment_amount: number;
+  }>;
   currency?: string;
   conversionRate?: number;
   sellingPriceList?: string;
@@ -131,6 +143,7 @@ export interface InvoiceFormData {
   toDate?: string;
   autoRepeat?: string;
   debitTo?: string;
+  partyAccountCurrency?: string;
   isOpening?: string;
   customerGroup?: string;
   remarks?: string;
@@ -198,12 +211,9 @@ export interface InvoiceFieldErrors {
 }
 
 interface InvoiceFormProps {
-  customers: Customer[];
   formData: InvoiceFormData;
   onChange: (data: Partial<InvoiceFormData>) => void;
   fieldErrors?: InvoiceFieldErrors;
-  warehouses?: string[];
-  taxesAndChargesTemplates?: string[];
   taxesAndChargesTemplate?: string;
   onTaxTemplateChange?: (name: string) => void;
   onSelectCustomer?: (customer: Customer) => void;
@@ -213,13 +223,7 @@ interface InvoiceFormProps {
     payment_amount: number;
     outstanding: number;
   }>;
-  paymentScheduleRows?: Array<{
-    id: string;
-    due_date: string;
-    payment_amount: number;
-  }>;
   lineItems?: React.ReactNode;
-  totals?: React.ReactNode;
   taxRows?: Array<{
     charge_type: string;
     account_head: string;
@@ -231,7 +235,6 @@ interface InvoiceFormProps {
   }>;
   editableTaxRows?: EditableTaxRow[];
   onTaxRowsChange?: (rows: EditableTaxRow[]) => void;
-  taxAccounts?: AccountInfo[];
   companyDefaults?: {
     company: string;
     currency: string;
@@ -243,11 +246,16 @@ interface InvoiceFormProps {
   } | null;
   grandTotal?: number;
   totalTaxesAndCharges?: number;
+  totalTaxesAndChargesBase?: number;
   subtotal?: number;
   totalQuantity?: number;
+  netTotal?: number;
   totalAdvance?: number;
   outstandingAmount?: number;
   onAddItems?: (items: Array<Record<string, unknown>>) => void;
+  onSetWarehouse?: (warehouse: string | undefined) => void;
+  mode?: "new" | "existing";
+  docstatus?: number;
 }
 
 const GET_ITEMS_SOURCES = [
@@ -272,7 +280,7 @@ const GET_ITEMS_SOURCES = [
 ] as const;
 
 const inputClass =
-  "w-full px-3 py-2.5 bg-white border border-border rounded-lg text-sm text-body placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 transition-all duration-200";
+  "w-full px-3 py-2.5 bg-white border border-border rounded-lg text-sm text-body placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 transition-all duration-200 disabled:bg-gray-50 disabled:text-muted disabled:cursor-not-allowed disabled:opacity-100";
 
 const labelClass =
   "block text-xs font-semibold text-muted mb-1.5";
@@ -283,7 +291,39 @@ const errCls = (error?: string) =>
     : "";
 
 
-function LinkSelect({
+function LinkField({
+  doctype,
+  value,
+  onChange,
+  searchFn,
+  placeholder = "Select…",
+  readOnly = false,
+}: {
+  doctype: string;
+  value: string | undefined;
+  onChange: (value: string | undefined) => void;
+  searchFn: (query: string) => Promise<{ items: Array<{ value: string; label: string; description: string }> }>;
+  placeholder?: string;
+  readOnly?: boolean;
+}) {
+  return (
+    <LinkSearchField
+      value={value ?? ""}
+      onChange={onChange}
+      searchFn={searchFn}
+      validate={async (v) => {
+        const doc = await invoiceService.validateLink(doctype, v, []);
+        if (!doc || Object.keys(doc).length === 0) {
+          throw new Error(`Invalid ${doctype}`);
+        }
+      }}
+      placeholder={placeholder}
+      readOnly={readOnly}
+    />
+  );
+}
+
+function Combobox({
   name,
   value,
   options,
@@ -291,271 +331,225 @@ function LinkSelect({
   onChange,
   loading = false,
   error,
+  load,
 }: {
   name: string;
   value: string | undefined;
-  options: string[];
+  options: string[] | LazyOptionsState<string[]>;
   placeholder?: string;
   onChange: (name: string, value: string) => void;
   loading?: boolean;
   error?: string;
+  load?: () => void;
 }) {
+  const list = Array.isArray(options) ? options : options.value;
+  const ensure = Array.isArray(options) ? undefined : options.ensure;
+  const busy = loading || (!Array.isArray(options) && options.loading);
+  const [query, setQuery] = useState(value ?? "");
+  const [open, setOpen] = useState(false);
+  const [highlightIndex, setHighlightIndex] = useState(0);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setQuery(value ?? "");
+  }, [value]);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return list;
+    return list.filter((o) => o.toLowerCase().includes(q));
+  }, [query, list]);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  const commit = (val: string) => {
+    setQuery(val);
+    setOpen(false);
+    onChange(name, val);
+  };
+
   return (
-    <div>
-      <select
-        name={name}
-        value={value ?? ""}
-        onChange={(e) => onChange(name, e.target.value)}
+    <div className="relative" ref={containerRef}>
+      <input
+        type="text"
+        value={query}
+        placeholder={busy ? "Loading…" : placeholder}
+        onChange={(e) => {
+          setQuery(e.target.value);
+          setOpen(true);
+          setHighlightIndex(0);
+        }}
+        onFocus={() => {
+          setOpen(true);
+          setHighlightIndex(0);
+          load?.();
+          ensure?.();
+        }}
+        onBlur={() => commit(query)}
+        onKeyDown={(e) => {
+          if (e.key === "ArrowDown") {
+            e.preventDefault();
+            setHighlightIndex((i) => Math.min(i + 1, Math.max(filtered.length - 1, 0)));
+          } else if (e.key === "ArrowUp") {
+            e.preventDefault();
+            setHighlightIndex((i) => Math.max(i - 1, 0));
+          } else if (e.key === "Enter") {
+            if (open && filtered.length > 0 && highlightIndex >= 0) {
+              e.preventDefault();
+              commit(filtered[highlightIndex]);
+            } else {
+              commit(query);
+            }
+          } else if (e.key === "Escape") {
+            setOpen(false);
+          }
+        }}
         className={`${inputClass} ${errCls(error)}`}
-        disabled={loading}
-      >
-        <option value="">{loading ? "Loading…" : placeholder}</option>
-        {options.map((opt) => (
-          <option key={opt} value={opt}>
-            {opt}
-          </option>
-        ))}
-      </select>
+      />
+      {open && (
+        <div className="absolute z-20 top-full left-0 right-0 mt-1 max-h-60 overflow-auto rounded-md border border-border bg-white shadow-lg">
+          {busy ? (
+            <div className="px-3 py-2.5 text-sm text-muted">Loading…</div>
+          ) : filtered.length === 0 ? (
+            <div className="px-3 py-2.5 text-sm text-muted">No results</div>
+          ) : (
+            filtered.map((opt, i) => (
+              <button
+                key={opt}
+                type="button"
+                onMouseEnter={() => setHighlightIndex(i)}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  commit(opt);
+                }}
+                className={`block w-full text-left px-3 py-2 text-sm ${
+                  i === highlightIndex
+                    ? "bg-primary-500/10 text-primary-600"
+                    : "text-body hover:bg-muted/50"
+                }`}
+              >
+                {opt}
+              </button>
+            ))
+          )}
+        </div>
+      )}
       {error && <p className="text-xs text-danger-500 mt-1">{error}</p>}
     </div>
   );
 }
 
 export default function InvoiceForm({
-  customers,
   formData,
   onChange,
   fieldErrors,
-  warehouses,
-  taxesAndChargesTemplates,
   taxesAndChargesTemplate,
   onTaxTemplateChange,
   onSelectCustomer,
   loadingPartyDetails,
   paymentSchedule,
   lineItems,
-  totals,
   taxRows,
   editableTaxRows,
   onTaxRowsChange,
-  taxAccounts,
   companyDefaults,
   grandTotal,
   totalTaxesAndCharges,
+  totalTaxesAndChargesBase,
   subtotal,
   totalQuantity,
+  netTotal,
   totalAdvance,
   outstandingAmount,
   onAddItems,
+  onSetWarehouse,
+  mode = "new",
+  docstatus = 0,
 }: InvoiceFormProps) {
-  const [search, setSearch] = useState(formData.customerName || "");
-  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const { addToast } = useToast();
+  const navigate = useNavigate();
 
-  const [loadingLookups, setLoadingLookups] = useState(false);
-  const [paymentTermsTemplates, setPaymentTermsTemplates] = useState<string[]>(
-    [],
-  );
-  const [taxCategories, setTaxCategories] = useState<string[]>([]);
-  const [_couponCodes, setCouponCodes] = useState<string[]>([]);
-  const [accounts, setAccounts] = useState<string[]>([]);
-  const [costCenters, setCostCenters] = useState<string[]>([]);
-  const [terms, setTerms] = useState<string[]>([]);
-  const [letterHeads, setLetterHeads] = useState<string[]>([]);
-  const [salesPartners, setSalesPartners] = useState<string[]>([]);
-  const [salesPersons, setSalesPersons] = useState<string[]>([]);
-  const [_loyaltyPrograms, setLoyaltyPrograms] = useState<string[]>([]);
-  const [printHeadings, setPrintHeadings] = useState<string[]>([]);
-  const [shippingRules, setShippingRules] = useState<string[]>([]);
-  const [incoterms, setIncoterms] = useState<string[]>([]);
-  const [_taxWithholdingGroups, setTaxWithholdingGroups] = useState<string[]>(
-    [],
-  );
-  const [_modeOfPayments, setModeOfPayments] = useState<string[]>([]);
-  const [_companies, setCompanies] = useState<string[]>([]);
-  const [territories, setTerritories] = useState<string[]>([]);
-  const [campaigns, setCampaigns] = useState<string[]>([]);
-  const [sources, setSources] = useState<string[]>([]);
-  const [projects, setProjects] = useState<string[]>([]);
-  const [namingSeriesOptions, setNamingSeriesOptions] = useState<string[]>(["ACC-SINV-.YYYY.-", "ACC-SINV-RET-.YYYY.-"]);
-  const [applyDiscountOnOptions, setApplyDiscountOnOptions] = useState<string[]>(["Grand Total", "Net Total"]);
-  const [isOpeningOptions, setIsOpeningOptions] = useState<string[]>(["No", "Yes"]);
-  const [chargeTypeOptions, setChargeTypeOptions] = useState<string[]>([
+  const isExisting = mode === "existing";
+  const isReadOnly = isExisting && docstatus !== 0;
+
+  const [currencyFraction, setCurrencyFraction] = useState<number | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    const currency = formData.currency ?? companyDefaults?.currency;
+    if (!currency) {
+      setCurrencyFraction(null);
+      return;
+    }
+    getCurrencySmallestFraction(currency).then((f) => {
+      if (!cancelled) setCurrencyFraction(f);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [formData.currency, companyDefaults?.currency]);
+
+  const namingSeriesOptions = ["ACC-SINV-.YYYY.-", "ACC-SINV-RET-.YYYY.-"];
+  const applyDiscountOnOptions = ["Grand Total", "Net Total"];
+  const isOpeningOptions = ["No", "Yes"];
+  const chargeTypeOptions = [
     "Actual", "On Net Total", "On Previous Row Amount",
     "On Previous Row Total", "On Item Quantity",
-  ]);
+  ];
+  const currentCompany = formData.company || companyDefaults?.company;
+  const currencies = useLazyOptions<string[]>(
+    "sales-invoice:currencies",
+    invoiceService.lookups.currencies,
+    [],
+  );
+  const priceLists = useLazyOptions<string[]>(
+    "sales-invoice:price-lists",
+    invoiceService.lookups.priceLists,
+    [],
+  );
   const [activeGetItemsSource, setActiveGetItemsSource] = useState<typeof GET_ITEMS_SOURCES[number] | null>(null);
   const [activeTab, setActiveTab] = useState("details");
-  const [addresses, setAddresses] = useState<string[]>([]);
-  const [contacts, setContacts] = useState<string[]>([]);
-  const [loadingAddresses, setLoadingAddresses] = useState(false);
-  const [companyAddresses, setCompanyAddresses] = useState<string[]>([]);
-  const [companyContacts, setCompanyContacts] = useState<string[]>([]);
   const [returnAgainstSearchOpen, setReturnAgainstSearchOpen] = useState(false);
   const [loadingAdvances, setLoadingAdvances] = useState(false);
 
-  useEffect(() => {
-    setSearch(formData.customerName || "");
-  }, [formData.customerName]);
-
-  useEffect(() => {
-    if (costCenters.length > 0 && formData.costCenter && !costCenters.includes(formData.costCenter)) {
-      onChange({ costCenter: "" });
-    }
-  }, [costCenters]);
-
-  useEffect(() => {
-    if (!formData.customer) {
-      setAddresses([]);
-      setContacts([]);
-      setCompanyAddresses([]);
-      setCompanyContacts([]);
-      return;
-    }
-    setLoadingAddresses(true);
-    const company = companyDefaults?.company;
-    Promise.all([
-      invoiceService.lookups.addresses(formData.customer),
-      invoiceService.lookups.contacts(formData.customer),
-      company ? invoiceService.lookups.companyAddresses(company) : Promise.resolve([]),
-      company ? invoiceService.lookups.companyContacts(company) : Promise.resolve([]),
-    ])
-      .then(([addrs, ctrs, coAddrs, coCtrs]) => {
-        setAddresses(addrs.map((a: { name: string }) => a.name));
-        setContacts(ctrs.map((c: { name: string }) => c.name));
-        setCompanyAddresses(coAddrs.map((a: { name: string }) => a.name));
-        setCompanyContacts(coCtrs.map((c: { name: string }) => c.name));
-      })
-      .catch(() => {
-        setAddresses([]);
-        setContacts([]);
-        setCompanyAddresses([]);
-        setCompanyContacts([]);
-      })
-      .finally(() => setLoadingAddresses(false));
-  }, [formData.customer, companyDefaults?.company]);
-
-  const prevCustomerAddress = useRef(formData.customerAddress);
-  useEffect(() => {
-    if (formData.customerAddress && formData.customerAddress !== prevCustomerAddress.current) {
-      invoiceService.getAddressDisplay(formData.customerAddress).then((display) => {
-        if (display) onChange({ addressDisplay: display });
-      });
-    } else if (!formData.customerAddress) {
-      onChange({ addressDisplay: undefined });
-    }
-    prevCustomerAddress.current = formData.customerAddress;
-  }, [formData.customerAddress]);
-
-  const prevShippingAddress = useRef(formData.shippingAddressName);
-  useEffect(() => {
-    if (formData.shippingAddressName && formData.shippingAddressName !== prevShippingAddress.current) {
-      invoiceService.getAddressDisplay(formData.shippingAddressName).then((display) => {
-        if (display) onChange({ shippingAddress: display });
-      });
-    } else if (!formData.shippingAddressName) {
-      onChange({ shippingAddress: undefined });
-    }
-    prevShippingAddress.current = formData.shippingAddressName;
-  }, [formData.shippingAddressName]);
-
-  const prevContactPerson = useRef(formData.contactPerson);
-  useEffect(() => {
-    if (formData.contactPerson && formData.contactPerson !== prevContactPerson.current) {
-      invoiceService.getContactDetails(formData.contactPerson).then((details) => {
+  const handleCustomerChange = useCallback(
+    async (value: string | undefined) => {
+      if (!value) {
         onChange({
-          contactDisplay: details.contact_display,
-          contactEmail: details.contact_email,
-          contactMobile: details.contact_mobile,
+          customer: undefined,
+          customerName: undefined,
+          customerAddress: undefined,
+          shippingAddressName: undefined,
+          contactPerson: undefined,
         });
-      });
-    } else if (!formData.contactPerson) {
-      onChange({ contactDisplay: undefined, contactEmail: undefined, contactMobile: undefined });
-    }
-    prevContactPerson.current = formData.contactPerson;
-  }, [formData.contactPerson]);
-
-  const prevCompanyAddress = useRef(formData.companyAddress);
-  useEffect(() => {
-    if (formData.companyAddress && formData.companyAddress !== prevCompanyAddress.current) {
-      invoiceService.getAddressDisplay(formData.companyAddress).then((display) => {
-        if (display) onChange({ companyAddressDisplay: display });
-      });
-    } else if (!formData.companyAddress) {
-      onChange({ companyAddressDisplay: undefined });
-    }
-    prevCompanyAddress.current = formData.companyAddress;
-  }, [formData.companyAddress]);
-
-  useEffect(() => {
-    setLoadingLookups(true);
-    Promise.all([
-      invoiceService.lookups.paymentTermsTemplates(),
-      invoiceService.lookups.taxCategories(),
-      invoiceService.lookups.couponCodes(),
-      invoiceService.lookups.accounts(),
-      invoiceService.lookups.costCenters(),
-      invoiceService.lookups.terms(),
-      invoiceService.lookups.letterHeads(),
-      invoiceService.lookups.salesPartners(),
-      invoiceService.lookups.salesPersons(),
-      invoiceService.lookups.loyaltyPrograms(),
-      invoiceService.lookups.printHeadings(),
-      invoiceService.lookups.shippingRules(),
-      invoiceService.lookups.incoterms(),
-      invoiceService.lookups.taxWithholdingGroups(),
-      invoiceService.lookups.modeOfPayments(),
-      invoiceService.lookups.companies(),
-      invoiceService.lookups.territories(),
-      invoiceService.lookups.campaigns(),
-      invoiceService.lookups.sources(),
-      invoiceService.lookups.projects(),
-    ])
-      .then(
-        ([ptt, tc, cc, ac, cst, trm, lh, sp, sP, lp, ph, shr, inc, thg, mop, co, ter, cam, src, proj]) => {
-          setPaymentTermsTemplates(ptt);
-          setTaxCategories(tc);
-          setCouponCodes(cc);
-          setAccounts(ac);
-          setCostCenters(cst);
-          setTerms(trm);
-          setLetterHeads(lh);
-          setSalesPartners(sp);
-          setSalesPersons(sP);
-          setLoyaltyPrograms(lp);
-          setPrintHeadings(ph);
-          setShippingRules(shr);
-          setIncoterms(inc);
-          setTaxWithholdingGroups(thg);
-          setModeOfPayments(mop);
-          setCompanies(co);
-          setTerritories(ter);
-          setCampaigns(cam);
-          setSources(src);
-          setProjects(proj);
-        },
-      )
-      .finally(() => setLoadingLookups(false));
-  }, []);
-
-  const filtered = customers.filter(
-    (c) =>
-      c.customer_name.toLowerCase().includes(search.toLowerCase()) ||
-      c.name.toLowerCase().includes(search.toLowerCase()),
-  );
-
-  const selectCustomer = useCallback(
-    (c: Customer) => {
-      setSearch(c.customer_name);
-      setDropdownOpen(false);
+        return;
+      }
+      const doc = await invoiceService.validateLink("Customer", value, [
+        "tax_id",
+        "customer_name",
+        "loyalty_program",
+        "represents_company",
+        "is_internal_customer",
+      ]);
+      const customer: Customer = {
+        ...(doc as unknown as Customer),
+        name: value,
+        outstanding: 0,
+      };
       if (onSelectCustomer) {
-        onSelectCustomer(c);
+        onSelectCustomer(customer);
       } else {
         onChange({
-          customer: c.name,
-          customerName: c.customer_name,
-          customerAddress: c.customer_primary_address || undefined,
-          shippingAddressName: c.customer_primary_address || undefined,
-          contactPerson: c.customer_primary_contact || undefined,
+          customer: customer.name,
+          customerName: customer.customer_name,
         });
       }
     },
@@ -646,6 +640,50 @@ export default function InvoiceForm({
     onChange({ salesTeam: salesTeam.filter((m) => m.id !== id) });
   };
 
+  // ERPNext set_discount_amount parity (taxes_and_totals.py:701-708):
+  // percentage auto-computes discount_amount against grand_total (subtotal +
+  // taxes) or net_total (subtotal) depending on apply_discount_on.
+  const discountBase = (applyOn: "Grand Total" | "Net Total"): number =>
+    applyOn === "Net Total"
+      ? (subtotal ?? 0)
+      : (subtotal ?? 0) +
+        (totalTaxesAndChargesBase ?? totalTaxesAndCharges ?? 0);
+
+  const handleApplyDiscountOnChange = (
+    applyOn: "Grand Total" | "Net Total",
+  ) => {
+    onChange({ applyDiscountOn: applyOn });
+    if (formData.additionalDiscountPercentage && formData.additionalDiscountPercentage > 0) {
+      onChange({
+        discountAmount:
+          Math.round(
+            discountBase(applyOn) * (formData.additionalDiscountPercentage / 100) * 100,
+          ) / 100,
+      });
+    }
+  };
+
+  const handleAdditionalDiscountPercentageChange = (
+    value: number | undefined,
+  ) => {
+    onChange({ additionalDiscountPercentage: value });
+    if (value && value > 0) {
+      const base = discountBase(formData.applyDiscountOn ?? "Grand Total");
+      onChange({
+        discountAmount: Math.round(base * (value / 100) * 100) / 100,
+      });
+    } else {
+      onChange({ discountAmount: undefined });
+    }
+  };
+
+  const handleAdditionalDiscountAmountChange = (value: number | undefined) => {
+    onChange({ discountAmount: value });
+    if (value && value > 0) {
+      onChange({ additionalDiscountPercentage: undefined });
+    }
+  };
+
   return (
     <div className="space-y-4">
       {/* Tab bar */}
@@ -672,14 +710,15 @@ export default function InvoiceForm({
         ))}
       </div>
 
+      <fieldset disabled={isReadOnly} className="min-w-0 space-y-4 border-0 p-0 m-0">
       {/* ==================== DETAILS TAB ==================== */}
       {activeTab === "details" && (
         <div className="space-y-4">
-          {/* Section 1: Header — 2-column matching ERPNext Desk */}
-          {/* Section 1: Header — always visible, not collapsible */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {/* Section 1: Header — 3-column matching ERPNext Desk (Series new-only / Customer / Tax Id | dates | return & POS flags) */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 pb-4 border-b border-border">
               {/* Col 1: Party / Company */}
               <div className="space-y-3">
+                {!isExisting && (
                 <div>
                   <label className={labelClass}>Series *</label>
                   <select
@@ -692,94 +731,33 @@ export default function InvoiceForm({
                     ))}
                   </select>
                 </div>
-                <div>
-                  <label className={labelClass}>Company *</label>
-                  <input
-                    type="text"
-                    value={companyDefaults?.company ?? formData.company ?? ""}
-                    className={`${inputClass} bg-gray-50`}
-                    readOnly
-                  />
-                </div>
+                )}
                 <div>
                   <label className={labelClass}>Customer *</label>
-                  <div className="relative">
-                    <input
-                      type="text"
-                      value={search}
-                      onChange={(e) => {
-                        setSearch(e.target.value);
-                        setDropdownOpen(true);
-                      }}
-                      onFocus={() => setDropdownOpen(true)}
-                      placeholder={
-                        loadingPartyDetails
-                          ? "Loading party details…"
-                          : "Search customer..."
-                      }
-                      disabled={loadingPartyDetails}
-                      className={`w-full pl-10 pr-10 py-2.5 bg-white border border-border rounded-lg text-sm text-body placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 transition-all disabled:bg-gray-50 disabled:opacity-70 ${errCls(fieldErrors?.customer)}`}
-                    />
-                    <Search
-                      size={15}
-                      className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted"
-                    />
-                    <ChevronDown
-                      size={15}
-                      className="absolute right-3.5 top-1/2 -translate-y-1/2 text-muted"
-                    />
-                    {dropdownOpen && (
-                      <div className="absolute z-10 mt-1.5 w-full bg-surface border border-border rounded-lg shadow-xl max-h-48 overflow-y-auto">
-                        {filtered.length === 0 ? (
-                          <p className="px-4 py-3 text-sm text-muted">
-                            No customers found
-                          </p>
-                        ) : (
-                          filtered.map((c) => (
-                            <button
-                              key={c.name}
-                              type="button"
-                              onClick={() => selectCustomer(c)}
-                              className={cn(
-                                "w-full text-left px-4 py-2.5 text-sm transition-colors",
-                                c.name === formData.customer
-                                  ? "bg-primary-50 text-primary-700 font-semibold"
-                                  : "text-body hover:bg-gray-50",
-                              )}
-                            >
-                              <span className="font-medium">
-                                {c.customer_name}
-                              </span>
-                              <span className="text-xs text-muted ml-2">
-                                {c.customer_type}
-                              </span>
-                            </button>
-                          ))
-                        )}
-                      </div>
-                    )}
-                  </div>
+                  <LinkSearchField
+                    value={formData.customer || undefined}
+                    onChange={handleCustomerChange}
+                    searchFn={(q) => invoiceService.searchLink("Customer", q)}
+                    placeholder={
+                      loadingPartyDetails
+                        ? "Loading party details…"
+                        : "Search customer..."
+                    }
+                    disabled={loadingPartyDetails}
+                    readOnly={isReadOnly}
+                    suppressExternalLabelFetch={isReadOnly}
+                    inputClassName={errCls(fieldErrors?.customer)}
+                  />
                   {fieldErrors?.customer && (
                     <p className="text-xs text-danger-500 mt-1">{fieldErrors.customer}</p>
                   )}
                 </div>
-                {formData.customer && (
+                {formData.customer && formData.taxId && (
                   <div>
-                    <label className={labelClass}>Customer Name</label>
+                    <label className={labelClass}>Tax Id</label>
                     <input
                       type="text"
-                      value={formData.customerName ?? ""}
-                      className={`${inputClass} bg-gray-50`}
-                      readOnly
-                    />
-                  </div>
-                )}
-                {formData.customer && (
-                  <div>
-                    <label className={labelClass}>Company Tax ID</label>
-                    <input
-                      type="text"
-                      value={formData.companyTaxId ?? ""}
+                      value={formData.taxId}
                       className={`${inputClass} bg-gray-50`}
                       readOnly
                     />
@@ -787,7 +765,7 @@ export default function InvoiceForm({
                 )}
               </div>
 
-              {/* Col 2: Dates + Flags (matching ERPNext right column) */}
+              {/* Col 2: Dates (ERPNext column_break1) */}
               <div className="space-y-3">
                 <div>
                   <label className={labelClass}>Posting Date *</label>
@@ -838,6 +816,10 @@ export default function InvoiceForm({
                     <p className="text-xs text-danger-500 mt-1">{fieldErrors.dueDate}</p>
                   )}
                 </div>
+              </div>
+
+              {/* Col 3: Return & POS flags (ERPNext column_break_14) */}
+              <div className="space-y-3">
                 <div className="flex items-center gap-2">
                   <input
                     type="checkbox"
@@ -911,7 +893,7 @@ export default function InvoiceForm({
                       searchFn={(q) => invoiceService.searchSalesInvoices(q, formData.customer ? { customer: formData.customer } : undefined)}
                       onCreateNew={() => window.open("/invoices/new", "_blank")}
                       onAdvancedSearch={() => setReturnAgainstSearchOpen(true)}
-                      readOnly={!!formData.isReturn}
+                      readOnly={isReadOnly || !!formData.isReturn}
 
                     />
                   </div>
@@ -1002,63 +984,76 @@ export default function InvoiceForm({
                     Is Rate Adjustment Entry (Debit Note)
                   </label>
                 </div>
+                {formData.amendedFrom && (
+                  <div>
+                    <label className={labelClass}>Amended From</label>
+                    <div
+                      className="cursor-pointer group"
+                      onClick={() => navigate(`/invoices/${formData.amendedFrom}`)}
+                    >
+                      <input
+                        type="text"
+                        value={formData.amendedFrom}
+                        className={`${inputClass} bg-gray-50 pointer-events-none transition-colors group-hover:border-primary-500 group-hover:bg-primary-50/50`}
+                        readOnly
+                        tabIndex={-1}
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
-          {/* Section 2: Accounting Dimensions — 2-column, always visible */}
+          {/* Section 2: Accounting Dimensions — collapsible */}
           {formData.customer && (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              <div>
-                <label className={labelClass}>Cost Center</label>
-                <LinkSelect
-                  name="costCenter"
-                  value={formData.costCenter}
-                  options={costCenters}
-                  placeholder="Select…"
-                  onChange={handleSelectChange}
-                  loading={loadingLookups}
-                />
-              </div>
-              <div>
-                <label className={labelClass}>Project</label>
-                <LinkSelect
-                  name="project"
-                  value={formData.project}
-                  options={projects}
-                  placeholder="Optional"
-                  onChange={(_, val) => handleProjectChange(val)}
-                  loading={loadingLookups}
-                />
-              </div>
-            </div>
-          )}
-
-          {/* Section 3: Currency and Price List — 2-column, dep:customer */}
-          {formData.customer && (
-            <CollapsibleSection title="Currency and Price List" defaultOpen>
+            <CollapsibleSection title="Accounting Dimensions" defaultOpen>
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 <div>
-                  <label className={labelClass}>Currency *</label>
-                  <input
-                    type="text"
-                    value={formData.currency ?? companyDefaults?.currency ?? ""}
-                    onChange={(e) =>
-                      onChange({ currency: e.target.value || undefined })
-                    }
-                    className={`${inputClass} ${errCls(fieldErrors?.currency)}`}
-                    placeholder={companyDefaults?.currency ?? "CAD"}
+                  <label className={labelClass}>Cost Center</label>
+                  <LinkField
+                    doctype="Cost Center"
+                    value={formData.costCenter}
+                    onChange={(v) => handleSelectChange("costCenter", v ?? "")}
+                    searchFn={(q) => invoiceService.searchSalesLink("Cost Center", q)}
+                    readOnly={isReadOnly}
                   />
-                  {fieldErrors?.currency && (
-                    <p className="text-xs text-danger-500 mt-1">{fieldErrors.currency}</p>
-                  )}
                 </div>
-                {(() => {
-                  const effectiveCurrency = formData.currency ?? companyDefaults?.currency ?? "";
-                  const effectiveCompanyCurrency = companyDefaults?.currency ?? "";
-                  const showConversionRate = effectiveCurrency.length > 0 && effectiveCurrency !== effectiveCompanyCurrency;
-                  const effectivePlcCurrency = formData.priceListCurrency ?? effectiveCompanyCurrency;
-                  const showPlcRate = effectivePlcCurrency.length > 0 && effectivePlcCurrency !== effectiveCompanyCurrency;
-                  return (
-                    <>
+                <div>
+                  <label className={labelClass}>Project</label>
+                  <LinkField
+                    doctype="Project"
+                    value={formData.project}
+                    onChange={(v) => handleProjectChange(v ?? "")}
+                    searchFn={(q) => invoiceService.searchSalesLink("Project", q)}
+                    placeholder="Optional"
+                    readOnly={isReadOnly}
+                  />
+                </div>
+              </div>
+            </CollapsibleSection>
+          )}
+
+          {/* Section 3: Currency and Price List — ERPNext layout, dep:customer */}
+          {formData.customer && (
+            <CollapsibleSection title="Currency and Price List" defaultOpen>
+              {(() => {
+                const effectiveCurrency = formData.currency ?? companyDefaults?.currency ?? "";
+                const effectiveCompanyCurrency = companyDefaults?.currency ?? "";
+                const showConversionRate = effectiveCurrency.length > 0 && effectiveCurrency !== effectiveCompanyCurrency;
+                const effectivePlcCurrency = formData.priceListCurrency ?? effectiveCompanyCurrency;
+                const showPlcRate = effectivePlcCurrency.length > 0 && effectivePlcCurrency !== effectiveCompanyCurrency;
+                return (
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    <div className="space-y-3">
+                      <div>
+                        <label className={labelClass}>Currency *</label>
+                        <Combobox
+                          name="currency"
+                          value={formData.currency ?? companyDefaults?.currency ?? ""}
+                          options={currencies}
+                          onChange={handleSelectChange}
+                                                    error={fieldErrors?.currency}
+                        />
+                      </div>
                       {showConversionRate && (
                         <div>
                           <label className={labelClass}>Exchange Rate *</label>
@@ -1080,61 +1075,49 @@ export default function InvoiceForm({
                           </p>
                         </div>
                       )}
+                    </div>
+                    <div className="space-y-3">
                       <div>
                         <label className={labelClass}>Price List *</label>
-                        <input
-                          type="text"
-                          value={
-                            formData.sellingPriceList ??
-                            companyDefaults?.defaultSellingPriceList ??
-                            ""
-                          }
-                          onChange={(e) =>
-                            onChange({ sellingPriceList: e.target.value || undefined })
-                          }
-                          className={`${inputClass} ${errCls(fieldErrors?.sellingPriceList)}`}
-                          placeholder={
-                            companyDefaults?.defaultSellingPriceList ??
-                            "Standard Selling"
-                          }
-                        />
-                        {fieldErrors?.sellingPriceList && (
-                          <p className="text-xs text-danger-500 mt-1">{fieldErrors.sellingPriceList}</p>
-                        )}
-                      </div>
-                      <div>
-                        <label className={labelClass}>Price List Currency</label>
-                        <input
-                          type="text"
-                          value={
-                            formData.priceListCurrency ??
-                            companyDefaults?.currency ??
-                            ""
-                          }
-                          readOnly
-                          className={`${inputClass} bg-gray-50`}
+                        <Combobox
+                          name="sellingPriceList"
+                          value={formData.sellingPriceList ?? companyDefaults?.defaultSellingPriceList ?? ""}
+                          options={priceLists}
+                          onChange={handleSelectChange}
+                                                    error={fieldErrors?.sellingPriceList}
                         />
                       </div>
                       {showPlcRate && (
-                        <div>
-                          <label className={labelClass}>Price List Exchange Rate *</label>
-                          <input
-                            type="number"
-                            min={0}
-                            step={0.00000001}
-                            value={formData.plcConversionRate ?? 1}
-                            onChange={(e) =>
-                              onChange({ plcConversionRate: parseFloat(e.target.value) || 1 })
-                            }
-                            className={`${inputClass} ${errCls(fieldErrors?.plcConversionRate)}`}
-                          />
-                          {fieldErrors?.plcConversionRate && (
-                            <p className="text-xs text-danger-500 mt-1">{fieldErrors.plcConversionRate}</p>
-                          )}
-                          <p className="text-xs text-muted mt-1">
-                            1 {effectivePlcCurrency} = {formData.plcConversionRate ?? 1} {effectiveCompanyCurrency}
-                          </p>
-                        </div>
+                        <>
+                          <div>
+                            <label className={labelClass}>Price List Currency</label>
+                            <input
+                              type="text"
+                              value={effectivePlcCurrency}
+                              readOnly
+                              className={`${inputClass} bg-gray-50`}
+                            />
+                          </div>
+                          <div>
+                            <label className={labelClass}>Price List Exchange Rate *</label>
+                            <input
+                              type="number"
+                              min={0}
+                              step={0.00000001}
+                              value={formData.plcConversionRate ?? 1}
+                              onChange={(e) =>
+                                onChange({ plcConversionRate: parseFloat(e.target.value) || 1 })
+                              }
+                              className={`${inputClass} ${errCls(fieldErrors?.plcConversionRate)}`}
+                            />
+                            {fieldErrors?.plcConversionRate && (
+                              <p className="text-xs text-danger-500 mt-1">{fieldErrors.plcConversionRate}</p>
+                            )}
+                            <p className="text-xs text-muted mt-1">
+                              1 {effectivePlcCurrency} = {formData.plcConversionRate ?? 1} {effectiveCompanyCurrency}
+                            </p>
+                          </div>
+                        </>
                       )}
                       <div className="flex items-center gap-2">
                         <input
@@ -1150,15 +1133,15 @@ export default function InvoiceForm({
                           Ignore Pricing Rule
                         </label>
                       </div>
-                    </>
-                  );
-                })()}
-              </div>
+                    </div>
+                  </div>
+                );
+              })()}
             </CollapsibleSection>
           )}
 
           {/* Section 4: Items — always visible (not collapsible, matching ERPNext) */}
-          <div className="space-y-3">
+          <div className="space-y-3 pb-4 border-b border-border">
             <h3 className="text-base font-bold text-heading">Items</h3>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-3">
               <div className="space-y-3">
@@ -1186,12 +1169,12 @@ export default function InvoiceForm({
                     Update Stock
                   </label>
                 </div>
-                {formData.updateStock && (
+                {formData.lastScannedWarehouse && (
                   <div>
                     <label className={labelClass}>Last Scanned Warehouse</label>
                     <input
                       type="text"
-                      value={formData.lastScannedWarehouse ?? ""}
+                      value={formData.lastScannedWarehouse}
                       className={`${inputClass} bg-gray-50`}
                       readOnly
                     />
@@ -1202,24 +1185,52 @@ export default function InvoiceForm({
                 {formData.updateStock && (
                   <div>
                     <label className={labelClass}>Source Warehouse</label>
-                    <LinkSelect
-                      name="setWarehouse"
-                      value={formData.setWarehouse}
-                      options={warehouses ?? []}
+                    <LinkSearchField
+                      value={formData.setWarehouse ?? ""}
+                      onChange={(val) => {
+                        const next = val || undefined
+                        onChange({ setWarehouse: next })
+                        onSetWarehouse?.(next)
+                      }}
+                      searchFn={(q) =>
+                        invoiceService.searchWarehousesForInvoice(
+                          q,
+                          formData.company || companyDefaults?.company,
+                        )
+                      }
+                      validate={async (v) => {
+                        const doc = await invoiceService.validateLink("Warehouse", v, [])
+                        if (!doc || Object.keys(doc).length === 0) {
+                          throw new Error("Invalid Warehouse")
+                        }
+                      }}
                       placeholder="Select warehouse…"
-                      onChange={handleSelectChange}
+                      suppressExternalLabelFetch
+                      readOnly={isReadOnly}
                     />
                   </div>
                 )}
                 {formData.isInternalCustomer && formData.updateStock && (
                   <div>
                     <label className={labelClass}>Set Target Warehouse</label>
-                    <LinkSelect
-                      name="setTargetWarehouse"
-                      value={formData.setTargetWarehouse}
-                      options={warehouses ?? []}
+                    <LinkSearchField
+                      value={formData.setTargetWarehouse ?? ""}
+                      onChange={(val) => onChange({ setTargetWarehouse: val || undefined })}
+                      searchFn={(q) =>
+                        invoiceService.searchWarehousesForInvoice(
+                          q,
+                          formData.company || companyDefaults?.company,
+                        )
+                      }
+                      validate={async (v) => {
+                        const doc = await invoiceService.validateLink("Warehouse", v, [])
+                        if (!doc || Object.keys(doc).length === 0) {
+                          throw new Error("Invalid Warehouse")
+                        }
+                      }}
                       placeholder="Select warehouse…"
-                      onChange={handleSelectChange}
+                      suppressExternalLabelFetch
+                      readOnly={isReadOnly}
                     />
                   </div>
                 )}
@@ -1232,7 +1243,13 @@ export default function InvoiceForm({
                 <button
                   key={source.key}
                   type="button"
-                  onClick={() => setActiveGetItemsSource(source)}
+                  onClick={() => {
+                    if (source.key === "Delivery Note" && !formData.customer) {
+                      addToast("Please Select a Customer", "warning")
+                      return
+                    }
+                    setActiveGetItemsSource(source)
+                  }}
                   className="px-3 py-1.5 text-xs font-semibold text-primary-600 border border-primary-200 rounded-lg hover:bg-primary-50 transition-colors"
                 >
                   {source.key}
@@ -1258,109 +1275,137 @@ export default function InvoiceForm({
               />
             )}
             {lineItems}
-            {/* Items footer: 2-column matching ERPNext */}
-            {subtotal != null && (
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-3 pt-3 border-t border-border/50">
-                <div className="space-y-3">
-                  <div>
-                    <label className={labelClass}>Total Quantity</label>
-                    <input
-                      type="text"
-                      value={totalQuantity ?? ""}
-                      className={`${inputClass} bg-gray-50`}
-                      readOnly
-                    />
+            {/* Items footer: 2-column matching ERPNext section_break_30 */}
+            {subtotal != null &&
+              (() => {
+                const isMultiCurrency =
+                  companyDefaults?.currency != null &&
+                  formData.currency != null &&
+                  formData.currency !== companyDefaults.currency
+                const companyCurrency = companyDefaults?.currency ?? ""
+                const conversionRate = formData.conversionRate ?? 1
+                const toBase = (v: number) =>
+                  Math.round((v ?? 0) * conversionRate * 100) / 100
+                const hasDiscount =
+                  (formData.discountAmount ?? 0) > 0 ||
+                  (formData.additionalDiscountPercentage ?? 0) > 0
+                const hasIncludedTax =
+                  taxRows?.some((r) => r.included_in_print_rate) ||
+                  editableTaxRows?.some((r) => r.included_in_print_rate)
+                const showNetTotal = hasDiscount || hasIncludedTax
+                return (
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-3 pt-3 border-t border-border/50">
+                    <div className="space-y-3">
+                      <div>
+                        <label className={labelClass}>Total Quantity</label>
+                        <input
+                          type="text"
+                          value={totalQuantity ?? ""}
+                          className={`${inputClass} bg-gray-50`}
+                          readOnly
+                        />
+                      </div>
+                      {isMultiCurrency && (
+                        <>
+                          <div>
+                            <label className={labelClass}>Total ({companyCurrency})</label>
+                            <input
+                              type="text"
+                              value={formatCurrency(toBase(subtotal ?? 0))}
+                              className={`${inputClass} bg-gray-50`}
+                              readOnly
+                            />
+                          </div>
+                          {showNetTotal && (
+                            <div>
+                              <label className={labelClass}>Net Total ({companyCurrency})</label>
+                              <input
+                                type="text"
+                                value={formatCurrency(formData.baseNetTotal ?? toBase(netTotal ?? subtotal ?? 0))}
+                                className={`${inputClass} bg-gray-50`}
+                                readOnly
+                              />
+                            </div>
+                          )}
+                        </>
+                      )}
+                    </div>
+                    <div className="space-y-3">
+                      <div>
+                        <label className={labelClass}>Total ({formData.currency ?? "CAD"})</label>
+                        <input
+                          type="text"
+                          value={formatCurrency(subtotal ?? 0)}
+                          className={`${inputClass} bg-gray-50`}
+                          readOnly
+                        />
+                      </div>
+                      {showNetTotal && (
+                        <div>
+                          <label className={labelClass}>Net Total ({formData.currency ?? "CAD"})</label>
+                          <input
+                            type="text"
+                            value={formatCurrency(netTotal ?? subtotal ?? 0)}
+                            className={`${inputClass} bg-gray-50`}
+                            readOnly
+                          />
+                        </div>
+                      )}
+                      {formData.totalNetWeight != null && formData.totalNetWeight > 0 && (
+                        <div>
+                          <label className={labelClass}>Total Net Weight</label>
+                          <input
+                            type="text"
+                            value={formData.totalNetWeight}
+                            className={`${inputClass} bg-gray-50`}
+                            readOnly
+                          />
+                        </div>
+                      )}
+                    </div>
                   </div>
-                  <div>
-                    <label className={labelClass}>Base Net Total ({companyDefaults?.currency ?? "CAD"})</label>
-                    <input
-                      type="text"
-                      value={formatCurrency(formData.baseNetTotal ?? subtotal ?? 0)}
-                      className={`${inputClass} bg-gray-50`}
-                      readOnly
-                    />
-                  </div>
-                </div>
-                <div className="space-y-3">
-                  <div>
-                    <label className={labelClass}>Net Total ({formData.currency ?? "CAD"})</label>
-                    <input
-                      type="text"
-                      value={formatCurrency(subtotal ?? 0)}
-                      className={`${inputClass} bg-gray-50`}
-                      readOnly
-                    />
-                  </div>
-                  <div>
-                    <label className={labelClass}>Total ({formData.currency ?? "CAD"})</label>
-                    <input
-                      type="text"
-                      value={formatCurrency(subtotal ?? 0)}
-                      className={`${inputClass} bg-gray-50`}
-                      readOnly
-                    />
-                  </div>
-                </div>
-              </div>
-            )}
+                )
+              })()}
           </div>
 
           {/* Section 5: Taxes and Charges — always visible (not collapsible, matching ERPNext) */}
           <div className="space-y-3">
             <h3 className="text-base font-bold text-heading">Taxes and Charges</h3>
-            {/* Row 1: Sales Taxes and Charges Template — full width (first, matching ERPNext) */}
-            <div className="mb-3">
-              <label className={labelClass}>
-                Sales Taxes and Charges Template
-              </label>
-              <select
-                value={taxesAndChargesTemplate ?? ""}
-                onChange={(e) => onTaxTemplateChange?.(e.target.value)}
-                className={inputClass}
-              >
-                <option value="">Select template…</option>
-                {taxesAndChargesTemplates?.map((t) => (
-                  <option key={t} value={t}>
-                    {t}
-                  </option>
-                ))}
-              </select>
-            </div>
-            {/* Apply TDS removed — field does not exist on Sales Invoice.
-                Use tax_withholding_category instead if TDS on sales is needed. */}
-            {/* Row 2: Tax Category | Shipping Rule | Incoterm — 3-column */}
+            {/* Row 1: Tax Category | Shipping Rule | Incoterm — 3-column, matching ERPNext */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-3">
               <div>
                 <label className={labelClass}>Tax Category</label>
-                <LinkSelect
-                  name="taxCategory"
+                <LinkField
+                  doctype="Tax Category"
                   value={formData.taxCategory}
-                  options={taxCategories}
-                  placeholder="Select…"
-                  onChange={handleSelectChange}
-                  loading={loadingLookups}
+                  onChange={(v) => handleSelectChange("taxCategory", v ?? "")}
+                  searchFn={(q) => invoiceService.searchSalesLink("Tax Category", q)}
+                  readOnly={isReadOnly}
                 />
               </div>
               <div>
                 <label className={labelClass}>Shipping Rule</label>
-                <LinkSelect
-                  name="shippingRule"
+                <LinkField
+                  doctype="Shipping Rule"
                   value={formData.shippingRule}
-                  options={shippingRules}
-                  placeholder="Select…"
-                  onChange={handleSelectChange}
-                  loading={loadingLookups}
+                  onChange={(v) => handleSelectChange("shippingRule", v ?? "")}
+                  searchFn={(q) =>
+                    invoiceService.searchSalesLink("Shipping Rule", q, [
+                      ["shipping_rule_type", "=", "Selling"],
+                      ["company", "=", currentCompany],
+                    ])
+                  }
+                  readOnly={isReadOnly}
                 />
               </div>
               <div>
                 <label className={labelClass}>Incoterm</label>
-                <LinkSelect
-                  name="incoterm"
+                <LinkField
+                  doctype="Incoterm"
                   value={formData.incoterm}
-                  options={incoterms}
-                  placeholder="Select…"
-                  onChange={handleSelectChange}
-                  loading={loadingLookups}
+                  onChange={(v) => handleSelectChange("incoterm", v ?? "")}
+                  searchFn={(q) => invoiceService.searchSalesLink("Incoterm", q)}
+                  readOnly={isReadOnly}
                 />
               </div>
             </div>
@@ -1379,9 +1424,37 @@ export default function InvoiceForm({
                 />
               </div>
             )}
-            {/* Row 3: Tax table — ERPNext-style editable grid */}
+            {/* Sales Taxes and Charges Template — Link field (ERPNext), searchable */}
+            <div className="mb-3 max-w-sm">
+              <label className={labelClass}>
+                Sales Taxes and Charges Template
+              </label>
+              <LinkSearchField
+                value={taxesAndChargesTemplate ?? ""}
+                onChange={(v) => onTaxTemplateChange?.(v ?? "")}
+                searchFn={(q) =>
+                  invoiceService.searchTaxTemplates(
+                    q,
+                    formData.company || companyDefaults?.company,
+                  )
+                }
+                validate={async (v) => {
+                  const doc = await invoiceService.validateLink(
+                    "Sales Taxes and Charges Template",
+                    v,
+                    [],
+                  )
+                  if (!doc || Object.keys(doc).length === 0) {
+                    throw new Error("Invalid Sales Taxes and Charges Template")
+                  }
+                }}
+                placeholder="Select template…"
+                readOnly={isReadOnly}
+              />
+            </div>
+            {/* Row 3: Tax table — ERPNext-style grid */}
             {(() => {
-              const rows = taxRows && taxRows.length > 0
+              const rows: EditableTaxRow[] = taxRows && taxRows.length > 0
                 ? taxRows.map((r) => ({
                     charge_type: r.charge_type as ChargeType,
                     account_head: r.account_head,
@@ -1389,178 +1462,113 @@ export default function InvoiceForm({
                     rate: r.rate,
                     tax_amount: r.tax_amount,
                     total: r.total,
+                    net_amount: 0,
                     included_in_print_rate: !!r.included_in_print_rate,
                   }))
                 : (editableTaxRows ?? [])
               const isEditable = !!onTaxRowsChange
               const currency = formData.currency ?? "CAD"
+              const company = formData.company ?? companyDefaults?.company
               const chargeTypes = chargeTypeOptions as ChargeType[]
 
-              const updateRow = (idx: number, patch: Partial<EditableTaxRow>) => {
+              const handleTaxRowsChange = (next: EditableTaxRow[]) => {
                 if (!onTaxRowsChange) return
-                const next = rows.map((r, i) => i === idx ? { ...r, ...patch } : r)
                 onTaxRowsChange(next)
-              }
-              const deleteRow = (idx: number) => {
-                if (!onTaxRowsChange || rows.length <= 1) return
-                onTaxRowsChange(rows.filter((_, i) => i !== idx))
-              }
-              const addRow = () => {
-                if (!onTaxRowsChange) return
-                onTaxRowsChange([...rows, createEmptyTaxRow()])
-              }
-
-              const handleAccountSelect = async (idx: number, account: AccountInfo) => {
-                updateRow(idx, {
-                  account_head: account.name,
-                  description: account.account_name || account.name,
-                })
-                if (rows[idx].charge_type !== "Actual") {
-                  const result = await invoiceService.getTaxRate(account.name)
-                  if (result.tax_rate > 0) {
-                    updateRow(idx, {
-                      rate: result.tax_rate,
-                      description: result.account_name || account.name,
+                next.forEach((row, i) => {
+                  const old = rows[i]
+                  if (
+                    old &&
+                    row.account_head &&
+                    row.account_head !== old.account_head &&
+                    row.charge_type !== "Actual"
+                  ) {
+                    const withDesc = next.map((r, j) =>
+                      j === i ? { ...r, description: row.account_head } : r
+                    )
+                    invoiceService.getTaxRate(row.account_head).then((result) => {
+                      if (result.tax_rate > 0 && onTaxRowsChange) {
+                        onTaxRowsChange(
+                          withDesc.map((r, j) =>
+                            j === i
+                              ? { ...r, rate: result.tax_rate, description: result.account_name || r.description }
+                              : r
+                          )
+                        )
+                      }
                     })
                   }
-                }
+                })
               }
 
+              const taxColumns: GridColumn<EditableTaxRow>[] = [
+                {
+                  key: "charge_type",
+                  label: "Type",
+                  type: "link",
+                  options: chargeTypes,
+                  weight: 1.4,
+                },
+                {
+                  key: "account_head",
+                  label: "Account Head",
+                  type: "link",
+                  searchFn: (q) => invoiceService.searchTaxAccounts(q, company),
+                  docType: "Account",
+                  placeholder: "Select account…",
+                  disabled: (row) => !row.charge_type,
+                  weight: 2.6,
+                },
+                {
+                  key: "rate",
+                  label: "Tax Rate",
+                  type: "number",
+                  align: "right",
+                  disabled: (row) => row.charge_type === "Actual",
+                  weight: 1,
+                },
+                {
+                  key: "tax_amount",
+                  label: `Amount (${currency})`,
+                  type: "number",
+                  align: "right",
+                  disabled: (row) => row.charge_type !== "Actual",
+                  formatter: (r) => formatCurrency(r.tax_amount),
+                  weight: 1.4,
+                },
+                {
+                  key: "total",
+                  label: `Total (${currency})`,
+                  type: "readonly",
+                  align: "right",
+                  formatter: (r) => formatCurrency(r.total),
+                  weight: 1.4,
+                },
+              ]
+
               return (
-                <>
-                  {rows.length > 0 ? (
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-sm">
-                        <thead>
-                          <tr className="border-b border-gray-100">
-                            <th className="px-2 py-2 text-center text-xs font-semibold text-muted uppercase tracking-wider w-[4%]">#</th>
-                            <th className="px-2 py-2 text-left text-xs font-semibold text-muted uppercase tracking-wider w-[14%]">Type</th>
-                            <th className="px-2 py-2 text-left text-xs font-semibold text-muted uppercase tracking-wider w-[20%]">Account Head</th>
-                            <th className="px-2 py-2 text-right text-xs font-semibold text-muted uppercase tracking-wider w-[10%]">Rate (%)</th>
-                            <th className="px-2 py-2 text-right text-xs font-semibold text-muted uppercase tracking-wider w-[13%]">Amount ({currency})</th>
-                            <th className="px-2 py-2 text-right text-xs font-semibold text-muted uppercase tracking-wider w-[13%]">Total</th>
-                            {isEditable && <th className="px-2 py-2 w-[4%]" />}
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {rows.map((row, i) => {
-                            const isActual = row.charge_type === "Actual"
-                            const isRefRow = row.charge_type === "On Previous Row Amount" || row.charge_type === "On Previous Row Total"
-                            return (
-                              <tr key={i} className="border-b border-gray-50 hover:bg-gray-50/30">
-                                <td className="px-2 py-2 text-center text-muted text-xs">{i + 1}</td>
-                                <td className="px-2 py-2">
-                                  {isEditable ? (
-                                    <select
-                                      value={row.charge_type}
-                                      onChange={(e) => updateRow(i, { charge_type: e.target.value as ChargeType })}
-                                      className="w-full px-2 py-1.5 text-sm border border-border rounded-[8px] focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 bg-white"
-                                    >
-                                      {chargeTypes.map((ct) => (
-                                        <option key={ct} value={ct}>{ct}</option>
-                                      ))}
-                                    </select>
-                                  ) : (
-                                    <span className="text-sm text-heading">{row.charge_type}</span>
-                                  )}
-                                </td>
-                                <td className="px-2 py-2">
-                                  {isEditable ? (
-                                    <LinkSearchField
-                                      value={row.account_head}
-                                      onChange={(val) => {
-                                        if (val) {
-                                          updateRow(i, { account_head: val, description: val })
-                                          if (rows[i]?.charge_type !== "Actual") {
-                                            invoiceService.getTaxRate(val).then((result) => {
-                                              if (result.tax_rate > 0) {
-                                                updateRow(i, { rate: result.tax_rate, description: result.account_name || val })
-                                              }
-                                            })
-                                          }
-                                        } else {
-                                          updateRow(i, { account_head: "", description: "", rate: 0 })
-                                        }
-                                      }}
-                                      searchFn={(q) => invoiceService.searchAccounts(q)}
-                                      placeholder={row.charge_type ? "Select account…" : "Select Charge Type first"}
-                                      disabled={!row.charge_type}
-                                    />
-                                  ) : (
-                                    <span className="text-sm text-heading">{row.account_head || "—"}</span>
-                                  )}
-                                </td>
-                                <td className="px-2 py-2 text-right">
-                                  {isEditable && !isActual ? (
-                                    <input
-                                      type="number"
-                                      min={0}
-                                      step={0.001}
-                                      value={row.rate}
-                                      onChange={(e) => updateRow(i, { rate: parseFloat(e.target.value) || 0 })}
-                                      className="w-full px-2 py-1.5 text-sm text-right border border-border rounded-[8px] focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 bg-white"
-                                    />
-                                  ) : (
-                                    <span className="text-sm text-muted tabular-nums">{row.rate}</span>
-                                  )}
-                                </td>
-                                <td className="px-2 py-2 text-right">
-                                  {isEditable && isActual ? (
-                                    <input
-                                      type="number"
-                                      min={0}
-                                      step={0.01}
-                                      value={row.tax_amount}
-                                      onChange={(e) => updateRow(i, { tax_amount: parseFloat(e.target.value) || 0 })}
-                                      className="w-full px-2 py-1.5 text-sm text-right border border-border rounded-[8px] focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 bg-white"
-                                    />
-                                  ) : (
-                                    <span className="text-sm font-semibold text-heading tabular-nums">{formatCurrency(row.tax_amount)}</span>
-                                  )}
-                                </td>
-                                <td className="px-2 py-2 text-right">
-                                  <span className="text-sm text-heading tabular-nums">{formatCurrency(row.total)}</span>
-                                </td>
-                                {isEditable && (
-                                  <td className="px-2 py-2 text-center">
-                                    <button
-                                      type="button"
-                                      onClick={() => deleteRow(i)}
-                                      disabled={rows.length <= 1}
-                                      className="p-1 rounded-[6px] text-muted hover:text-danger-600 hover:bg-danger-50 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-                                    >
-                                      <Trash2 size={13} />
-                                    </button>
-                                  </td>
-                                )}
-                              </tr>
-                            )
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-                  ) : (
-                    <p className="text-xs text-muted">
-                      No taxes configured. Select a template or add tax rows manually.
-                    </p>
-                  )}
-                  {isEditable && (
-                    <button
-                      type="button"
-                      onClick={addRow}
-                      className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-primary-600 hover:text-primary-700 hover:bg-primary-50 rounded-[8px] transition-colors"
-                    >
-                      <Plus size={13} />
-                      Add Row
-                    </button>
-                  )}
-                </>
+                <ChildTableGrid<EditableTaxRow>
+                  title="Sales Taxes and Charges"
+                  titleClassName="text-xs font-semibold text-muted"
+                  description={
+                    isEditable
+                      ? "Select an Account Head to auto-fill the tax rate."
+                      : undefined
+                  }
+                  rows={rows}
+                  columns={taxColumns}
+                  emptyRow={createEmptyTaxRow()}
+                  onChange={handleTaxRowsChange}
+                  readOnly={!isEditable}
+                  canDelete={() => rows.length > 1}
+                  testId="taxes_grid"
+                  minWidth="720px"
+                />
               )
             })()}
-            {/* Tax totals — transaction currency only */}
+            {/* Tax totals — transaction currency only, right side (matching ERPNext) */}
             {totalTaxesAndCharges != null && (
-              <div className="mt-3 pt-3 border-t border-border/50">
-                <div>
+              <div className="mt-3">
+                <div className="sm:w-1/2 ml-auto">
                   <label className={labelClass}>Total Taxes and Charges</label>
                   <input
                     type="text"
@@ -1576,196 +1584,172 @@ export default function InvoiceForm({
           {/* Section 6: Totals — always visible (not collapsible, matching ERPNext) */}
           <div className="space-y-3">
             <h3 className="text-base font-bold text-heading">Totals</h3>
-            {totals}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-3">
-              {/* Left: Invoice currency */}
-              <div className="space-y-3">
-                <div>
-                  <label className={labelClass}>Net Total ({formData.currency ?? "CAD"})</label>
-                  <input
-                    type="text"
-                    value={formatCurrency(formData.netTotal ?? subtotal ?? 0)}
-                    className={`${inputClass} bg-gray-50`}
-                    readOnly
-                  />
-                </div>
-                <div>
-                  <label className={labelClass}>Total Taxes and Charges ({formData.currency ?? "CAD"})</label>
-                  <input
-                    type="text"
-                    value={formatCurrency(formData.totalTaxesAndCharges ?? totalTaxesAndCharges ?? 0)}
-                    className={`${inputClass} bg-gray-50`}
-                    readOnly
-                  />
-                </div>
-                {formData.totalNetWeight != null && formData.totalNetWeight > 0 && (
-                  <div>
-                    <label className={labelClass}>Total Net Weight</label>
-                    <input
-                      type="text"
-                      value={formData.totalNetWeight}
-                      className={`${inputClass} bg-gray-50`}
-                      readOnly
-                    />
-                  </div>
-                )}
-                <div>
-                  <label className={labelClass}>Grand Total ({formData.currency ?? "CAD"})</label>
-                  <input
-                    type="text"
-                    value={formatCurrency(grandTotal ?? 0)}
-                    className={`${inputClass} bg-gray-50`}
-                    readOnly
-                  />
-                </div>
-                {grandTotal != null && grandTotal > 0 && (
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      id="disableRoundedTotal"
-                      checked={!!formData.disableRoundedTotal}
-                      onChange={(e) =>
-                        onChange({ disableRoundedTotal: e.target.checked })
-                      }
-                      className="h-4 w-4 rounded border-border"
-                    />
-                    <label
-                      htmlFor="disableRoundedTotal"
-                      className="text-sm text-body"
-                    >
-                      Disable Rounded Total
-                    </label>
-                  </div>
-                )}
-                {!formData.disableRoundedTotal && (
-                  <div>
-                    <label className={labelClass}>Rounding Adjustment ({formData.currency ?? "CAD"})</label>
-                    <input
-                      type="text"
-                      value={formatCurrency(
-                        formData.roundingAdjustment ?? (Math.round((grandTotal ?? 0) * 100) / 100) - (grandTotal ?? 0),
+            {(() => {
+              const isMultiCurrency =
+                companyDefaults?.currency != null &&
+                formData.currency != null &&
+                formData.currency !== companyDefaults.currency
+              const showRounding = !formData.disableRoundedTotal
+              const conversionRate = formData.conversionRate ?? 1
+              const toBase = (v: number) =>
+                Math.round((v ?? 0) * conversionRate * 100) / 100
+              const effectiveRoundedTotal =
+                formData.roundedTotal ??
+                roundToSmallestCurrencyFraction(grandTotal ?? 0, currencyFraction)
+              const effectiveRoundingAdjustment =
+                formData.roundingAdjustment ??
+                (effectiveRoundedTotal - (grandTotal ?? 0))
+              // ERPNext computes outstanding only on save; new docs show 0
+              const effectiveOutstanding =
+                mode === "new" ? 0 : (outstandingAmount ?? effectiveRoundedTotal)
+              const effectiveTotalAdvance =
+                totalAdvance ??
+                formData.totalAdvance ??
+                (formData.advances ?? []).reduce(
+                  (sum, a) => sum + (a.allocated_amount ?? 0),
+                  0,
+                )
+              const companyCurrency = companyDefaults?.currency ?? ""
+              const docCurrency = formData.currency ?? "CAD"
+
+              return (
+                <div
+                  className={`mt-3 ${
+                    isMultiCurrency
+                      ? "grid grid-cols-1 lg:grid-cols-2 gap-6"
+                      : "sm:w-1/2 ml-auto space-y-3"
+                  }`}
+                >
+                  {isMultiCurrency && (
+                    <div className="space-y-3">
+                      <div>
+                        <label className={labelClass}>Grand Total ({companyCurrency})</label>
+                        <input
+                          type="text"
+                          value={formatCurrency(formData.baseGrandTotal ?? toBase(grandTotal ?? 0))}
+                          className={`${inputClass} bg-gray-50`}
+                          readOnly
+                        />
+                      </div>
+                      {showRounding && (
+                        <div>
+                          <label className={labelClass}>Rounding Adjustment ({companyCurrency})</label>
+                          <input
+                            type="text"
+                            value={formatCurrency(formData.baseRoundingAdjustment ?? toBase(effectiveRoundingAdjustment))}
+                            className={`${inputClass} bg-gray-50`}
+                            readOnly
+                          />
+                        </div>
                       )}
-                      className={`${inputClass} bg-gray-50`}
-                      readOnly
-                    />
+                      {showRounding && (
+                        <div>
+                          <label className={labelClass}>Rounded Total ({companyCurrency})</label>
+                          <input
+                            type="text"
+                            value={formatCurrency(formData.baseRoundedTotal ?? toBase(effectiveRoundedTotal))}
+                            className={`${inputClass} bg-gray-50`}
+                            readOnly
+                          />
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  <div className="space-y-3">
+                    <div>
+                      <label className={labelClass}>Grand Total ({docCurrency})</label>
+                      <input
+                        type="text"
+                        value={formatCurrency(grandTotal ?? 0)}
+                        className={`${inputClass} bg-gray-50 font-bold`}
+                        readOnly
+                      />
+                    </div>
+                    {showRounding && (
+                      <div>
+                        <label className={labelClass}>Rounding Adjustment ({docCurrency})</label>
+                        <input
+                          type="text"
+                          value={formatCurrency(effectiveRoundingAdjustment)}
+                          className={`${inputClass} bg-gray-50`}
+                          readOnly
+                        />
+                      </div>
+                    )}
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        id="useCompanyDefaultCC"
+                        checked={!!formData.useCompanyDefaultCostCenterForRoundOff}
+                        onChange={(e) =>
+                          onChange({
+                            useCompanyDefaultCostCenterForRoundOff: e.target.checked,
+                          })
+                        }
+                        className="h-4 w-4 rounded border-border"
+                      />
+                      <label
+                        htmlFor="useCompanyDefaultCC"
+                        className="text-sm text-body"
+                      >
+                        Use Company default Cost Center for Round off
+                      </label>
+                    </div>
+                    {showRounding && (
+                      <div>
+                        <label className={labelClass}>Rounded Total ({docCurrency})</label>
+                        <input
+                          type="text"
+                          value={formatCurrency(effectiveRoundedTotal)}
+                          className={`${inputClass} bg-gray-50 font-bold`}
+                          readOnly
+                        />
+                      </div>
+                    )}
+                    <div>
+                      <label className={labelClass}>Total Advance ({docCurrency})</label>
+                      <input
+                        type="text"
+                        value={formatCurrency(effectiveTotalAdvance ?? 0)}
+                        className={`${inputClass} bg-gray-50`}
+                        readOnly
+                      />
+                    </div>
+                    <div>
+                      <label className={labelClass}>Outstanding Amount ({docCurrency})</label>
+                      <input
+                        type="text"
+                        value={formatCurrency(effectiveOutstanding)}
+                        className={`${inputClass} bg-gray-50 font-semibold`}
+                        readOnly
+                      />
+                    </div>
+                    {grandTotal != null && grandTotal > 0 && (
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          id="disableRoundedTotal"
+                          checked={!!formData.disableRoundedTotal}
+                          onChange={(e) =>
+                            onChange({ disableRoundedTotal: e.target.checked })
+                          }
+                          className="h-4 w-4 rounded border-border"
+                        />
+                        <label
+                          htmlFor="disableRoundedTotal"
+                          className="text-sm text-body"
+                        >
+                          Disable Rounded Total
+                        </label>
+                      </div>
+                    )}
                   </div>
-                )}
-                {!formData.disableRoundedTotal && (
-                  <div>
-                    <label className={labelClass}>Rounded Total ({formData.currency ?? "CAD"})</label>
-                    <input
-                      type="text"
-                      value={formatCurrency(formData.roundedTotal ?? (Math.round((grandTotal ?? 0) * 100) / 100))}
-                      className={`${inputClass} bg-gray-50`}
-                      readOnly
-                    />
-                  </div>
-                )}
-                <div>
-                  <label className={labelClass}>Total Advance ({formData.currency ?? "CAD"})</label>
-                  <input
-                    type="text"
-                    value={formatCurrency(totalAdvance ?? 0)}
-                    className={`${inputClass} bg-gray-50`}
-                    readOnly
-                  />
                 </div>
-                <div>
-                  <label className={labelClass}>Outstanding Amount ({formData.currency ?? "CAD"})</label>
-                  <input
-                    type="text"
-                    value={formatCurrency(outstandingAmount ?? (formData.roundedTotal ?? (Math.round((grandTotal ?? 0) * 100) / 100)))}
-                    className={`${inputClass} bg-gray-50 font-semibold`}
-                    readOnly
-                  />
-                </div>
-                {formData.inWords && (
-                  <div>
-                    <label className={labelClass}>In Words</label>
-                    <input
-                      type="text"
-                      value={formData.inWords}
-                      className={`${inputClass} bg-gray-50`}
-                      readOnly
-                    />
-                  </div>
-                )}
-              </div>
-              {/* Right: Company currency */}
-              <div className="space-y-3">
-                <div>
-                  <label className={labelClass}>Net Total ({companyDefaults?.currency ?? "CAD"})</label>
-                  <input
-                    type="text"
-                    value={formatCurrency(formData.baseNetTotal ?? 0)}
-                    className={`${inputClass} bg-gray-50`}
-                    readOnly
-                  />
-                </div>
-                <div>
-                  <label className={labelClass}>Total Taxes and Charges ({companyDefaults?.currency ?? "CAD"})</label>
-                  <input
-                    type="text"
-                    value={formatCurrency(formData.baseTotalTaxesAndCharges ?? 0)}
-                    className={`${inputClass} bg-gray-50`}
-                    readOnly
-                  />
-                </div>
-                <div>
-                  <label className={labelClass}>Grand Total ({companyDefaults?.currency ?? "CAD"})</label>
-                  <input
-                    type="text"
-                    value={formatCurrency(formData.baseGrandTotal ?? 0)}
-                    className={`${inputClass} bg-gray-50`}
-                    readOnly
-                  />
-                </div>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    id="useCompanyDefaultCC"
-                    checked={!!formData.useCompanyDefaultCostCenterForRoundOff}
-                    onChange={(e) =>
-                      onChange({
-                        useCompanyDefaultCostCenterForRoundOff: e.target.checked,
-                      })
-                    }
-                    className="h-4 w-4 rounded border-border"
-                  />
-                  <label
-                    htmlFor="useCompanyDefaultCC"
-                    className="text-sm text-body"
-                  >
-                    Use Company default Cost Center for Round off
-                  </label>
-                </div>
-                {!formData.disableRoundedTotal && (
-                  <div>
-                    <label className={labelClass}>Rounding Adjustment ({companyDefaults?.currency ?? "CAD"})</label>
-                    <input
-                      type="text"
-                      value={formatCurrency(formData.baseRoundingAdjustment ?? 0)}
-                      className={`${inputClass} bg-gray-50`}
-                      readOnly
-                    />
-                  </div>
-                )}
-                {!formData.disableRoundedTotal && (
-                  <div>
-                    <label className={labelClass}>Rounded Total ({companyDefaults?.currency ?? "CAD"})</label>
-                    <input
-                      type="text"
-                      value={formatCurrency(formData.baseRoundedTotal ?? 0)}
-                      className={`${inputClass} bg-gray-50`}
-                      readOnly
-                    />
-                  </div>
-                )}
-              </div>
-            </div>
+              )
+            })()}
           </div>
 
-          {/* Section 7: Additional Discount — 2-column */}
+          {/* Section 7: Additional Discount — after Totals (matching ERPNext) */}
           <CollapsibleSection title="Additional Discount">
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
               <div className="space-y-3">
@@ -1774,7 +1758,9 @@ export default function InvoiceForm({
                   <select
                     value={formData.applyDiscountOn ?? applyDiscountOnOptions[0] ?? ""}
                     onChange={(e) =>
-                      onChange({ applyDiscountOn: e.target.value || undefined })
+                      handleApplyDiscountOnChange(
+                        (e.target.value || "Grand Total") as "Grand Total" | "Net Total",
+                      )
                     }
                     className={inputClass}
                   >
@@ -1802,14 +1788,24 @@ export default function InvoiceForm({
                 {formData.isCashOrNonTradeDiscount && (
                   <div>
                     <label className={labelClass}>Discount Account</label>
-                    <input
-                      type="text"
+                    <LinkSearchField
                       value={formData.discountAccount ?? ""}
-                      onChange={(e) =>
-                        onChange({ discountAccount: e.target.value || undefined })
+                      onChange={(val) => onChange({ discountAccount: val || undefined })}
+                      searchFn={(q) =>
+                        invoiceService.searchDiscountAccounts(
+                          q,
+                          formData.company || companyDefaults?.company,
+                        )
                       }
-                      className={inputClass}
-                      placeholder="Enter account…"
+                      validate={async (v) => {
+                        const doc = await invoiceService.validateLink("Account", v, [])
+                        if (!doc || Object.keys(doc).length === 0) {
+                          throw new Error("Invalid Account")
+                        }
+                      }}
+                      placeholder="Select account…"
+                      suppressExternalLabelFetch
+                      readOnly={isReadOnly}
                     />
                   </div>
                 )}
@@ -1824,89 +1820,34 @@ export default function InvoiceForm({
                     step={0.01}
                     value={formData.additionalDiscountPercentage ?? ""}
                     onChange={(e) =>
-                      onChange({
-                        additionalDiscountPercentage: e.target.value
-                          ? parseFloat(e.target.value)
-                          : undefined,
-                      })
+                      handleAdditionalDiscountPercentageChange(
+                        e.target.value ? parseFloat(e.target.value) : undefined,
+                      )
                     }
                     className={inputClass}
                     placeholder="0.000"
                   />
                 </div>
                 <div>
-                  <label className={labelClass}>Additional Discount Amount</label>
+                  <label className={labelClass}>
+                    Additional Discount Amount ({formData.currency ?? "CAD"})
+                  </label>
                   <input
                     type="number"
                     min={0}
                     step={0.01}
                     value={formData.discountAmount ?? ""}
                     onChange={(e) =>
-                      onChange({
-                        discountAmount: e.target.value
-                          ? parseFloat(e.target.value)
-                          : undefined,
-                      })
+                      handleAdditionalDiscountAmountChange(
+                        e.target.value ? parseFloat(e.target.value) : undefined,
+                      )
                     }
                     className={inputClass}
                     placeholder="0.00"
                   />
                 </div>
-                <div>
-                  <label className={labelClass}>Coupon Code</label>
-                  <input
-                    type="text"
-                    value={formData.couponCode ?? ""}
-                    onChange={(e) =>
-                      onChange({ couponCode: e.target.value || undefined })
-                    }
-                    className={inputClass}
-                    placeholder="Optional"
-                  />
-                </div>
               </div>
             </div>
-          </CollapsibleSection>
-
-
-
-          {/* Section 8: Tax Breakup — collapsed, read-only */}
-          <CollapsibleSection title="Tax Breakup">
-            {(() => {
-              const rows = taxRows && taxRows.length > 0
-                ? taxRows
-                : (editableTaxRows ?? [])
-              const currency = formData.currency ?? "CAD"
-              if (rows.length === 0) {
-                return <p className="text-xs text-muted">No tax data available.</p>
-              }
-              return (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b border-gray-100">
-                        <th className="text-left py-2 text-xs font-semibold text-muted">#</th>
-                        <th className="text-left py-2 text-xs font-semibold text-muted">Account Head</th>
-                        <th className="text-right py-2 text-xs font-semibold text-muted">Rate (%)</th>
-                        <th className="text-right py-2 text-xs font-semibold text-muted">Tax Amount ({currency})</th>
-                        <th className="text-right py-2 text-xs font-semibold text-muted">Total ({currency})</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {rows.map((row, i) => (
-                        <tr key={i} className="border-b border-gray-50">
-                          <td className="py-2 text-muted">{i + 1}</td>
-                          <td className="py-2 text-heading">{row.account_head || "—"}</td>
-                          <td className="py-2 text-right text-heading tabular-nums">{row.rate}</td>
-                          <td className="py-2 text-right text-heading tabular-nums">{formatCurrency(row.tax_amount ?? 0)}</td>
-                          <td className="py-2 text-right text-heading tabular-nums">{formatCurrency(row.total ?? 0)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )
-            })()}
           </CollapsibleSection>
 
           {/* Section 9: Time Sheets — collapsible, in Main body (ERPNext) */}
@@ -1942,7 +1883,7 @@ export default function InvoiceForm({
                               onChange({ timeSheets: updated })
                             }}
                             searchFn={(q) => invoiceService.searchActivityTypes(q)}
-
+                            readOnly={isReadOnly}
                           />
                         </td>
                         <td className="py-1.5">
@@ -2045,25 +1986,25 @@ export default function InvoiceForm({
                   <div className="space-y-3">
                     <div>
                       <label className={labelClass}>Customer Address</label>
-                      <select
+                      <LinkSearchField
                         value={formData.customerAddress ?? ""}
-                        onChange={(e) =>
-                          onChange({
-                            customerAddress: e.target.value || undefined,
-                          })
-                        }
-                        className={inputClass}
-                        disabled={loadingAddresses}
-                      >
-                        <option value="">
-                          {loadingAddresses ? "Loading…" : "Select address…"}
-                        </option>
-                        {addresses.map((a) => (
-                          <option key={a} value={a}>
-                            {a}
-                          </option>
-                        ))}
-                      </select>
+                        onChange={(v) => {
+                          onChange({ customerAddress: v || undefined });
+                          if (v) {
+                            invoiceService.validateLink("Address", v, []).then(() => {
+                              invoiceService.getAddressDisplay(v).then((display) => {
+                                if (display) onChange({ addressDisplay: display });
+                              });
+                            });
+                          } else {
+                            onChange({ addressDisplay: undefined });
+                          }
+                        }}
+                        searchFn={(q) => invoiceService.searchCustomerAddresses(formData.customer, q)}
+                        placeholder="Select address…"
+                        suppressExternalLabelFetch
+                        readOnly={isReadOnly}
+                      />
                     </div>
                     <div>
                       <label className={labelClass}>Address</label>
@@ -2077,13 +2018,13 @@ export default function InvoiceForm({
                     </div>
                     <div>
                       <label className={labelClass}>Territory</label>
-                      <LinkSelect
-                        name="territory"
+                      <LinkField
+                        doctype="Territory"
                         value={formData.territory}
-                        options={territories}
+                        onChange={(v) => handleSelectChange("territory", v ?? "")}
+                        searchFn={(q) => invoiceService.searchSalesLink("Territory", q)}
                         placeholder="Select territory…"
-                        onChange={handleSelectChange}
-                        loading={loadingLookups}
+                        readOnly={isReadOnly}
                       />
                     </div>
                   </div>
@@ -2091,23 +2032,39 @@ export default function InvoiceForm({
                   <div className="space-y-3">
                     <div>
                       <label className={labelClass}>Contact Person</label>
-                      <select
+                      <LinkSearchField
                         value={formData.contactPerson ?? ""}
-                        onChange={(e) =>
-                          onChange({ contactPerson: e.target.value || undefined })
-                        }
-                        className={inputClass}
-                        disabled={loadingAddresses}
-                      >
-                        <option value="">
-                          {loadingAddresses ? "Loading…" : "Select contact…"}
-                        </option>
-                        {contacts.map((c) => (
-                          <option key={c} value={c}>
-                            {c}
-                          </option>
-                        ))}
-                      </select>
+                        onChange={(v) => {
+                          onChange({ contactPerson: v || undefined });
+                          if (v) {
+                            invoiceService.validateLink("Contact", v, []).then(() => {
+                              invoiceService.getContactDetails(v).then((details) => {
+                                onChange({
+                                  contactDisplay: details.contact_display,
+                                  contactEmail: details.contact_email,
+                                  contactMobile: details.contact_mobile,
+                                  contactPhone: details.contact_phone,
+                                  contactDesignation: details.contact_designation,
+                                  contactDepartment: details.contact_department,
+                                });
+                              });
+                            });
+                          } else {
+                            onChange({
+                              contactDisplay: undefined,
+                              contactEmail: undefined,
+                              contactMobile: undefined,
+                              contactPhone: undefined,
+                              contactDesignation: undefined,
+                              contactDepartment: undefined,
+                            });
+                          }
+                        }}
+                        searchFn={(q) => invoiceService.searchCustomerContacts(formData.customer, q)}
+                        placeholder="Select contact…"
+                        suppressExternalLabelFetch
+                        readOnly={isReadOnly}
+                      />
                     </div>
                     <div>
                       <label className={labelClass}>Contact</label>
@@ -2119,6 +2076,13 @@ export default function InvoiceForm({
                         placeholder="Contact display"
                       />
                     </div>
+                    {(formData.contactPhone || formData.contactDesignation || formData.contactDepartment) && (
+                      <div className="text-xs text-muted space-y-1">
+                        {formData.contactPhone && <p><span className="font-medium">Phone:</span> {formData.contactPhone}</p>}
+                        {formData.contactDesignation && <p><span className="font-medium">Designation:</span> {formData.contactDesignation}</p>}
+                        {formData.contactDepartment && <p><span className="font-medium">Department:</span> {formData.contactDepartment}</p>}
+                      </div>
+                    )}
                   </div>
                 </div>
               </CollapsibleSection>
@@ -2130,25 +2094,25 @@ export default function InvoiceForm({
                   <div className="space-y-3">
                     <div>
                       <label className={labelClass}>Shipping Address Name</label>
-                      <select
+                      <LinkSearchField
                         value={formData.shippingAddressName ?? ""}
-                        onChange={(e) =>
-                          onChange({
-                            shippingAddressName: e.target.value || undefined,
-                          })
-                        }
-                        className={inputClass}
-                        disabled={loadingAddresses}
-                      >
-                        <option value="">
-                          {loadingAddresses ? "Loading…" : "Select address…"}
-                        </option>
-                        {addresses.map((a) => (
-                          <option key={a} value={a}>
-                            {a}
-                          </option>
-                        ))}
-                      </select>
+                        onChange={(v) => {
+                          onChange({ shippingAddressName: v || undefined });
+                          if (v) {
+                            invoiceService.validateLink("Address", v, []).then(() => {
+                              invoiceService.getAddressDisplay(v).then((display) => {
+                                if (display) onChange({ shippingAddress: display });
+                              });
+                            });
+                          } else {
+                            onChange({ shippingAddress: undefined });
+                          }
+                        }}
+                        searchFn={(q) => invoiceService.searchCustomerAddresses(formData.customer, q)}
+                        placeholder="Select address…"
+                        suppressExternalLabelFetch
+                        readOnly={isReadOnly}
+                      />
                     </div>
                     <div>
                       <label className={labelClass}>Shipping Address</label>
@@ -2165,25 +2129,19 @@ export default function InvoiceForm({
                   <div className="space-y-3">
                     <div>
                       <label className={labelClass}>Dispatch Address Name</label>
-                      <select
+                      <LinkSearchField
                         value={formData.dispatchAddressName ?? ""}
-                        onChange={(e) =>
-                          onChange({
-                            dispatchAddressName: e.target.value || undefined,
-                          })
-                        }
-                        className={inputClass}
-                        disabled={loadingAddresses}
-                      >
-                        <option value="">
-                          {loadingAddresses ? "Loading…" : "Select address…"}
-                        </option>
-                        {companyAddresses.map((a) => (
-                          <option key={a} value={a}>
-                            {a}
-                          </option>
-                        ))}
-                      </select>
+                        onChange={(v) => {
+                          onChange({ dispatchAddressName: v || undefined });
+                          if (v) {
+                            invoiceService.validateLink("Address", v, []);
+                          }
+                        }}
+                        searchFn={(q) => invoiceService.searchCompanyAddresses(companyDefaults?.company ?? "", q)}
+                        placeholder="Select address…"
+                        suppressExternalLabelFetch
+                        readOnly={isReadOnly}
+                      />
                     </div>
                     <div>
                       <label className={labelClass}>Dispatch Address</label>
@@ -2206,25 +2164,25 @@ export default function InvoiceForm({
                   <div className="space-y-3">
                     <div>
                       <label className={labelClass}>Company Address Name</label>
-                      <select
+                      <LinkSearchField
                         value={formData.companyAddress ?? ""}
-                        onChange={(e) =>
-                          onChange({
-                            companyAddress: e.target.value || undefined,
-                          })
-                        }
-                        className={inputClass}
-                        disabled={loadingAddresses}
-                      >
-                        <option value="">
-                          {loadingAddresses ? "Loading…" : "Select address…"}
-                        </option>
-                        {companyAddresses.map((a) => (
-                          <option key={a} value={a}>
-                            {a}
-                          </option>
-                        ))}
-                      </select>
+                        onChange={(v) => {
+                          onChange({ companyAddress: v || undefined });
+                          if (v) {
+                            invoiceService.validateLink("Address", v, []).then(() => {
+                              invoiceService.getAddressDisplay(v).then((display) => {
+                                if (display) onChange({ companyAddressDisplay: display });
+                              });
+                            });
+                          } else {
+                            onChange({ companyAddressDisplay: undefined });
+                          }
+                        }}
+                        searchFn={(q) => invoiceService.searchCompanyAddresses(companyDefaults?.company ?? "", q)}
+                        placeholder="Select address…"
+                        suppressExternalLabelFetch
+                        readOnly={isReadOnly}
+                      />
                     </div>
                     <div>
                       <label className={labelClass}>Company Address</label>
@@ -2240,25 +2198,19 @@ export default function InvoiceForm({
                   {/* Right column: Company contact (filtered by Company) */}
                   <div>
                     <label className={labelClass}>Company Contact Person</label>
-                    <select
+                    <LinkSearchField
                       value={formData.companyContactPerson ?? ""}
-                      onChange={(e) =>
-                        onChange({
-                          companyContactPerson: e.target.value || undefined,
-                        })
-                      }
-                      className={inputClass}
-                      disabled={loadingAddresses}
-                    >
-                      <option value="">
-                        {loadingAddresses ? "Loading…" : "Select contact…"}
-                      </option>
-                      {companyContacts.map((c) => (
-                        <option key={c} value={c}>
-                          {c}
-                        </option>
-                      ))}
-                    </select>
+                      onChange={(v) => {
+                        onChange({ companyContactPerson: v || undefined });
+                        if (v) {
+                          invoiceService.validateLink("Contact", v, []);
+                        }
+                      }}
+                      searchFn={(q) => invoiceService.searchCompanyContacts(companyDefaults?.company ?? "", q)}
+                      placeholder="Select contact…"
+                      suppressExternalLabelFetch
+                      readOnly={isReadOnly}
+                    />
                   </div>
                 </div>
               </CollapsibleSection>
@@ -2277,8 +2229,6 @@ export default function InvoiceForm({
             <CollapsibleSection title="Payments">
               <PaymentsTable
                 payments={formData.payments ?? []}
-                modes={_modeOfPayments}
-                accounts={accounts}
                 grandTotal={grandTotal}
                 company={companyDefaults?.company}
                 onChange={(rows) => onChange({ payments: rows })}
@@ -2337,13 +2287,19 @@ export default function InvoiceForm({
                   </div>
                   <div>
                     <label className={labelClass}>Account for Change Amount</label>
-                    <LinkSelect
-                      name="accountForChangeAmount"
+                    <LinkField
+                      doctype="Account"
                       value={formData.accountForChangeAmount}
-                      options={accounts}
+                      onChange={(v) => handleSelectChange("accountForChangeAmount", v ?? "")}
+                      searchFn={(q) =>
+                        invoiceService.searchSalesLink("Account", q, [
+                          ["account_type", "in", ["Cash", "Bank"]],
+                          ["company", "=", currentCompany],
+                          ["is_group", "=", 0],
+                        ])
+                      }
                       placeholder="Select account…"
-                      onChange={handleSelectChange}
-                      loading={loadingLookups}
+                      readOnly={isReadOnly}
                     />
                   </div>
                 </div>
@@ -2404,24 +2360,35 @@ export default function InvoiceForm({
                 <div className="space-y-3">
                   <div>
                     <label className={labelClass}>Write Off Account</label>
-                    <LinkSelect
-                      name="writeOffAccount"
+                    <LinkField
+                      doctype="Account"
                       value={formData.writeOffAccount}
-                      options={accounts}
+                      onChange={(v) => handleSelectChange("writeOffAccount", v ?? "")}
+                      searchFn={(q) =>
+                        invoiceService.searchSalesLink("Account", q, [
+                          ["report_type", "=", "Profit and Loss"],
+                          ["is_group", "=", 0],
+                          ["company", "=", currentCompany],
+                        ])
+                      }
                       placeholder="Select account…"
-                      onChange={handleSelectChange}
-                      loading={loadingLookups}
+                      readOnly={isReadOnly}
                     />
                   </div>
                   <div>
                     <label className={labelClass}>Write Off Cost Center</label>
-                    <LinkSelect
-                      name="writeOffCostCenter"
+                    <LinkField
+                      doctype="Cost Center"
                       value={formData.writeOffCostCenter}
-                      options={costCenters}
+                      onChange={(v) => handleSelectChange("writeOffCostCenter", v ?? "")}
+                      searchFn={(q) =>
+                        invoiceService.searchSalesLink("Cost Center", q, [
+                          ["is_group", "=", 0],
+                          ["company", "=", currentCompany],
+                        ])
+                      }
                       placeholder="Select cost center…"
-                      onChange={handleSelectChange}
-                      loading={loadingLookups}
+                      readOnly={isReadOnly}
                     />
                   </div>
                 </div>
@@ -2487,24 +2454,34 @@ export default function InvoiceForm({
                   </div>
                   <div>
                     <label className={labelClass}>Redemption Account</label>
-                    <LinkSelect
-                      name="loyaltyRedemptionAccount"
+                    <LinkField
+                      doctype="Account"
                       value={formData.loyaltyRedemptionAccount}
-                      options={accounts}
+                      onChange={(v) => handleSelectChange("loyaltyRedemptionAccount", v ?? "")}
+                      searchFn={(q) =>
+                        invoiceService.searchSalesLink("Account", q, [
+                          ["is_group", "=", 0],
+                          ["company", "=", currentCompany],
+                        ])
+                      }
                       placeholder="Select account…"
-                      onChange={handleSelectChange}
-                      loading={loadingLookups}
+                      readOnly={isReadOnly}
                     />
                   </div>
                   <div>
                     <label className={labelClass}>Redemption Cost Center</label>
-                    <LinkSelect
-                      name="loyaltyRedemptionCostCenter"
+                    <LinkField
+                      doctype="Cost Center"
                       value={formData.loyaltyRedemptionCostCenter}
-                      options={costCenters}
+                      onChange={(v) => handleSelectChange("loyaltyRedemptionCostCenter", v ?? "")}
+                      searchFn={(q) =>
+                        invoiceService.searchSalesLink("Cost Center", q, [
+                          ["is_group", "=", 0],
+                          ["company", "=", currentCompany],
+                        ])
+                      }
                       placeholder="Select cost center…"
-                      onChange={handleSelectChange}
-                      loading={loadingLookups}
+                      readOnly={isReadOnly}
                     />
                   </div>
                 </div>
@@ -2580,13 +2557,13 @@ export default function InvoiceForm({
                     Ignore Default Payment Terms
                   </label>
                 </div>
-                <LinkSelect
-                  name="paymentTermsTemplate"
+                <LinkField
+                  doctype="Payment Terms Template"
                   value={formData.paymentTermsTemplate}
-                  options={paymentTermsTemplates}
+                  onChange={(v) => handleSelectChange("paymentTermsTemplate", v ?? "")}
+                  searchFn={(q) => invoiceService.searchSalesLink("Payment Terms Template", q)}
                   placeholder="Select template…"
-                  onChange={handleSelectChange}
-                  loading={loadingLookups}
+                  readOnly={isReadOnly}
                 />
               </CollapsibleSection>
 
@@ -2712,13 +2689,17 @@ export default function InvoiceForm({
           <CollapsibleSection title="Terms and Conditions">
             <div>
               <label className={labelClass}>Terms</label>
-              <LinkSelect
-                name="tcName"
+              <LinkField
+                doctype="Terms and Conditions"
                 value={formData.tcName}
-                options={terms}
+                onChange={(v) => handleSelectChange("tcName", v ?? "")}
+                searchFn={(q) =>
+                  invoiceService.searchSalesLink("Terms and Conditions", q, [
+                    ["selling", "=", 1],
+                  ])
+                }
                 placeholder="Select template…"
-                onChange={handleSelectChange}
-                loading={loadingLookups}
+                readOnly={isReadOnly}
               />
             </div>
             <div>
@@ -2790,6 +2771,17 @@ export default function InvoiceForm({
                         <p className="text-xs text-danger-500 mt-1">{fieldErrors.debitTo}</p>
                       )}
                     </div>
+                    {formData.partyAccountCurrency && (
+                      <div>
+                        <label className={labelClass}>Account Currency</label>
+                        <input
+                          type="text"
+                          value={formData.partyAccountCurrency}
+                          className={`${inputClass} bg-gray-50`}
+                          readOnly
+                        />
+                      </div>
+                    )}
                     <div>
                       <label className={labelClass}>Is Opening Entry</label>
                       <select
@@ -2807,13 +2799,19 @@ export default function InvoiceForm({
                   <div className="space-y-3">
                     <div>
                       <label className={labelClass}>Unrealized Profit / Loss Account</label>
-                      <LinkSelect
-                        name="unrealizedProfitLossAccount"
+                      <LinkField
+                        doctype="Account"
                         value={formData.unrealizedProfitLossAccount}
-                        options={accounts}
+                        onChange={(v) => handleSelectChange("unrealizedProfitLossAccount", v ?? "")}
+                        searchFn={(q) =>
+                          invoiceService.searchSalesLink("Account", q, [
+                            ["root_type", "=", "Liability"],
+                            ["is_group", "=", 0],
+                            ["company", "=", currentCompany],
+                          ])
+                        }
                         placeholder="Select account…"
-                        onChange={handleSelectChange}
-                        loading={loadingLookups}
+                        readOnly={isReadOnly}
                       />
                     </div>
                   </div>
@@ -2844,13 +2842,13 @@ export default function InvoiceForm({
                   <div className="space-y-3">
                     <div>
                       <label className={labelClass}>Sales Partner</label>
-                      <LinkSelect
-                        name="salesPartner"
+                      <LinkField
+                        doctype="Sales Partner"
                         value={formData.salesPartner}
-                        options={salesPartners}
+                        onChange={(v) => handleSelectChange("salesPartner", v ?? "")}
+                        searchFn={(q) => invoiceService.searchSalesLink("Sales Partner", q)}
                         placeholder="Select partner…"
-                        onChange={handleSelectChange}
-                        loading={loadingLookups}
+                        readOnly={isReadOnly}
                       />
                     </div>
                     <div>
@@ -2906,13 +2904,13 @@ export default function InvoiceForm({
                   <div className="space-y-3">
                     <div>
                       <label className={labelClass}>Letter Head</label>
-                      <LinkSelect
-                        name="letterHead"
+                      <LinkField
+                        doctype="Letter Head"
                         value={formData.letterHead}
-                        options={letterHeads}
+                        onChange={(v) => handleSelectChange("letterHead", v ?? "")}
+                        searchFn={(q) => invoiceService.searchSalesLink("Letter Head", q)}
                         placeholder="Default…"
-                        onChange={handleSelectChange}
-                        loading={loadingLookups}
+                        readOnly={isReadOnly}
                       />
                     </div>
                     <div className="flex items-center gap-2">
@@ -2931,13 +2929,24 @@ export default function InvoiceForm({
                   <div className="space-y-3">
                     <div>
                       <label className={labelClass}>Print Heading</label>
-                      <LinkSelect
-                        name="selectPrintHeading"
-                        value={formData.selectPrintHeading}
-                        options={printHeadings}
+                      <LinkSearchField
+                        value={formData.selectPrintHeading ?? ""}
+                        onChange={(v) =>
+                          handleSelectChange("selectPrintHeading", v ?? "")
+                        }
+                        searchFn={(q) => invoiceService.searchPrintHeadings(q)}
+                        validate={async (v) => {
+                          const doc = await invoiceService.validateLink(
+                            "Print Heading",
+                            v,
+                            [],
+                          )
+                          if (!doc || Object.keys(doc).length === 0) {
+                            throw new Error("Invalid Print Heading")
+                          }
+                        }}
                         placeholder="Default…"
-                        onChange={handleSelectChange}
-                        loading={loadingLookups}
+                        readOnly={isReadOnly}
                       />
                     </div>
                     <div>
@@ -2991,6 +3000,7 @@ export default function InvoiceForm({
                           }
                           searchFn={(q) => invoiceService.searchSalesPersons(q)}
                           placeholder="Select person"
+                          readOnly={isReadOnly}
                         />
                         <input
                           type="number"
@@ -3120,13 +3130,13 @@ export default function InvoiceForm({
                     </div>
                     <div>
                       <label className={labelClass}>Campaign</label>
-                      <LinkSelect
-                        name="campaign"
+                      <LinkField
+                        doctype="Campaign"
                         value={formData.campaign}
-                        options={campaigns}
+                        onChange={(v) => handleSelectChange("campaign", v ?? "")}
+                        searchFn={(q) => invoiceService.searchSalesLink("Campaign", q)}
                         placeholder="Select campaign…"
-                        onChange={handleSelectChange}
-                        loading={loadingLookups}
+                        readOnly={isReadOnly}
                       />
                     </div>
                     {formData.isInternalCustomer && (
@@ -3142,13 +3152,13 @@ export default function InvoiceForm({
                     )}
                     <div>
                       <label className={labelClass}>Source</label>
-                      <LinkSelect
-                        name="source"
+                      <LinkField
+                        doctype="Lead Source"
                         value={formData.source}
-                        options={sources}
+                        onChange={(v) => handleSelectChange("source", v ?? "")}
+                        searchFn={(q) => invoiceService.searchSalesLink("Lead Source", q)}
                         placeholder="Select source…"
-                        onChange={handleSelectChange}
-                        loading={loadingLookups}
+                        readOnly={isReadOnly}
                       />
                     </div>
                   </div>
@@ -3204,6 +3214,7 @@ export default function InvoiceForm({
           )}
         </div>
       )}
+      </fieldset>
       <ReturnAgainstSearchModal
         open={returnAgainstSearchOpen}
         onOpenChange={setReturnAgainstSearchOpen}

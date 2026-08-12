@@ -1,6 +1,7 @@
 import { http, HttpResponse, delay } from "msw"
 import reportsData from "../data/reports.json"
 import { generateGeneralLedger } from "../data/general-ledger"
+import { generateSalesRegister, generatePurchaseRegister } from "../data/registers"
 
 export const reportHandlers = [
   http.get("/api/reports/tax-summary", async () => {
@@ -42,6 +43,20 @@ export const reportHandlers = [
       filters = JSON.parse(filtersRaw)
     } catch {
       filters = {}
+    }
+
+    const reportName = String(form.get("report_name") ?? "")
+    if (reportName === "Sales Register") {
+      return HttpResponse.json({
+        message: generateSalesRegister(filters as never),
+        error: null,
+      })
+    }
+    if (reportName === "Purchase Register") {
+      return HttpResponse.json({
+        message: generatePurchaseRegister(filters as never),
+        error: null,
+      })
     }
 
     const gl = generateGeneralLedger(filters)

@@ -6,7 +6,7 @@ import { Login } from "./modules/auth/pages";
 import { Dashboard } from "./modules/dashboard/pages";
 import { Customers, NewCustomer, CustomerDetail, EditCustomer } from "./modules/customers/pages";
 import { Products, NewProduct, ProductDetail, EditProduct } from "./modules/products/pages";
-import { Invoices, InvoiceDetail, CreateInvoice, EditInvoice } from "./modules/invoices/pages";
+import { Invoices, InvoiceDetail, CreateInvoice } from "./modules/invoices/pages";
 import { Payments, PaymentDetail, RecordPaymentPage, VersionDetail } from "./modules/payments/pages";
 import { SalesReportPage, ARReportPage, InventoryReportPage, ProfitLossPage, BalanceSheetPage, GSTSummaryPage, GeneralLedgerPage } from "./modules/reports/pages";
 import { Expenses, NewExpense, ExpenseDetail, EditExpense } from "./modules/expenses/pages";
@@ -87,7 +87,6 @@ function App() {
         <Route path="invoices" element={<Invoices />} />
         <Route path="invoices/new" element={<CreateInvoice />} />
         <Route path="invoices/:id" element={<InvoiceDetail />} />
-        <Route path="invoices/:id/edit" element={<EditInvoice />} />
         <Route path="payments" element={<Payments />} />
         <Route path="payments/new" element={<RecordPaymentPage />} />
         <Route path="payments/:id" element={<PaymentDetail />} />

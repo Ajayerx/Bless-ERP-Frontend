@@ -25,6 +25,7 @@ export interface GridColumn<T> {
 
 interface ChildTableGridProps<T> {
   title: string;
+  titleClassName?: string;
   description?: string;
   rows: T[];
   columns: GridColumn<T>[];
@@ -40,6 +41,7 @@ interface ChildTableGridProps<T> {
 
 export default function ChildTableGrid<T extends object>({
   title,
+  titleClassName = "text-sm font-semibold text-heading",
   description,
   rows,
   columns,
@@ -116,7 +118,7 @@ export default function ChildTableGrid<T extends object>({
   return (
     <div className="pt-4 border-t border-border" data-testid={testId}>
       <div className="mb-3">
-        <p className="text-sm font-semibold text-heading">{title}</p>
+        <p className={titleClassName}>{title}</p>
         {description && <p className="mt-0.5 text-xs text-muted">{description}</p>}
       </div>
 
@@ -265,6 +267,10 @@ export default function ChildTableGrid<T extends object>({
                           <span className="text-xs tabular-nums text-body">
                             {col.formatter ? col.formatter(row) : ((row[col.key] as number) ?? "—")}
                           </span>
+                        ) : col.formatter ? (
+                          <span className="text-xs tabular-nums text-body truncate">
+                            {col.formatter(row)}
+                          </span>
                         ) : (
                           <span className="text-xs text-body truncate">
                             {String((row[col.key] as string | number) ?? "—")}
@@ -277,7 +283,6 @@ export default function ChildTableGrid<T extends object>({
               );
             })
           )}
-          {footer}
         </div>
       </div>
 
@@ -301,6 +306,7 @@ export default function ChildTableGrid<T extends object>({
             Add Row
           </button>
         )}
+        {footer}
       </div>
     </div>
   );

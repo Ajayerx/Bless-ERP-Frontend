@@ -1,4 +1,4 @@
-import { apiClient } from "@/services/api-client"
+import { apiClient, apiFormCall } from "@/services/api-client"
 import { API_CONFIG } from "@/config/api.config"
 import { getCompany } from "@/services/company"
 import { getDefaultTaxTemplate as sharedGetDefault, getTaxTemplateDetails as sharedGetDetails } from "@/services/tax-template"
@@ -142,6 +142,8 @@ export interface PartyDetailsResponse {
   due_date?: string
   debit_to?: string
   taxes_and_charges?: string
+  sales_partner?: string
+  commission_rate?: number
   sales_team?: Array<{ sales_person: string; allocated_percentage?: number; commission_rate?: number }>
 }
 
@@ -217,6 +219,8 @@ export const invoiceService = {
     campaigns: (): Promise<string[]> => fetchOptions("Campaign"),
     sources: (): Promise<string[]> => fetchOptions("Lead Source"),
     projects: (): Promise<string[]> => fetchOptions("Project"),
+    currencies: (): Promise<string[]> => fetchOptions("Currency"),
+    priceLists: (): Promise<string[]> => fetchOptions("Price List", [["selling", "=", 1]]),
   },
 
   async fetchFieldOptions(doctype: string, fieldname: string): Promise<string[]> {
@@ -237,21 +241,39 @@ export const invoiceService = {
     }
   },
 
-  async searchItems(query: string, start = 0, pageLength = 10): Promise<{
+  async searchItems(
+    query: string,
+    start = 0,
+    pageLength = 10,
+    customer?: string,
+  ): Promise<{
     items: Array<{ value: string; label: string; description: string }>
   }> {
     const qp = new URLSearchParams()
-    qp.set("txt", query || "")
     qp.set("doctype", "Item")
-    qp.set("reference_doctype", "Sales Invoice")
-    qp.set("link_fieldname", "item_code")
+    qp.set("txt", query || "")
+    qp.set("searchfield", "name")
     qp.set("start", String(start))
-    qp.set("page_length", String(pageLength))
+    qp.set("page_len", String(pageLength))
+    qp.set("as_dict", "true")
+    const filters: Record<string, unknown> = {
+      disabled: 0,
+      has_variants: 0,
+    }
+    if (customer) filters["customer"] = customer
+    qp.set("filters", JSON.stringify(filters))
     try {
-      const result = await apiClient<Array<{ value: string; label: string; description: string }>>(
-        `/method/frappe.desk.search.search_link?${qp.toString()}`
-      )
-      return { items: Array.isArray(result) ? result : [] }
+      const result = await apiClient<
+        Array<{ name: string; item_name?: string; item_group?: string; description?: string }>
+      >(`/method/erpnext.controllers.queries.item_query?${qp.toString()}`)
+      if (!Array.isArray(result)) return { items: [] }
+      return {
+        items: result.map((r) => ({
+          value: r.name,
+          label: r.item_name || r.name,
+          description: r.description || "",
+        })),
+      }
     } catch {
       return { items: [] }
     }
@@ -261,6 +283,65 @@ export const invoiceService = {
     try {
       return await apiClient<Record<string, unknown>>(
         `/resource/${encodeURIComponent(doctype)}/${encodeURIComponent(name)}`
+      )
+    } catch {
+      return {}
+    }
+  },
+
+  async setValue(
+    doctype: string,
+    name: string,
+    fieldname: string,
+    value: string,
+  ): Promise<Record<string, unknown>> {
+    try {
+      return await apiClient<Record<string, unknown>>(
+        `/resource/${encodeURIComponent(doctype)}/${encodeURIComponent(name)}`,
+        {
+          method: "PUT",
+          body: JSON.stringify({ [fieldname]: value }),
+        },
+      )
+    } catch {
+      return {}
+    }
+  },
+
+  async validateLink(
+    doctype: string,
+    name: string,
+    fields: string[],
+  ): Promise<Record<string, unknown>> {
+    try {
+      return await apiFormCall<Record<string, unknown>>(
+        "/method/frappe.client.validate_link",
+        [
+          ["doctype", doctype],
+          ["docname", name],
+          ["fields", JSON.stringify(fields)],
+        ],
+        { doctype },
+      )
+    } catch {
+      return {}
+    }
+  },
+
+  async getValue(
+    doctype: string,
+    fieldname: string,
+    filters: Record<string, unknown>,
+  ): Promise<Record<string, unknown>> {
+    try {
+      return await apiFormCall<Record<string, unknown>>(
+        "/method/frappe.client.get_value",
+        [
+          ["doctype", doctype],
+          ["fieldname", fieldname],
+          ["filters", JSON.stringify(filters)],
+        ],
+        { doctype },
       )
     } catch {
       return {}
@@ -277,20 +358,25 @@ export const invoiceService = {
       filters?: Record<string, unknown>
       start?: number
       page_length?: number
+      query?: string
     },
   ): Promise<{ items: Array<{ value: string; label: string; description: string }> }> {
-    const qp = new URLSearchParams()
-    qp.set("txt", query || "")
-    qp.set("doctype", doctype)
-    if (extraParams?.reference_doctype) qp.set("reference_doctype", extraParams.reference_doctype)
-    if (extraParams?.link_fieldname) qp.set("link_fieldname", extraParams.link_fieldname)
-    qp.set("searchfield", extraParams?.searchfield ?? "name")
-    qp.set("start", String(extraParams?.start ?? 0))
-    qp.set("page_length", String(extraParams?.page_length ?? 10))
-    if (extraParams?.filters) qp.set("filters", JSON.stringify(extraParams.filters))
+    const fields: Array<[string, string]> = [
+      ["txt", query || ""],
+      ["doctype", doctype],
+      ["ignore_user_permissions", "false"],
+    ]
+    if (extraParams?.reference_doctype) fields.push(["reference_doctype", extraParams.reference_doctype])
+    if (extraParams?.link_fieldname) fields.push(["link_fieldname", extraParams.link_fieldname])
+    fields.push(["page_length", String(extraParams?.page_length ?? 10)])
+    if (extraParams?.filters) fields.push(["filters", JSON.stringify(extraParams.filters)])
+    if (extraParams?.query) fields.push(["query", extraParams.query])
+    fields.push(["searchfield", extraParams?.searchfield ?? "name"])
     try {
-      const result = await apiClient<Array<{ value: string; label: string; description: string }>>(
-        `/method/frappe.desk.search.search_link?${qp.toString()}`
+      const result = await apiFormCall<Array<{ value: string; label: string; description: string }>>(
+        "/method/frappe.desk.search.search_link",
+        fields,
+        { doctype },
       )
       return { items: Array.isArray(result) ? result : [] }
     } catch {
@@ -302,12 +388,254 @@ export const invoiceService = {
     return this.searchLink("Warehouse", query, { filters: { is_group: 0 } })
   },
 
+  // Byte-parity with ERPNext's SI Warehouse link field: search_link with
+  // txt/doctype/ignore_user_permissions/reference_doctype/page_length/filters.
+  // txt is always sent first (even empty) — it is a required arg of
+  // search_link and its omission raises a 500.
+  async searchWarehousesForInvoice(
+    query: string,
+    company?: string,
+  ): Promise<{ items: Array<{ value: string; label: string; description: string }> }> {
+    const fields: Array<[string, string]> = [["txt", query]]
+    fields.push(["doctype", "Warehouse"])
+    fields.push(["ignore_user_permissions", "0"])
+    fields.push(["reference_doctype", "Sales Invoice"])
+    fields.push(["page_length", "10"])
+    fields.push([
+      "filters",
+      JSON.stringify([
+        ["Warehouse", "company", "in", ["", company ?? ""]],
+        ["Warehouse", "is_group", "=", 0],
+      ]),
+    ])
+    try {
+      const result = await apiFormCall<Array<{ value: string; label: string; description: string }>>(
+        "/method/frappe.desk.search.search_link",
+        fields,
+        { doctype: "Warehouse" },
+      )
+      return { items: Array.isArray(result) ? result : [] }
+    } catch {
+      return { items: [] }
+    }
+  },
+
+  // Byte-parity with ERPNext's SI "additional_discount_account" link field
+  // (sales_invoice.js set_query): search_link with the same field order,
+  // ignore_user_permissions=0, reference_doctype and the
+  // {company, is_group, report_type: "Profit and Loss"} filters. No searchfield.
+  async searchDiscountAccounts(
+    query: string,
+    company?: string,
+  ): Promise<{ items: Array<{ value: string; label: string; description: string }> }> {
+    const fields: Array<[string, string]> = [
+      ["txt", query],
+      ["doctype", "Account"],
+      ["ignore_user_permissions", "0"],
+      ["reference_doctype", "Sales Invoice"],
+      ["page_length", "10"],
+      [
+        "filters",
+        JSON.stringify({
+          company: company ?? "",
+          is_group: 0,
+          report_type: "Profit and Loss",
+        }),
+      ],
+    ]
+    try {
+      const result = await apiFormCall<Array<{ value: string; label: string; description: string }>>(
+        "/method/frappe.desk.search.search_link",
+        fields,
+        { doctype: "Account" },
+      )
+      return { items: Array.isArray(result) ? result : [] }
+    } catch {
+      return { items: [] }
+    }
+  },
+
+  // Byte-parity with ERPNext's SI "taxes_and_charges" Link field
+  // (transaction.js set_query: company + docstatus != 2). Same search_link
+  // envelope as searchDiscountAccounts; filters as a JSON array.
+  async searchTaxTemplates(
+    query: string,
+    company?: string,
+  ): Promise<{ items: Array<{ value: string; label: string; description: string }> }> {
+    const fields: Array<[string, string]> = [
+      ["txt", query],
+      ["doctype", "Sales Taxes and Charges Template"],
+      ["ignore_user_permissions", "0"],
+      ["reference_doctype", "Sales Invoice"],
+      ["page_length", "10"],
+      [
+        "filters",
+        JSON.stringify([
+          ["company", "=", company ?? ""],
+          ["docstatus", "!=", 2],
+        ]),
+      ],
+    ]
+    try {
+      const result = await apiFormCall<Array<{ value: string; label: string; description: string }>>(
+        "/method/frappe.desk.search.search_link",
+        fields,
+        { doctype: "Sales Taxes and Charges Template" },
+      )
+      return { items: Array.isArray(result) ? result : [] }
+    } catch {
+      return { items: [] }
+    }
+  },
+
+  // Byte-parity with ERPNext's SI "select_print_heading" Link field (no
+  // custom query in sales_invoice.js). Same search_link envelope.
+  async searchPrintHeadings(
+    query: string,
+  ): Promise<{ items: Array<{ value: string; label: string; description: string }> }> {
+    const fields: Array<[string, string]> = [
+      ["txt", query],
+      ["doctype", "Print Heading"],
+      ["ignore_user_permissions", "0"],
+      ["reference_doctype", "Sales Invoice"],
+      ["page_length", "10"],
+    ]
+    try {
+      const result = await apiFormCall<Array<{ value: string; label: string; description: string }>>(
+        "/method/frappe.desk.search.search_link",
+        fields,
+        { doctype: "Print Heading" },
+      )
+      return { items: Array.isArray(result) ? result : [] }
+    } catch {
+      return { items: [] }
+    }
+  },
+
+  // Byte-parity generic for SI Link fields. Same search_link envelope as the
+  // ERPNext captures (ignore_user_permissions=0, reference_doctype=Sales
+  // Invoice, page_length=10, NO searchfield). filters optional, JSON-stringified.
+  async searchSalesLink(
+    doctype: string,
+    query: string,
+    filters?: unknown,
+  ): Promise<{ items: Array<{ value: string; label: string; description: string }> }> {
+    const fields: Array<[string, string]> = [
+      ["txt", query],
+      ["doctype", doctype],
+      ["ignore_user_permissions", "0"],
+      ["reference_doctype", "Sales Invoice"],
+      ["page_length", "10"],
+    ]
+    if (filters) fields.push(["filters", JSON.stringify(filters)])
+    try {
+      const result = await apiFormCall<Array<{ value: string; label: string; description: string }>>(
+        "/method/frappe.desk.search.search_link",
+        fields,
+        { doctype },
+      )
+      return { items: Array.isArray(result) ? result : [] }
+    } catch {
+      return { items: [] }
+    }
+  },
+
+  // Byte-parity with ERPNext's item-row warehouse selection: get_bin_details
+  // with item_code + warehouse only (no company arg → response lacks
+  // company_total_stock). Populates the row's read-only actual_qty.
+  async getBinDetails(
+    itemCode: string,
+    warehouse: string,
+  ): Promise<{ projected_qty: number; actual_qty: number; reserved_qty: number } | null> {
+    try {
+      return await apiFormCall<{ projected_qty: number; actual_qty: number; reserved_qty: number }>(
+        "/method/erpnext.stock.get_item_details.get_bin_details",
+        [
+          ["item_code", itemCode],
+          ["warehouse", warehouse],
+        ],
+      )
+    } catch {
+      return null
+    }
+  },
+
   searchAccounts(query: string): Promise<{ items: Array<{ value: string; label: string; description: string }> }> {
     return this.searchLink("Account", query, { filters: { is_group: 0 } })
   },
 
+  searchTaxAccounts(
+    query: string,
+    company?: string,
+  ): Promise<{ items: Array<{ value: string; label: string; description: string }> }> {
+    return this.searchLink("Account", query, {
+      filters: {
+        is_group: 0,
+        disabled: 0,
+        ...(company ? { company } : {}),
+        account_type: ["in", ["Tax", "Chargeable", "Expense Account"]],
+      },
+    })
+  },
+
   searchCostCenters(query: string): Promise<{ items: Array<{ value: string; label: string; description: string }> }> {
     return this.searchLink("Cost Center", query)
+  },
+
+  searchCustomerAddresses(
+    customer: string,
+    query: string,
+  ): Promise<{ items: Array<{ value: string; label: string; description: string }> }> {
+    return this.searchLink("Address", query, {
+      query: "frappe.contacts.doctype.address.address.address_query",
+      filters: {
+        link_doctype: "Customer",
+        link_name: customer,
+      },
+      reference_doctype: "Sales Invoice",
+    })
+  },
+
+  searchCustomerContacts(
+    customer: string,
+    query: string,
+  ): Promise<{ items: Array<{ value: string; label: string; description: string }> }> {
+    return this.searchLink("Contact", query, {
+      query: "frappe.contacts.doctype.contact.contact.contact_query",
+      filters: {
+        link_doctype: "Customer",
+        link_name: customer,
+      },
+      reference_doctype: "Sales Invoice",
+    })
+  },
+
+  searchCompanyAddresses(
+    company: string,
+    query: string,
+  ): Promise<{ items: Array<{ value: string; label: string; description: string }> }> {
+    return this.searchLink("Address", query, {
+      query: "frappe.contacts.doctype.address.address.address_query",
+      filters: {
+        link_doctype: "Company",
+        link_name: company,
+      },
+      reference_doctype: "Sales Invoice",
+    })
+  },
+
+  searchCompanyContacts(
+    company: string,
+    query: string,
+  ): Promise<{ items: Array<{ value: string; label: string; description: string }> }> {
+    return this.searchLink("Contact", query, {
+      query: "frappe.contacts.doctype.contact.contact.contact_query",
+      filters: {
+        link_doctype: "Company",
+        link_name: company,
+      },
+      reference_doctype: "Sales Invoice",
+    })
   },
 
   searchSalesPersons(query: string): Promise<{ items: Array<{ value: string; label: string; description: string }> }> {
@@ -395,6 +723,42 @@ export const invoiceService = {
     }
   },
 
+  async getItemTaxTemplate(args: {
+    item_code: string;
+    company?: string;
+    base_net_rate?: number;
+    tax_category?: string;
+    item_tax_template?: string;
+    posting_date?: string;
+    bill_date?: string;
+    transaction_date?: string;
+  }): Promise<string | null> {
+    try {
+      const company = args.company || (await getCompany()) || ""
+      const result = await apiClient<string>(
+        "/method/erpnext.stock.get_item_details.get_item_tax_template",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            args: {
+              item_code: args.item_code,
+              company,
+              base_net_rate: args.base_net_rate,
+              tax_category: args.tax_category,
+              item_tax_template: args.item_tax_template,
+              posting_date: args.posting_date,
+              bill_date: args.bill_date,
+              transaction_date: args.transaction_date,
+            },
+          }),
+        },
+      )
+      return typeof result === "string" ? result : null
+    } catch {
+      return null
+    }
+  },
+
   async getAddressDisplay(addressName: string): Promise<string> {
     try {
       const qp = new URLSearchParams()
@@ -452,6 +816,99 @@ export const invoiceService = {
 
   async getTaxTemplateDetails(name: string): Promise<TaxTemplateResult | null> {
     return sharedGetDetails(SALES_DOCTYPE, name)
+  },
+
+  async getAccountingDimensions(): Promise<{
+    dimensionFilters: Array<{ label: string; fieldname: string; document_type: string }>
+    defaultDimensionsMap: Record<string, Record<string, string>>
+  }> {
+    try {
+      const result = await apiClient<
+        [
+          Array<{ label: string; fieldname: string; document_type: string }>,
+          Record<string, Record<string, string>>,
+        ]
+      >(
+        "/method/erpnext.accounts.doctype.accounting_dimension.accounting_dimension.get_dimensions",
+        {
+          method: "POST",
+          body: JSON.stringify({ with_cost_center_and_project: true }),
+        },
+      )
+      if (!Array.isArray(result) || result.length < 2) {
+        return { dimensionFilters: [], defaultDimensionsMap: {} }
+      }
+      return {
+        dimensionFilters: result[0] || [],
+        defaultDimensionsMap: result[1] || {},
+      }
+    } catch {
+      return { dimensionFilters: [], defaultDimensionsMap: {} }
+    }
+  },
+
+  async applyPriceList(
+    args: Record<string, unknown>,
+    doc?: Record<string, unknown>,
+  ): Promise<{
+    parent: Record<string, unknown>
+    children: Array<Record<string, unknown>>
+  } | null> {
+    try {
+      return await apiClient<{
+        parent: Record<string, unknown>
+        children: Array<Record<string, unknown>>
+      }>("/method/erpnext.stock.get_item_details.apply_price_list", {
+        method: "POST",
+        body: JSON.stringify({ args, doc: doc || {} }),
+      })
+    } catch {
+      return null
+    }
+  },
+
+  async getDefaultCompanyAddress(company: string, existingAddress?: string): Promise<string | null> {
+    try {
+      const result = await apiClient<string>(
+        "/method/erpnext.setup.doctype.company.company.get_default_company_address",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            name: company,
+            existing_address: existingAddress || "",
+          }),
+        },
+      )
+      return typeof result === "string" && result ? result : null
+    } catch {
+      return null
+    }
+  },
+
+  async getDefaultTaxesAndCharges(
+    company: string,
+    taxTemplate?: string,
+  ): Promise<{
+    taxes_and_charges: string
+    taxes: Array<Record<string, unknown>>
+  } | null> {
+    try {
+      const result = await apiFormCall<{
+        taxes_and_charges: string
+        taxes: Array<Record<string, unknown>>
+      }>("/method/erpnext.controllers.accounts_controller.get_default_taxes_and_charges", [
+        ["master_doctype", SALES_DOCTYPE],
+        ["tax_template", taxTemplate || ""],
+        ["company", company],
+      ])
+      if (!result || typeof result !== "object") return null
+      return {
+        taxes_and_charges: result.taxes_and_charges || "",
+        taxes: Array.isArray(result.taxes) ? result.taxes : [],
+      }
+    } catch {
+      return null
+    }
   },
   async list(params: {
     search?: string
@@ -598,17 +1055,34 @@ export const invoiceService = {
     })
   },
 
-  async getPartyDetails(party: string, company: string, postingDate: string): Promise<PartyDetailsResponse> {
-    return apiClient<PartyDetailsResponse>("/method/erpnext.accounts.party.get_party_details", {
-      method: "POST",
-      body: JSON.stringify({
-        party,
-        party_type: "Customer",
-        company,
-        posting_date: postingDate,
-        doctype: "Sales Invoice",
-      }),
-    })
+  async getPartyDetails(
+    party: string,
+    company: string,
+    postingDate: string,
+    opts?: {
+      priceList?: string
+      fetchPaymentTermsTemplate?: boolean
+      currency?: string
+    },
+  ): Promise<PartyDetailsResponse> {
+    const fields: Array<[string, string]> = [
+      ["posting_date", postingDate],
+      ["party", party],
+      ["party_type", "Customer"],
+    ]
+    if (opts?.priceList) fields.push(["price_list", opts.priceList])
+    fields.push([
+      "fetch_payment_terms_template",
+      opts?.fetchPaymentTermsTemplate === false ? "0" : "1",
+    ])
+    if (opts?.currency) fields.push(["currency", opts.currency])
+    fields.push(["company", company])
+    fields.push(["doctype", "Sales Invoice"])
+    return apiFormCall<PartyDetailsResponse>(
+      "/method/erpnext.accounts.party.get_party_details",
+      fields,
+      { doctype: "Sales Invoice" },
+    )
   },
 
   async getExchangeRate(fromCurrency: string, toCurrency: string, date: string): Promise<number> {
@@ -623,11 +1097,11 @@ export const invoiceService = {
       })
       const rate = typeof result === "number" ? result : parseFloat(String(result))
       if (rate && rate > 0) return rate
-      console.warn(`Exchange rate API returned ${rate} for ${fromCurrency}\u2192${toCurrency}, defaulting to 1.0`)
-      return 1
+      console.warn(`Exchange rate not found for ${fromCurrency}\u2192${toCurrency} on ${date}, returning 0`)
+      return 0
     } catch {
-      console.warn(`Exchange rate lookup failed for ${fromCurrency}\u2192${toCurrency}, defaulting to 1.0`)
-      return 1
+      console.warn(`Exchange rate lookup failed for ${fromCurrency}\u2192${toCurrency} on ${date}, returning 0`)
+      return 0
     }
   },
 
@@ -742,8 +1216,9 @@ export const invoiceService = {
 
   async getLoyaltyPrograms(customer: string): Promise<string[]> {
     try {
-      const result = await apiClient<{ message: string[] }>(
-        `/method/erpnext.accounts.doctype.sales_invoice.sales_invoice.get_loyalty_programs?customer=${encodeURIComponent(customer)}`,
+      const result = await apiFormCall<{ message: string[] }>(
+        "/method/erpnext.accounts.doctype.sales_invoice.sales_invoice.get_loyalty_programs",
+        [["customer", customer]],
       )
       return Array.isArray(result) ? result : []
     } catch {
@@ -961,6 +1436,15 @@ export const invoiceService = {
 // Tax computation utilities
 // ---------------------------------------------------------------------------
 
+/** ERPNext-style message when no Currency Exchange record exists for a date. */
+export function formatExchangeRateError(
+  fromCurrency: string,
+  toCurrency: string,
+  date: string,
+): string {
+  return `Unable to find exchange rate for ${fromCurrency} to ${toCurrency} for key date ${date}. Please create a Currency Exchange record manually.`
+}
+
 /** Convert TaxRow[] from a template into EditableTaxRow[] for the form. */
 export function templateRowsToEditable(rows: TaxRow[]): EditableTaxRow[] {
   return rows.map((r) => ({
@@ -991,25 +1475,62 @@ export function invoiceTaxesToEditable(taxes: SalesInvoiceTax[]): EditableTaxRow
   }))
 }
 
+/** Convert raw tax rows from get_default_taxes_and_charges into EditableTaxRow[]. */
+export function erpnextTaxesToEditable(taxes: Array<Record<string, unknown>>): EditableTaxRow[] {
+  return taxes.map((t) => ({
+    charge_type: (t.charge_type || "On Net Total") as EditableTaxRow["charge_type"],
+    account_head: (t.account_head as string) || "",
+    description: (t.description as string) ?? "",
+    rate: typeof t.rate === "number" ? t.rate : parseFloat(String(t.rate)) || 0,
+    tax_amount: 0,
+    net_amount: 0,
+    total: 0,
+    included_in_print_rate: !!t.included_in_print_rate,
+    row_id: undefined,
+  }))
+}
+
 /** Compute tax amounts from editable rows — mirrors ERPNext server-side logic. */
-export function computeTaxes(rows: EditableTaxRow[], subtotal: number, totalQty: number): EditableTaxRow[] {
-  let runningTotal = subtotal
+export function computeTaxes(
+  rows: EditableTaxRow[],
+  subtotal: number,
+  totalQty: number,
+  opts?: {
+    netTotal?: number
+    applyDiscountOn?: "Grand Total" | "Net Total"
+    isCashOrNonTradeDiscount?: boolean
+  },
+): EditableTaxRow[] {
+  const netTotal = opts?.netTotal ?? subtotal
+  // ERPNext keeps the pre-discount tax_amount for a Grand Total discount
+  // (initialize_taxes excludes it from the recompute reset), so the displayed
+  // amount is based on subtotal, while row totals use the discounted net.
+  const displayBase = opts?.applyDiscountOn === "Net Total" ? netTotal : subtotal
+  const runningBase =
+    opts?.applyDiscountOn === "Grand Total" && opts?.isCashOrNonTradeDiscount
+      ? subtotal
+      : netTotal
+  let runningTotal = runningBase
   return rows.map((row, i) => {
     let taxAmount = 0
-    let netAmount = subtotal
+    let netAmount = displayBase
+    let rowAmount = 0
 
     switch (row.charge_type) {
       case "Actual":
         taxAmount = row.tax_amount
+        rowAmount = row.tax_amount
         break
       case "On Net Total":
-        taxAmount = Math.round(subtotal * (row.rate / 100) * 100) / 100
+        taxAmount = Math.round(displayBase * (row.rate / 100) * 100) / 100
+        rowAmount = Math.round(runningBase * (row.rate / 100) * 100) / 100
         break
       case "On Previous Row Amount": {
         const refIdx = (row.row_id ?? (i > 0 ? i : 1)) - 1
         const refRow = rows[refIdx]
         if (refRow) {
           taxAmount = Math.round(refRow.tax_amount * (row.rate / 100) * 100) / 100
+          rowAmount = taxAmount
           netAmount = refRow.tax_amount
         }
         break
@@ -1019,24 +1540,62 @@ export function computeTaxes(rows: EditableTaxRow[], subtotal: number, totalQty:
         const refRow = rows[refIdx]
         if (refRow) {
           taxAmount = Math.round(refRow.total * (row.rate / 100) * 100) / 100
+          rowAmount = taxAmount
           netAmount = refRow.total
         }
         break
       }
       case "On Item Quantity":
         taxAmount = Math.round(row.rate * totalQty * 100) / 100
+        rowAmount = taxAmount
         netAmount = totalQty
         break
     }
 
-    runningTotal += taxAmount
+    runningTotal = Math.round((runningTotal + rowAmount) * 100) / 100
     return {
       ...row,
       tax_amount: taxAmount,
       net_amount: netAmount,
-      total: Math.round(runningTotal * 100) / 100,
+      total: runningTotal,
+      tax_amount_after_discount_amount: rowAmount,
     }
   })
+}
+
+/**
+ * ERPNext `get_total_for_discount_amount()` parity (taxes_and_totals.py:803-844).
+ * The discount is distributed over the pre-discount grand total minus the taxes
+ * of type Actual / On Item Quantity and any percentage-of-previous-row taxes
+ * that derive from them. `totalTaxesAndChargesBase` is the full pre-discount
+ * sum of all tax_amounts.
+ */
+export function computeTotalForDiscountAmount(
+  rows: EditableTaxRow[],
+  subtotal: number,
+  totalTaxesAndChargesBase: number,
+): number {
+  let cumulative = 0
+  let actualTax = 0
+  const actualByIdx = new Map<number, { amount: number; cumulative: number }>()
+  rows.forEach((row, i) => {
+    const idx = i + 1
+    if (row.charge_type === "Actual" || row.charge_type === "On Item Quantity") {
+      cumulative += row.tax_amount
+      actualTax += row.tax_amount
+      actualByIdx.set(idx, { amount: row.tax_amount, cumulative })
+    } else if (row.row_id && actualByIdx.has(row.row_id)) {
+      const base = actualByIdx.get(row.row_id)!
+      const derived =
+        (row.charge_type === "On Previous Row Amount"
+          ? base.amount
+          : base.cumulative) * (row.rate / 100)
+      cumulative += derived
+      actualTax += derived
+      actualByIdx.set(idx, { amount: derived, cumulative })
+    }
+  })
+  return subtotal + totalTaxesAndChargesBase - actualTax
 }
 
 /** Create a blank tax row with sensible defaults. */
@@ -1052,4 +1611,68 @@ export function createEmptyTaxRow(): EditableTaxRow {
     included_in_print_rate: false,
     row_id: undefined,
   }
+}
+
+/**
+ * Fetch the Currency master's `smallest_currency_fraction_value`
+ * (e.g. 1.0 for CAD in our data, 0.01 for USD). Returns null when the
+ * currency has no fraction configured or the fetch fails.
+ */
+export async function getCurrencySmallestFraction(
+  currency: string | undefined,
+): Promise<number | null> {
+  if (!currency) return null
+  try {
+    const doc = await apiClient<{ smallest_currency_fraction_value?: number }>(
+      `/resource/Currency/${encodeURIComponent(currency)}`,
+    )
+    const value = doc?.smallest_currency_fraction_value
+    return typeof value === "number" && isFinite(value) && value > 0 ? value : null
+  } catch {
+    return null
+  }
+}
+
+/** Banker's rounding matching frappe.utils.data._bankers_rounding_legacy. */
+function bankersRoundingLegacy(num: number, precision: number): number {
+  const multiplier = 10 ** precision
+  let n = Math.round(num * multiplier * 1e8) / 1e8
+  const floor = Math.floor(n)
+  const decimalPart = n - floor
+  if (precision === 0 && decimalPart === 0.5) {
+    n = floor % 2 === 0 ? floor : floor + 1
+  } else if (decimalPart === 0.5) {
+    n = floor + 1
+  } else {
+    n = Math.round(n)
+  }
+  return precision ? n / multiplier : n
+}
+
+/**
+ * Mirror of frappe.utils.data.round_based_on_smallest_currency_fraction:
+ * round `value` to the nearest multiple of the currency's smallest fraction;
+ * when no fraction is configured, round to the nearest whole number.
+ */
+export function roundToSmallestCurrencyFraction(
+  value: number,
+  fraction: number | null | undefined,
+  precision = 2,
+): number {
+  if (fraction) {
+    const multiplier = 10 ** precision
+    const scaled = value * multiplier
+    const scaledFrac = fraction * multiplier
+    const remainderVal = bankersRoundingLegacy(
+      ((scaled % scaledFrac) + scaledFrac) % scaledFrac / multiplier,
+      precision,
+    )
+    if (remainderVal > fraction / 2) {
+      value += fraction - remainderVal
+    } else {
+      value -= remainderVal
+    }
+    return bankersRoundingLegacy(value, precision)
+  }
+  return bankersRoundingLegacy(value, 0)
 }

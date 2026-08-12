@@ -47,7 +47,7 @@ export interface SalesInvoiceTax {
   rate: number
   tax_amount?: number
   total?: number
-  included_in_print_rate?: number
+  included_in_print_rate?: boolean | number
 }
 
 export type ChargeType =
@@ -65,6 +65,7 @@ export interface EditableTaxRow {
   tax_amount: number
   net_amount: number
   total: number
+  tax_amount_after_discount_amount?: number
   included_in_print_rate: boolean
   row_id?: number
 }
@@ -125,6 +126,9 @@ export interface SalesInvoice {
   contact_person?: string
   contact_email?: string
   contact_mobile?: string
+  contact_phone?: string
+  contact_designation?: string
+  contact_department?: string
   po_no?: string
   po_date?: string
   payment_terms_template?: string
@@ -143,6 +147,7 @@ export interface SalesInvoice {
   cost_center?: string
   project?: string
   debit_to?: string
+  party_account_currency?: string
   // Sales Team
   sales_partner?: string
   commission_rate?: number
@@ -238,6 +243,8 @@ export interface SalesInvoiceFormData {
   posting_date: string
   due_date: string
   posting_time?: string
+  naming_series?: string
+  set_posting_time?: boolean
   currency?: string
   conversion_rate?: number
   selling_price_list?: string
@@ -248,8 +255,12 @@ export interface SalesInvoiceFormData {
   set_target_warehouse?: string
   update_stock?: boolean
   debit_to?: string
+  party_account_currency?: string
   taxes_and_charges?: string
   tax_category?: string
+  shipping_rule?: string
+  incoterm?: string
+  named_place?: string
   customer_address?: string
   shipping_address_name?: string
   contact_person?: string
@@ -305,19 +316,24 @@ export interface SalesInvoiceFormData {
   is_pos?: boolean
   pos_profile?: string
   account_for_change_amount?: string
+  cash_bank_account?: string
   // Subscription
   subscription?: string
   from_date?: string
   to_date?: string
   auto_repeat?: string
-  isOpening?: string
-  customerGroup?: string
+  is_opening?: string
+  customer_group?: string
   remarks?: string
+  campaign?: string
+  source?: string
   // Address & Contact (new fields)
   dispatch_address_name?: string
   company_address?: string
   company_contact_person?: string
   territory?: string
+  tax_id?: string
+  company_tax_id?: string
   // Accounting Details (new fields)
   unrealized_profit_loss_account?: string
   against_income_account?: string
@@ -341,6 +357,12 @@ export interface SalesInvoiceFormData {
   change_amount?: number
   base_write_off_amount?: number
   items: Omit<SalesInvoiceItem, "name" | "amount">[]
+  taxes?: SalesInvoiceTax[]
+  payments?: SalesInvoicePayment[]
+  payment_schedule?: Array<{
+    due_date: string
+    payment_amount: number
+  }>
 }
 
 export interface SalesInvoiceListResponse {

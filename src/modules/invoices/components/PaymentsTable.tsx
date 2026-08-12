@@ -20,8 +20,6 @@ const labelClass =
 
 interface PaymentsTableProps {
   payments: PaymentRow[];
-  modes: string[];
-  accounts: string[];
   grandTotal?: number;
   readOnly?: boolean;
   company?: string;
@@ -30,8 +28,6 @@ interface PaymentsTableProps {
 
 export default function PaymentsTable({
   payments,
-  modes,
-  accounts,
   grandTotal,
   readOnly = false,
   company,

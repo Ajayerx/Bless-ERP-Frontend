@@ -21,6 +21,7 @@ interface LinkSearchFieldProps {
   inputClassName?: string
   docType?: string
   clearIconMode?: "always" | "hover"
+  suppressExternalLabelFetch?: boolean
 }
 
 export default function LinkSearchField({
@@ -38,6 +39,7 @@ export default function LinkSearchField({
   className,
   inputClassName,
   clearIconMode = "always",
+  suppressExternalLabelFetch = false,
 }: LinkSearchFieldProps) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState(value ?? "")
@@ -66,25 +68,57 @@ export default function LinkSearchField({
   const lastValueRef = useRef(value)
   const labelFetchValueRef = useRef<string | null>(null)
   const queryRef = useRef("")
+  const cacheRef = useRef(new Map<string, SearchResult[]>())
   searchFnRef.current = searchFn
   queryRef.current = query
 
+  // ERPNext ControlLink parity (frappe link.js): keep a per-field cache of
+  // search results keyed by term so repeat opens/typing render instantly,
+  // then refresh in the background. Stale responses are dropped.
+  const showResults = useCallback((items: SearchResult[]) => {
+    setResults(items)
+    setHighlightedIndex((prev) => {
+      const max = items.length - 1
+      if (max < 0) return -1
+      return prev === -1 ? 0 : Math.min(prev, max)
+    })
+  }, [])
+
+  const applyValueLabel = (items: SearchResult[]) => {
+    if (!value || (selectedLabel && selectedLabel !== value) || !fetchedRef.current) return
+    const match = items.find((item) => item.value === value)
+    if (match) {
+      setSelectedLabel(match.label || match.value)
+      setQuery(match.label || match.value)
+    }
+  }
+
+  const cachePut = (term: string, items: SearchResult[]) => {
+    cacheRef.current.set(term, items)
+    if (cacheRef.current.size > 50) {
+      const firstKey = cacheRef.current.keys().next().value
+      if (firstKey !== undefined) cacheRef.current.delete(firstKey)
+    }
+  }
+
   const doSearch = useCallback(async (q: string) => {
+    const cached = cacheRef.current.get(q)
+    if (cached) {
+      showResults(cached)
+      applyValueLabel(cached)
+    }
     setLoading(true)
     try {
       const res = await searchFnRef.current(q)
-      setResults(res.items)
-      if (!q && value && (!selectedLabel || selectedLabel === value) && fetchedRef.current) {
-        const match = res.items.find((item) => item.value === value)
-        if (match) {
-          setSelectedLabel(match.label || match.value)
-          setQuery(match.label || match.value)
-        }
-      }
+      if (queryRef.current !== q) return
+      cachePut(q, res.items)
+      showResults(res.items)
+      applyValueLabel(res.items)
     } catch {
-      setResults([])
+      if (queryRef.current !== q) return
+      showResults([])
     } finally {
-      setLoading(false)
+      if (queryRef.current === q) setLoading(false)
     }
   }, [value, selectedLabel])
 
@@ -153,12 +187,13 @@ export default function LinkSearchField({
   }, [value])
 
   useEffect(() => {
+    if (suppressExternalLabelFetch) return
     if (value && labelFetchValueRef.current !== value && selectedLabel === value) {
       labelFetchValueRef.current = value
       fetchedRef.current = true
       doSearch("")
     }
-  }, [value, selectedLabel, doSearch])
+  }, [value, selectedLabel, doSearch, suppressExternalLabelFetch])
 
   const handleSelect = (item: SearchResult) => {
     onChange?.(item.value)
@@ -237,6 +272,8 @@ export default function LinkSearchField({
     if (!open) setOpen(true)
     setHighlightedIndex(-1)
     if (debounceRef.current) clearTimeout(debounceRef.current)
+    const cached = cacheRef.current.get(val)
+    if (cached) showResults(cached)
     if (!val.trim()) {
       if (fetchedRef.current) doSearch("")
     } else {
@@ -247,11 +284,11 @@ export default function LinkSearchField({
   const handleFocus = () => {
     if (readOnly) return
     setFocused(true)
+    // Open the dropdown on every tap (filled or empty) so options are always
+    // one tap away. Cache makes repeat opens instant; typing filters further.
+    if (!fetchedRef.current) fetchedRef.current = true
     setOpen(true)
-    if (!fetchedRef.current) {
-      fetchedRef.current = true
-      doSearch("")
-    }
+    doSearch(queryRef.current.trim())
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {

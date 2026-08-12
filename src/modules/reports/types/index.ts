@@ -8,12 +8,51 @@ export interface TaxBreakdownRow {
   total: number
 }
 
+export type TaxSide = "sales" | "purchase"
+
+export interface TaxTransactionRow {
+  side: TaxSide
+  voucherNo: string
+  partyName: string
+  postingDate: string
+  subtotal: number
+  gst: number
+  qst: number
+  otherTax: number
+  total: number
+}
+
+export interface TaxSideSummary {
+  count: number
+  netTotal: number
+  gst: number
+  qst: number
+  otherTax: number
+  totalTax: number
+  grandTotal: number
+}
+
+export interface NetRemittance {
+  gst: number
+  qst: number
+  total: number
+}
+
 export interface TaxSummary {
   period: string
+  company: string
+  currency: string
+  companyTaxId: string
+  fromDate: string
+  toDate: string
   totalSales: number
   totalGst: number
   totalQst: number
   totalTax: number
+  sales: TaxSideSummary
+  purchases: TaxSideSummary
+  netRemittance: NetRemittance
+  transactions: TaxTransactionRow[]
   breakdown: TaxBreakdownRow[]
 }
 
