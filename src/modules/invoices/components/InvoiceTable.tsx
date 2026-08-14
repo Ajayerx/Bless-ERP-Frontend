@@ -1,7 +1,7 @@
 "use client"
 
-import { FileText, DollarSign, AlertTriangle, CheckCircle2, Users, X } from "lucide-react"
-import { Button, Badge } from "@/components/ui"
+import { FileText, DollarSign, AlertTriangle, CheckCircle2, Users, UserRound } from "lucide-react"
+import { Button, Badge, ListFilterBar } from "@/components/ui"
 import DataTable, { type Column } from "@/components/ui/DataTable"
 import { type SalesInvoice, type SalesInvoiceListResponse } from "@/services"
 import { formatCurrency, cn, formatDate } from "@/lib/utils"
@@ -155,6 +155,13 @@ interface InvoiceTableProps {
   onDateFromChange: (v: string) => void
   dateTo: string
   onDateToChange: (v: string) => void
+  assignedTo: string
+  onAssigneeFilterChange: (v: string) => void
+  nameFilter: string
+  onFilterId: (v: string) => void
+  sortField: string
+  sortOrder: "asc" | "desc"
+  onSortChange: (field: string, order: "asc" | "desc") => void
   onResetFilters: () => void
   hasActiveFilters: boolean
   toolbarActions?: React.ReactNode
@@ -182,6 +189,13 @@ export default function InvoiceTable({
   onDateFromChange,
   dateTo,
   onDateToChange,
+  assignedTo,
+  onAssigneeFilterChange,
+  nameFilter,
+  onFilterId,
+  sortField,
+  sortOrder,
+  onSortChange,
   onResetFilters,
   hasActiveFilters,
   toolbarActions,
@@ -259,44 +273,56 @@ export default function InvoiceTable({
         ))}
       </div>
 
-      {/* Filter bar */}
-      <div className="flex items-center gap-3 flex-wrap">
-        {/* Customer search */}
-        <input
-          type="text"
-          value={customerSearch}
-          onChange={(e) => onCustomerSearchChange(e.target.value)}
-          placeholder="Search customer..."
-          className="h-9 px-3 text-sm rounded-[10px] border border-border bg-surface text-body placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-400 transition-colors w-48"
-        />
-
-        {/* Posting Date range */}
-        <input
-          type="date"
-          value={dateFrom}
-          onChange={(e) => onDateFromChange(e.target.value)}
-          className="h-9 px-3 text-sm rounded-[10px] border border-border bg-surface text-body focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-400 transition-colors"
-          title="From date"
-        />
-        <span className="text-xs text-muted">to</span>
-        <input
-          type="date"
-          value={dateTo}
-          onChange={(e) => onDateToChange(e.target.value)}
-          className="h-9 px-3 text-sm rounded-[10px] border border-border bg-surface text-body focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-400 transition-colors"
-          title="To date"
-        />
-
-        {/* Clear filters */}
-        {hasActiveFilters && (
-          <button
-            onClick={onResetFilters}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-muted hover:text-body hover:bg-gray-100 rounded-[8px] transition-colors"
-          >
-            <X size={12} /> Clear filters
-          </button>
-        )}
-      </div>
+      {/* Customer search */}
+      <ListFilterBar
+        controls={{
+          search: {
+            value: customerSearch,
+            onChange: onCustomerSearchChange,
+            placeholder: "Search customer / ID...",
+            width: "w-48",
+          },
+          dateRange: {
+            from: dateFrom,
+            to: dateTo,
+            onChange: (from, to) => {
+              onDateFromChange(from)
+              onDateToChange(to)
+            },
+          },
+          sort: {
+            field: sortField || "posting_date",
+            order: sortOrder ?? "desc",
+            onSort: onSortChange,
+            options: [
+              { value: "posting_date", label: "Posting Date" },
+              { value: "customer_name", label: "Customer" },
+              { value: "grand_total", label: "Amount" },
+              { value: "due_date", label: "Due Date" },
+            ],
+          },
+          chips: [
+            ...(nameFilter
+              ? [{
+                  key: "name",
+                  label: `ID: ${nameFilter}`,
+                  icon: <FileText size={12} />,
+                  onClear: () => onFilterId(nameFilter),
+                }]
+              : []),
+            ...(assignedTo
+              ? [{
+                  key: "assignee",
+                  label: `Assigned to: ${assignedTo}`,
+                  icon: <UserRound size={12} />,
+                  onClear: () => onAssigneeFilterChange(""),
+                }]
+              : []),
+          ],
+        }}
+        hasActiveFilters={hasActiveFilters}
+        onReset={onResetFilters}
+      />
 
       <DataTable
         columns={columns}

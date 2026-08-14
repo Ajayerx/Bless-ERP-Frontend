@@ -10,9 +10,10 @@ const checkedCache = new Map<string, Set<number>>();
 export interface GridColumn<T> {
   key: keyof T;
   label: string;
-  type: "link" | "text" | "number" | "checkbox" | "readonly";
+  type: "link" | "text" | "number" | "date" | "checkbox" | "readonly";
   options?: string[];
   searchFn?: (query: string, row?: T) => Promise<{ items: { value: string; label: string; description: string }[] }>;
+  onSelect?: (row: T, value: string) => void;
   validate?: (value: string, row?: T) => Promise<void>;
   docType?: string | ((row: T) => string);
   disabled?: (row: T) => boolean;
@@ -31,12 +32,15 @@ interface ChildTableGridProps<T> {
   columns: GridColumn<T>[];
   emptyRow: T;
   onChange: (rows: T[]) => void;
+  onCellChange?: (index: number, key: keyof T, value: unknown) => void;
   readOnly?: boolean;
   footer?: ReactNode;
   testId?: string;
   canDelete?: (row: T) => boolean;
   onDeleteBlocked?: (blocked: T[]) => void;
+  canAdd?: boolean;
   minWidth?: string;
+  noTopBorder?: boolean;
 }
 
 export default function ChildTableGrid<T extends object>({
@@ -47,12 +51,15 @@ export default function ChildTableGrid<T extends object>({
   columns,
   emptyRow,
   onChange,
+  onCellChange,
   readOnly = false,
   footer,
   testId,
   canDelete,
   onDeleteBlocked,
+  canAdd = true,
   minWidth = "560px",
+  noTopBorder = false,
 }: ChildTableGridProps<T>) {
   const cacheKey = `${title}::${(rows as unknown as Record<string, unknown>[]).map((r) => String(r.name ?? "")).join("|")}`;
   const [checked, setChecked] = useState<Set<number>>(() => {
@@ -82,6 +89,7 @@ export default function ChildTableGrid<T extends object>({
 
   const updateCell = (idx: number, key: keyof T, value: unknown) => {
     onChange(rows.map((r, i) => (i === idx ? { ...r, [key]: value } : r)));
+    onCellChange?.(idx, key, value);
   };
   const addRow = () => {
     onChange([...rows, { ...emptyRow }]);
@@ -116,7 +124,7 @@ export default function ChildTableGrid<T extends object>({
     "w-full h-[38px] bg-transparent border-0 rounded-none px-1 text-[13px] text-body focus:outline-none focus:ring-0 disabled:opacity-60";
 
   return (
-    <div className="pt-4 border-t border-border" data-testid={testId}>
+    <div className={cn("pt-4", !noTopBorder && "border-t border-border")} data-testid={testId}>
       <div className="mb-3">
         <p className={titleClassName}>{title}</p>
         {description && <p className="mt-0.5 text-xs text-muted">{description}</p>}
@@ -220,7 +228,10 @@ export default function ChildTableGrid<T extends object>({
                         ) : col.type === "link" && col.searchFn && interactive ? (
                           <LinkSearchField
                             value={(row[col.key] as string) ?? ""}
-                            onChange={(v) => updateCell(idx, col.key, v ?? "")}
+                            onChange={(v) => {
+                              updateCell(idx, col.key, v ?? "");
+                              col.onSelect?.(row, v ?? "");
+                            }}
                             searchFn={(q) => col.searchFn!(q, row)}
                             validate={col.validate ? (v) => col.validate!(v, row) : undefined}
                             docType={typeof col.docType === "function" ? col.docType(row) : (col.docType ?? "")}
@@ -261,6 +272,14 @@ export default function ChildTableGrid<T extends object>({
                             placeholder={col.placeholder ?? col.label}
                             className={cn(cellInputClass, col.align === "right" && "text-right")}
                           />
+                        ) : col.type === "date" && interactive ? (
+                          <input
+                            type="date"
+                            value={(row[col.key] as string) ?? ""}
+                            onChange={(e) => updateCell(idx, col.key, e.target.value)}
+                            disabled={col.disabled?.(row) || readOnly}
+                            className={cellInputClass}
+                          />
                         ) : col.render ? (
                           col.render(row)
                         ) : col.type === "number" ? (
@@ -296,7 +315,7 @@ export default function ChildTableGrid<T extends object>({
             Delete
           </button>
         )}
-        {!readOnly && (
+        {!readOnly && canAdd && (
           <button
             type="button"
             onClick={addRow}

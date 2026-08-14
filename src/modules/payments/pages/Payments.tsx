@@ -10,9 +10,12 @@ import PaymentTable from "../components/PaymentTable"
 import { paymentService, type SalesInvoice, type PaymentEntry, type PaymentEntryListResponse } from "@/services"
 import { buildExportFilters, PAYMENT_EXPORT_FIELDS, type PaymentListFilters } from "../services"
 import { useMessageDialog, messageFromError, LinkSearchField } from "@/components/ui"
+import { stripHtml } from "@/services/api-client"
 import { formatCurrency, formatDate, cn } from "@/lib/utils"
 
 type StatusFilter = "All" | "Draft" | "Submitted" | "Cancelled"
+
+const MESSAGE_DIVIDER = '<hr class="my-2 border-0 border-t border-gray-200" />'
 
 export default function Payments() {
   const navigate = useNavigate()
@@ -225,8 +228,8 @@ export default function Payments() {
       if (type === "bulk-submit") {
         const { failed, enqueued, messages } = await paymentService.bulkSubmit(selectedPayments)
         if (failed.length > 0) {
-          const reason = messages.map((m) => m.message).join(" ")
-          const detail = reason ? ` — ${reason}` : ""
+          const reason = messages.map((m) => m.message).join(MESSAGE_DIVIDER)
+          const detail = reason ? `\n${reason}` : ""
           throw new Error(`${failed.length} payment entr${failed.length === 1 ? "y" : "ies"} not submitted: ${failed.join(", ")}${detail}`)
         }
         setSelectedPayments([])
@@ -236,8 +239,8 @@ export default function Payments() {
       } else if (type === "bulk-cancel") {
         const { failed, enqueued, messages } = await paymentService.bulkCancel(selectedPayments)
         if (failed.length > 0) {
-          const reason = messages.map((m) => m.message).join(" ")
-          const detail = reason ? ` — ${reason}` : ""
+          const reason = messages.map((m) => m.message).join(MESSAGE_DIVIDER)
+          const detail = reason ? `\n${reason}` : ""
           throw new Error(`${failed.length} payment entr${failed.length === 1 ? "y" : "ies"} not canceled: ${failed.join(", ")}${detail}`)
         }
         setSelectedPayments([])
@@ -247,8 +250,8 @@ export default function Payments() {
       } else if (type === "bulk-delete") {
         const { failed, messages } = await paymentService.bulkDelete(selectedPayments)
         if (failed.length > 0) {
-          const reason = messages.map((m) => m.message).join(" ")
-          const detail = reason ? ` — ${reason}` : ""
+          const reason = messages.map((m) => m.message).join(MESSAGE_DIVIDER)
+          const detail = reason ? `\n${reason}` : ""
           throw new Error(`${failed.length} payment entr${failed.length === 1 ? "y" : "ies"} not deleted: ${failed.join(", ")}${detail}`)
         }
         setSelectedPayments([])
@@ -270,7 +273,7 @@ export default function Payments() {
       setConfirmAction(null)
     } catch (err) {
       const message = err instanceof Error ? err.message : "Action failed. Please try again."
-      setConfirmError(message)
+      setConfirmError(stripHtml(message))
       showMessage(messageFromError(err, message))
       await fetchData()
     } finally {
@@ -471,6 +474,7 @@ export default function Payments() {
           onBulkExport={() => setExportOpen(true)}
           onBulkPrint={handleOpenPrint}
           onBulkAssign={() => { setAssignee(""); setAssignOpen(true) }}
+          onBulkClearAssign={() => handleBulkAssign(true)}
           onBulkAddTags={() => { setTagsInput(""); setTagsOpen(true) }}
           sortField={sortBy}
           sortOrder={sortOrder}

@@ -10,6 +10,7 @@ import { Skeleton } from "@/components/ui"
 import { useCompany } from "@/context/CompanyContext"
 import { searchLink, reportService, type GeneralLedgerReport, type GeneralLedgerRow, type GeneralLedgerColumn, type GeneralLedgerFilters } from "@/services"
 import { formatDate } from "@/lib/utils"
+import { DOCTYPE_ROUTES } from "@/lib/doctype-routes"
 
 const inputClass =
   "h-9 rounded-[10px] border border-border bg-white px-3 text-sm text-body outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500/20 disabled:bg-gray-50 disabled:text-muted"
@@ -54,19 +55,6 @@ const PARTY_TYPES = ["Customer", "Supplier", "Employee", "Shareholder", "Member"
 
 // Common presentation currencies (the desktop report lists the Currency master).
 const COMMON_CURRENCIES = ["CAD", "USD", "EUR", "INR", "GBP", "AUD", "JPY", "CNY"]
-
-// Routes for the voucher types a GL row can reference (so Voucher No is a link,
-// mirroring ERPNext's dynamic-link form control).
-const VOUCHER_ROUTES: Record<string, string> = {
-  "Payment Entry": "/payments",
-  "Sales Invoice": "/invoices",
-  "Purchase Invoice": "/invoices",
-  "Journal Entry": "/journal-entries",
-  "Sales Order": "/sales-orders",
-  "Purchase Order": "/purchases",
-  Quotation: "/quotations",
-  "Delivery Note": "/invoices",
-}
 
 interface Chip {
   value: string
@@ -462,7 +450,7 @@ export default function GeneralLedgerPage() {
       case "Link":
       case "Dynamic Link": {
         if (col.fieldname === "voucher_no") {
-          const route = VOUCHER_ROUTES[String(row.voucher_type ?? "")]
+          const route = DOCTYPE_ROUTES[String(row.voucher_type ?? "")]
           if (route) {
             return (
               <Link to={`${route}/${encodeURIComponent(String(value))}`} className="text-primary-700 hover:underline whitespace-nowrap">

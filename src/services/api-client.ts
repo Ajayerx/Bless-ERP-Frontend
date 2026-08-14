@@ -124,6 +124,27 @@ export function serverMessagesFromBody(body: unknown): AppMessage[] {
   return []
 }
 
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+}
+
+// ERPNext bulk actions answer HTTP 200 with the failures carried only in
+// `_server_messages` (red raise_exception entries) and *no* failed-doc list
+// in `message`/`undeleted_items`. Infer which of the requested docnames failed
+// by matching each name against the error-tone messages. Returns [] when the
+// messages carry no error tone; falls back to all requested names when errors
+// exist but no individual name can be attributed (never report success when
+// the server signalled failures).
+export function failedNamesFromMessages(names: string[], messages: AppMessage[]): string[] {
+  const errorMessages = messages.filter((m) => messageTone(m.indicator) === "error")
+  if (errorMessages.length === 0) return []
+  const text = errorMessages.map((m) => stripHtml(m.message)).join("\n")
+  const matched = names.filter((name) =>
+    new RegExp(`(?<![\\w-])${escapeRegExp(name)}(?![\\w-])`).test(text)
+  )
+  return matched.length > 0 ? matched : names
+}
+
 export function parseErrorMessage(body: any, fallback = "Something went wrong"): string {
   const serverMessages = extractServerMessages(body?._server_messages)
   if (serverMessages.length > 0) return stripHtml(serverMessages.map((m) => m.message).join(" "))
@@ -294,4 +315,42 @@ export async function apiFormCall<T>(
 ): Promise<T> {
   const body = await fetchForm(cmd, fields, opts?.doctype)
   return (body.data ?? body.message) as T
+}
+
+// ── Server-side record export (data import template) ─────────────────
+// Shared exporter used by the list pages (Payments, Invoices, ...). Hits
+// frappe.core.doctype.data_import.data_import.download_template — the same
+// endpoint ERPNext's own Data Export uses — so exports are generated
+// server-side (respecting filters) instead of being rebuilt client-side.
+export async function serverDownloadTemplate(options: {
+  doctype: string
+  fileType?: "CSV" | "Excel"
+  recordMode?: "all" | "by_filter" | "5_records" | "blank_template"
+  fields?: Record<string, string[]>
+  filters?: unknown[]
+}): Promise<Blob> {
+  const body = new URLSearchParams()
+  body.set("doctype", options.doctype)
+  body.set("file_type", options.fileType ?? "CSV")
+  body.set("export_records", options.recordMode ?? "by_filter")
+  if (options.fields && Object.keys(options.fields).length > 0) {
+    body.set("export_fields", JSON.stringify(options.fields))
+  }
+  if (options.filters && options.filters.length > 0) {
+    body.set("export_filters", JSON.stringify(options.filters))
+  }
+  const res = await fetch(
+    `${API_CONFIG.baseUrl}/method/frappe.core.doctype.data_import.data_import.download_template`,
+    {
+      method: "POST",
+      credentials: "include",
+      headers: {
+        ...API_CONFIG.headers,
+        "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+      },
+      body,
+    }
+  )
+  if (!res.ok) throw new ApiError(res.status, "Failed to export records")
+  return res.blob()
 }

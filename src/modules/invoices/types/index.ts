@@ -88,6 +88,8 @@ export interface SalesInvoiceAdvance {
   allocated_amount: number
   exchange_gain_loss?: number
   ref_exchange_rate?: number
+  difference_posting_date?: string
+  account?: string
   remarks?: string
 }
 
@@ -229,12 +231,17 @@ export interface SalesInvoice {
   taxes?: SalesInvoiceTax[]
   payments?: SalesInvoicePayment[]
   payment_schedule?: Array<{
+    payment_term?: string
+    description?: string
     due_date: string
+    invoice_portion?: number
     payment_amount: number
     outstanding: number
   }>
   creation?: string
   modified?: string
+  owner?: string
+  modified_by?: string
 }
 
 export interface SalesInvoiceFormData {
@@ -360,7 +367,10 @@ export interface SalesInvoiceFormData {
   taxes?: SalesInvoiceTax[]
   payments?: SalesInvoicePayment[]
   payment_schedule?: Array<{
+    payment_term?: string
+    description?: string
     due_date: string
+    invoice_portion?: number
     payment_amount: number
   }>
 }

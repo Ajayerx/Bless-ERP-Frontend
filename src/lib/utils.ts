@@ -31,6 +31,13 @@ export function formatDateUser(iso: string): string {
   return `${dd}-${mm}-${yyyy}`
 }
 
+export function formatDateDDMMYYYY(iso: string): string {
+  if (!iso) return ""
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso)
+  if (m) return `${m[3]}-${m[2]}-${m[1]}`
+  return formatDateUser(iso)
+}
+
 export function formatNumber(n: number): string {
   return new Intl.NumberFormat("en-US").format(n)
 }

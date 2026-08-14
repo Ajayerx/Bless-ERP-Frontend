@@ -1,5 +1,5 @@
 import { http, HttpResponse, delay } from "msw"
-import { paymentEntries, matchesFilterSet } from "./frappe-lookups"
+import { paymentEntries, salesInvoices, matchesFilterSet } from "./frappe-lookups"
 
 // ── Customers ────────────────────────────────────────────────────────
 interface CustomerRow {
@@ -242,6 +242,10 @@ async function countFor(url: string) {
     count = customers.filter((c) => customerMatchesFilters(c, filters)).length
   } else if (doctype === "Payment Entry") {
     count = paymentEntries.filter((r) => matchesFilterSet(r, filters, orFilters)).length
+  } else if (doctype === "Sales Invoice") {
+    count = (salesInvoices as unknown as Record<string, unknown>[]).filter(
+      (r) => matchesFilterSet(r, filters, orFilters)
+    ).length
   }
   return HttpResponse.json({ message: count })
 }

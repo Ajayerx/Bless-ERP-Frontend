@@ -1491,6 +1491,19 @@ export default forwardRef<PaymentFormHandle, PaymentFormProps>(function PaymentF
 
     setSaving(true)
     try {
+      if (isSubmitted && isExisting) {
+        // Submitted Payment Entry: only allow_on_submit fields can change. Send
+        // a slim payload so ERPNext keeps docstatus=1 and runs on_update_after_submit.
+        const saved = await paymentService.updateSubmittedPayment(initialValues.name, {
+          party_name: partyName || undefined,
+          cost_center: costCenter || undefined,
+          project: project || undefined,
+        })
+        onSaved(saved.name)
+        onAfterSave?.(saved)
+        addToast("Updated", "success")
+        return saved.name
+      }
       const saved = await savePaymentRaw(payload, isExisting ? initialValues.name : undefined)
       onSaved(saved.name)
       onAfterSave?.(saved)

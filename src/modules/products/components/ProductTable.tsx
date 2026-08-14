@@ -1,5 +1,6 @@
 import { Package, AlertTriangle, DollarSign, BarChart2 } from "lucide-react"
 import DataTable, { type Column } from "@/components/ui/DataTable"
+import { ListFilterBar } from "@/components/ui"
 
 import StockBadge, { stockColorClass } from "./StockBadge"
 import type { Product, ProductListResponse, ProductFilter } from "@/services"
@@ -116,31 +117,39 @@ export default function ProductTable({
         <SummaryCard label="Out of Stock" value={outOfStockCount} sub="Needs reorder" icon={BarChart2} iconClass="text-warning-600" iconBg="bg-warning-50" />
       </div>
 
-      <div className="flex items-center gap-2">
-        {FILTERS.map((f) => (
-          <button
-            key={f}
-            onClick={() => onFilterChange(f)}
-            className={cn(
-              "px-4 py-1.5 rounded-[10px] text-sm font-semibold transition-colors",
-              activeFilter === f
-                ? "bg-primary-600 text-white shadow-sm"
-                : "text-muted hover:bg-gray-100 hover:text-body",
-            )}
-          >
-            {f}
-          </button>
-        ))}
-      </div>
+      <ListFilterBar
+        controls={{
+          search: {
+            value: search,
+            onChange: onSearch,
+            placeholder: "Search products...",
+            width: "w-56",
+          },
+          extra: (
+            <div className="flex items-center gap-2">
+              {FILTERS.map((f) => (
+                <button
+                  key={f}
+                  onClick={() => onFilterChange(f)}
+                  className={cn(
+                    "px-4 py-1.5 rounded-[10px] text-sm font-semibold transition-colors",
+                    activeFilter === f
+                      ? "bg-primary-600 text-white shadow-sm"
+                      : "text-muted hover:bg-gray-100 hover:text-body",
+                  )}
+                >
+                  {f}
+                </button>
+              ))}
+            </div>
+          ),
+        }}
+      />
 
       <DataTable
         columns={columns}
         data={items}
         keyExtractor={(p) => p.name}
-        searchable
-        searchPlaceholder="Search products..."
-        searchQuery={search}
-        onSearch={onSearch}
         loading={loading}
         page={page}
         total={data?.total}

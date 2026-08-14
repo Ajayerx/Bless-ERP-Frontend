@@ -2,7 +2,7 @@
 
 import { Mail, Phone, Users } from "lucide-react";
 import DataTable, { type Column } from "@/components/ui/DataTable";
-import { Badge, Avatar } from "@/components/ui";
+import { Badge, Avatar, ListFilterBar } from "@/components/ui";
 import { type Customer, type CustomerListResponse } from "@/services";
 import { formatCurrency, cn } from "@/lib/utils";
 
@@ -136,14 +136,21 @@ export default function CustomerTable({
         </div>
       )}
 
+      <ListFilterBar
+        controls={{
+          search: {
+            value: search,
+            onChange: onSearch,
+            placeholder: "Search customers...",
+            width: "w-56",
+          },
+        }}
+      />
+
       <DataTable
         columns={columns}
         data={data?.items ?? []}
         keyExtractor={(c) => c.name}
-        searchable
-        searchPlaceholder="Search customers..."
-        searchQuery={search}
-        onSearch={onSearch}
         loading={loading}
         total={data?.total}
         pageSize={currentPageLength ?? 20}

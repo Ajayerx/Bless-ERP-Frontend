@@ -22,6 +22,8 @@ interface LinkSearchFieldProps {
   docType?: string
   clearIconMode?: "always" | "hover"
   suppressExternalLabelFetch?: boolean
+  displayLabel?: string
+  onMouseDownCapture?: (e: React.MouseEvent) => void
 }
 
 export default function LinkSearchField({
@@ -40,6 +42,8 @@ export default function LinkSearchField({
   inputClassName,
   clearIconMode = "always",
   suppressExternalLabelFetch = false,
+  displayLabel,
+  onMouseDownCapture,
 }: LinkSearchFieldProps) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState(value ?? "")
@@ -180,11 +184,12 @@ export default function LinkSearchField({
       setQuery(last.label)
       setSelectedLabel(last.label)
     } else {
-      setQuery(value)
-      setSelectedLabel(value)
-      lastValidatedRef.current = { value, label: value }
+      const label = displayLabel || value
+      setQuery(label)
+      setSelectedLabel(label)
+      lastValidatedRef.current = { value, label }
     }
-  }, [value])
+  }, [value, displayLabel])
 
   useEffect(() => {
     if (suppressExternalLabelFetch) return
@@ -340,6 +345,7 @@ export default function LinkSearchField({
             onFocus={handleFocus}
             onKeyDown={handleKeyDown}
             onBlur={handleBlur}
+            onMouseDownCapture={onMouseDownCapture}
             disabled={disabled}
             readOnly={readOnly}
             placeholder={placeholder}

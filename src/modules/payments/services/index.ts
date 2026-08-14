@@ -1,4 +1,4 @@
-import { apiClient, apiClientWithBody, serverMessagesFromBody, type AppMessage } from "@/services/api-client"
+import { apiClient, apiClientWithBody, serverMessagesFromBody, failedNamesFromMessages, serverDownloadTemplate, type AppMessage } from "@/services/api-client"
 import { API_CONFIG } from "@/config/api.config"
 import { sanitizeHtml } from "@/lib/utils"
 import { postMethod, postMethodRaw, withDedup } from "@/services/frappe-client"
@@ -455,6 +455,8 @@ function toQuillHtml(text: string): string {
   return `<div class="ql-editor read-mode"><p>${escaped}</p></div>`
 }
 
+export { toQuillHtml }
+
 // Port of version_timeline_content_builder.js format_content_for_timeline():
 // html2text → ellipsis(40) → '""' fallback. null renders as the literal "null"
 // (matching ERPNext's html2text DOM-parsing behaviour). Rendered bold by the UI.
@@ -638,8 +640,16 @@ function buildVersionMessages(
 // Mirrors form_timeline.js prepare_timeline_contents: created + last-edited
 // (from the doc) always, then user comments and Version content. Callers decide
 // what to hide behind the "Show all activity" toggle.
+export interface DocTimelineSource {
+  name: string
+  owner?: string
+  creation?: string
+  modified?: string
+  modified_by?: string
+}
+
 export function buildTimelineItems(
-  doc: PaymentEntry,
+  doc: DocTimelineSource,
   docinfo: DocInfo,
   currentUserId?: string
 ): PaymentActivityItem[] {
@@ -1003,6 +1013,16 @@ async getOutstandingReferences(args: GetOutstandingArgs): Promise<OutstandingRef
     )
   },
 
+  // Update a Submitted Payment Entry without touching docstatus. ERPNext only
+  // permits allow_on_submit fields on docstatus=1, so callers must send a slim
+  // payload of exactly those fields.
+  async updateSubmittedPayment(name: string, payload: Record<string, unknown>): Promise<PaymentEntry> {
+    return apiClient<PaymentEntry>(
+      `/resource/Payment Entry/${encodeURIComponent(name)}`,
+      { method: "PUT", body: JSON.stringify(payload) }
+    )
+  },
+
   async submitPayment(name: string): Promise<PaymentEntry> {
     return apiClient<PaymentEntry>(
       `/resource/Payment Entry/${encodeURIComponent(name)}`,
@@ -1036,10 +1056,12 @@ async getOutstandingReferences(args: GetOutstandingArgs): Promise<OutstandingRef
       { doctype: "Payment Entry", action: "submit", docnames: JSON.stringify(names) }
     )
     const msg = Array.isArray(result.message) ? result.message : []
+    const messages = serverMessagesFromBody(result)
+    const explicit = Array.isArray(result.failed) ? result.failed : msg
     return {
-      failed: Array.isArray(result.failed) ? result.failed : msg,
+      failed: explicit.length > 0 ? explicit : failedNamesFromMessages(names, messages),
       enqueued: result.message == null,
-      messages: serverMessagesFromBody(result),
+      messages,
     }
   },
 
@@ -1049,10 +1071,12 @@ async getOutstandingReferences(args: GetOutstandingArgs): Promise<OutstandingRef
       { doctype: "Payment Entry", action: "cancel", docnames: JSON.stringify(names) }
     )
     const msg = Array.isArray(result.message) ? result.message : []
+    const messages = serverMessagesFromBody(result)
+    const explicit = Array.isArray(result.failed) ? result.failed : msg
     return {
-      failed: Array.isArray(result.failed) ? result.failed : msg,
+      failed: explicit.length > 0 ? explicit : failedNamesFromMessages(names, messages),
       enqueued: result.message == null,
-      messages: serverMessagesFromBody(result),
+      messages,
     }
   },
 
@@ -1067,10 +1091,12 @@ async getOutstandingReferences(args: GetOutstandingArgs): Promise<OutstandingRef
       }
     )
     const msg = result.message
-    if (Array.isArray(msg)) return { failed: msg, messages: serverMessagesFromBody(result) }
+    const messages = serverMessagesFromBody(result)
+    if (Array.isArray(msg)) return { failed: msg.length > 0 ? msg : failedNamesFromMessages(names, messages), messages }
+    const undeleted = Array.isArray(msg?.undeleted_items) ? msg.undeleted_items : []
     return {
-      failed: Array.isArray(msg?.undeleted_items) ? msg.undeleted_items : [],
-      messages: serverMessagesFromBody(result),
+      failed: undeleted.length > 0 ? undeleted : failedNamesFromMessages(names, messages),
+      messages,
     }
   },
 
@@ -1083,33 +1109,15 @@ async getOutstandingReferences(args: GetOutstandingArgs): Promise<OutstandingRef
     fields?: Record<string, string[]>
     filters?: unknown[]
   }): Promise<Blob> {
-    const body = new URLSearchParams()
-    body.set("doctype", "Payment Entry")
-    body.set("file_type", options?.fileType ?? "CSV")
-    body.set("export_records", options?.recordMode ?? "by_filter")
-    // export_fields is required by the exporter; fall back to the default set.
-    const fields =
-      options?.fields && Object.keys(options.fields).length > 0
+    return serverDownloadTemplate({
+      doctype: "Payment Entry",
+      fileType: options?.fileType ?? "CSV",
+      recordMode: options?.recordMode ?? "by_filter",
+      fields: options?.fields && Object.keys(options.fields).length > 0
         ? options.fields
-        : PAYMENT_EXPORT_FIELDS
-    body.set("export_fields", JSON.stringify(fields))
-    if (options?.filters && options.filters.length > 0) {
-      body.set("export_filters", JSON.stringify(options.filters))
-    }
-    const res = await fetch(
-      `${API_CONFIG.baseUrl}/method/frappe.core.doctype.data_import.data_import.download_template`,
-      {
-        method: "POST",
-        credentials: "include",
-        headers: {
-          ...API_CONFIG.headers,
-          "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-        },
-        body,
-      }
-    )
-    if (!res.ok) throw new Error("Failed to export records")
-    return res.blob()
+        : PAYMENT_EXPORT_FIELDS,
+      filters: options?.filters,
+    })
   },
 
   // Bulk print via frappe.utils.print_format.download_multi_pdf. Mirrors the

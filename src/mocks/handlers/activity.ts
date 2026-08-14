@@ -43,6 +43,15 @@ let comments: CommentRow[] = [
     reference_doctype: "Version",
     reference_name: "VER-0002",
   },
+  {
+    name: "COM-SINV-0001",
+    communication_type: "Comment",
+    content: "Please confirm the due date with Maple Leaf Bakery before sending.",
+    owner: "jane.doe@blesserp.com",
+    creation: "2026-07-05T09:15:00",
+    reference_doctype: "Sales Invoice",
+    reference_name: "SINV-2026-0001",
+  },
 ]
 
 const versions: VersionRow[] = [
@@ -100,6 +109,19 @@ const versions: VersionRow[] = [
           "Short note first line<br>short note second line",
           "Short note first line<br>short note second line updated",
         ],
+      ],
+    }),
+  },
+  {
+    name: "VER-SINV-0001",
+    owner: "admin@blesserp.com",
+    creation: "2026-07-02T12:18:00",
+    ref_doctype: "Sales Invoice",
+    docname: "SINV-2026-0001",
+    data: JSON.stringify({
+      changed: [
+        ["outstanding_amount", 0, 2450],
+        ["status", "Unpaid", "Paid"],
       ],
     }),
   },
@@ -170,12 +192,16 @@ for (const [key, list] of Object.entries({
     { name: "Todo-PAY-0002", owner: "aarav@blesserp.com", status: "Open" },
     { name: "Todo-PAY-0003", owner: "jane.doe@blesserp.com", status: "Pending" },
   ],
+  [docKey("Sales Invoice", "SINV-2026-0001")]: [
+    { name: "Todo-SINV-0001", owner: "jane.doe@blesserp.com", status: "Open" },
+  ],
 } as Record<string, MockAssignment[]>)) {
   assignmentStore[key] = list
 }
 for (const [key, list] of Object.entries({
   [docKey("Payment Entry", "PAY-2026-0001")]: ["Audit", "Q1-Review"],
   [docKey("Payments", "PAY-2026-0002")]: ["Follow-up"],
+  [docKey("Sales Invoice", "SINV-2026-0001")]: ["Audit", "Needs-Review"],
 })) {
   tagStore[key] = list
 }
@@ -186,7 +212,7 @@ export const activityHandlers = [
     await delay(60)
     const url = new URL(request.url)
     const name = url.searchParams.get("name") ?? ""
-    const doctype = url.searchParams.get("doctype") ?? "Payment Entry"
+    const doctype = url.searchParams.get("doctype") ?? "Sales Invoice"
     return HttpResponse.json({
       docinfo: {
         doctype,

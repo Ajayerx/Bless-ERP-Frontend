@@ -3,17 +3,22 @@
 import { useEffect, useState, useCallback, useMemo } from "react"
 import { useNavigate } from "react-router-dom"
 import { motion } from "framer-motion"
-import { Plus, CheckCheck, X, Printer, Download, Trash2 } from "lucide-react"
+import { Plus, CheckCheck, X, Printer, Download, Trash2, UserRound, Tag } from "lucide-react"
 import Topbar from "@/components/layout/Topbar"
-import { Button, useToast } from "@/components/ui"
+import { Button, useToast, Modal, ModalFooter, Input, ListBulkActions } from "@/components/ui"
+import { useMessageDialog, messageFromError, LinkSearchField } from "@/components/ui"
 import { invoiceService, type SalesInvoice, type SalesInvoiceListResponse } from "@/services"
+import { INVOICE_EXPORT_FIELDS } from "../services"
 import InvoiceTable from "../components/InvoiceTable"
 
 type StatusFilter = "All" | "Paid" | "Unpaid" | "Overdue" | "Draft" | "Cancelled"
 
+const MESSAGE_DIVIDER = '<hr class="my-2 border-0 border-t border-gray-200" />'
+
 export default function Invoices() {
   const navigate = useNavigate()
   const { addToast } = useToast()
+  const { showMessage } = useMessageDialog()
   const [data, setData] = useState<SalesInvoiceListResponse | null>(null)
   const [allItems, setAllItems] = useState<SalesInvoice[]>([])
   const [loading, setLoading] = useState(true)
@@ -25,18 +30,65 @@ export default function Invoices() {
   const [bulkSubmitting, setBulkSubmitting] = useState(false)
   const [bulkCancelling, setBulkCancelling] = useState(false)
   const [bulkDeleting, setBulkDeleting] = useState(false)
+  const [assignOpen, setAssignOpen] = useState(false)
+  const [assignee, setAssignee] = useState("")
+  const [tagsOpen, setTagsOpen] = useState(false)
+  const [tagsInput, setTagsInput] = useState("")
+  const [actingToolbar, setActingToolbar] = useState(false)
+
+  // Export dialog
+  const [exportOpen, setExportOpen] = useState(false)
+  const [exportFormat, setExportFormat] = useState<"CSV" | "Excel">("CSV")
+  const [exportFields, setExportFields] = useState<Record<string, string[]>>(() =>
+    JSON.parse(JSON.stringify(INVOICE_EXPORT_FIELDS))
+  )
 
   // Filter state
   const [customerSearch, setCustomerSearch] = useState("")
   const [dateFrom, setDateFrom] = useState("")
   const [dateTo, setDateTo] = useState("")
+  const [assigneeFilter, setAssigneeFilter] = useState("")
+  const [nameFilter, setNameFilter] = useState("")
 
-  const hasActiveFilters = customerSearch !== "" || dateFrom !== "" || dateTo !== ""
+  const INVOICE_SORT_STORAGE_KEY = "blesserp_invoices_sort"
+  const [sortBy, setSortBy] = useState<string>(() => {
+    try { return localStorage.getItem(INVOICE_SORT_STORAGE_KEY)?.split("|")[0] || "" } catch { return "" }
+  })
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">(() => {
+    try { return (localStorage.getItem(INVOICE_SORT_STORAGE_KEY)?.split("|")[1] as "asc" | "desc") || "desc" } catch { return "desc" }
+  })
+
+  const handleSort = (field: string, order: "asc" | "desc") => {
+    setSortBy(field)
+    setSortOrder(order)
+    try { localStorage.setItem(INVOICE_SORT_STORAGE_KEY, `${field}|${order}`) } catch { /* ignore */ }
+    setStart(0)
+  }
+
+  const handleFilterId = (name: string) => {
+    setNameFilter((cur) => (cur === name ? "" : name))
+    setStart(0)
+  }
+
+  const hasActiveFilters =
+    customerSearch !== "" ||
+    dateFrom !== "" ||
+    dateTo !== "" ||
+    assigneeFilter !== "" ||
+    nameFilter !== "" ||
+    activeFilter !== "All" ||
+    sortBy !== ""
 
   const resetFilters = () => {
     setCustomerSearch("")
     setDateFrom("")
     setDateTo("")
+    setAssigneeFilter("")
+    setNameFilter("")
+    setActiveFilter("All")
+    setSortBy("")
+    setSortOrder("desc")
+    try { localStorage.removeItem(INVOICE_SORT_STORAGE_KEY) } catch { /* ignore */ }
     setStart(0)
   }
 
@@ -51,6 +103,10 @@ export default function Invoices() {
         status: activeFilter === "All" ? undefined : activeFilter.toLowerCase(),
         postingDateFrom: dateFrom || undefined,
         postingDateTo: dateTo || undefined,
+        assignedTo: assigneeFilter || undefined,
+        name: nameFilter || undefined,
+        sortBy: sortBy || undefined,
+        sortOrder,
       })
       setData(result)
       setAllItems((prev) => (append ? [...prev, ...result.items] : result.items))
@@ -61,12 +117,12 @@ export default function Invoices() {
     } finally {
       setLoading(false)
     }
-  }, [customerSearch, start, pageLength, activeFilter, dateFrom, dateTo])
+  }, [customerSearch, start, pageLength, activeFilter, dateFrom, dateTo, assigneeFilter, nameFilter, sortBy, sortOrder])
 
   useEffect(() => {
     setStart(0)
     fetchData(false)
-  }, [customerSearch, activeFilter, dateFrom, dateTo, pageLength])
+  }, [customerSearch, activeFilter, dateFrom, dateTo, pageLength, assigneeFilter, nameFilter, sortBy, sortOrder])
 
   const handleLoadMore = () => {
     fetchData(true)
@@ -90,6 +146,11 @@ export default function Invoices() {
     [selectedItems],
   )
 
+  const hasCancelledSelected = useMemo(
+    () => selectedItems.some((inv) => inv.docstatus === 2),
+    [selectedItems],
+  )
+
   const handleRecordPayment = (inv: SalesInvoice) => {
     navigate(`/payments?invoice=${inv.name}`)
   }
@@ -99,13 +160,20 @@ export default function Invoices() {
     setBulkSubmitting(true)
     setError("")
     try {
-      await invoiceService.bulkAction("Sales Invoice", names, "submit")
-      addToast(`Submitted ${names.length} invoice${names.length > 1 ? "s" : ""} successfully`, "success")
+      const { failed, enqueued, messages } = await invoiceService.bulkSubmit(names)
+      if (failed.length > 0) {
+        const reason = messages.map((m) => m.message).join(MESSAGE_DIVIDER)
+        const detail = reason ? `\n${reason}` : ""
+        throw new Error(`${failed.length} invoice${failed.length === 1 ? "" : "s"} not submitted: ${failed.join(", ")}${detail}`)
+      }
+      addToast(enqueued
+        ? `Submitted ${names.length} invoice${names.length > 1 ? "s" : ""} queued in the background`
+        : `Submitted ${names.length} invoice${names.length > 1 ? "s" : ""} successfully`, "success")
       setSelectedKeys(new Set())
       setStart(0)
       fetchData()
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Bulk submit failed")
+      showMessage(messageFromError(e, "Bulk submit failed"))
     } finally {
       setBulkSubmitting(false)
     }
@@ -116,13 +184,20 @@ export default function Invoices() {
     setBulkCancelling(true)
     setError("")
     try {
-      await invoiceService.bulkAction("Sales Invoice", names, "cancel")
-      addToast(`Cancelled ${names.length} invoice${names.length > 1 ? "s" : ""} successfully`, "success")
+      const { failed, enqueued, messages } = await invoiceService.bulkCancel(names)
+      if (failed.length > 0) {
+        const reason = messages.map((m) => m.message).join(MESSAGE_DIVIDER)
+        const detail = reason ? `\n${reason}` : ""
+        throw new Error(`${failed.length} invoice${failed.length === 1 ? "" : "s"} not cancelled: ${failed.join(", ")}${detail}`)
+      }
+      addToast(enqueued
+        ? `Cancelled ${names.length} invoice${names.length > 1 ? "s" : ""} queued in the background`
+        : `Cancelled ${names.length} invoice${names.length > 1 ? "s" : ""} successfully`, "success")
       setSelectedKeys(new Set())
       setStart(0)
       fetchData()
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Bulk cancel failed")
+      showMessage(messageFromError(e, "Bulk cancel failed"))
     } finally {
       setBulkCancelling(false)
     }
@@ -133,13 +208,18 @@ export default function Invoices() {
     setBulkDeleting(true)
     setError("")
     try {
-      await invoiceService.bulkDelete("Sales Invoice", names)
+      const { failed, messages } = await invoiceService.bulkDelete(names)
+      if (failed.length > 0) {
+        const reason = messages.map((m) => m.message).join(MESSAGE_DIVIDER)
+        const detail = reason ? `\n${reason}` : ""
+        throw new Error(`${failed.length} invoice${failed.length === 1 ? "" : "s"} not deleted: ${failed.join(", ")}${detail}`)
+      }
       addToast(`Deleted ${names.length} invoice${names.length > 1 ? "s" : ""} successfully`, "success")
       setSelectedKeys(new Set())
       setStart(0)
       fetchData()
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Bulk delete failed")
+      showMessage(messageFromError(e, "Bulk delete failed"))
     } finally {
       setBulkDeleting(false)
     }
@@ -152,33 +232,111 @@ export default function Invoices() {
     })
   }
 
-  const handleExport = () => {
-    const items = allItems
-    if (items.length === 0) return
-    const headers = ["Name", "Customer", "Posting Date", "Due Date", "Status", "Grand Total", "Outstanding"]
-    const rows = items.map((inv) => [
-      inv.name,
-      inv.customer_name,
-      inv.posting_date,
-      inv.due_date ?? "",
-      inv.status ?? "",
-      inv.grand_total.toString(),
-      (inv.outstanding_amount ?? "").toString(),
-    ])
-    const csv = [headers.join(","), ...rows.map((r) => r.map((c) => `"${c.replace(/"/g, '""')}"`).join(","))].join("\n")
-    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;bom" })
+  const handleBulkAssign = async (remove = false) => {
+    const names = Array.from(selectedKeys)
+    setAssignOpen(false)
+    setActingToolbar(true)
+    try {
+      if (remove) {
+        await invoiceService.removeAssignment(names)
+      } else if (!assignee.trim()) {
+        throw new Error("Please enter an assignee.")
+      } else {
+        await invoiceService.assignTo(names, assignee.trim())
+      }
+      showMessage(remove ? "Assignment cleared." : `Assigned ${names.length} invoice${names.length === 1 ? "" : "s"} to ${assignee.trim()}.`)
+      setAssignee("")
+    } catch (err) {
+      showMessage(messageFromError(err, "Assignment failed."))
+    } finally {
+      setActingToolbar(false)
+    }
+  }
+
+  const handleBulkAddTags = async () => {
+    const names = Array.from(selectedKeys)
+    setTagsOpen(false)
+    setActingToolbar(true)
+    try {
+      const labels = tagsInput.split(",").map((t) => t.trim()).filter(Boolean)
+      if (labels.length === 0) throw new Error("Please enter at least one tag.")
+      await invoiceService.addTags(names, labels)
+      showMessage(`Added ${labels.length} tag${labels.length === 1 ? "" : "s"} to ${names.length} invoice${names.length === 1 ? "" : "s"}.`)
+      setTagsInput("")
+    } catch (err) {
+      showMessage(messageFromError(err, "Adding tags failed."))
+    } finally {
+      setActingToolbar(false)
+    }
+  }
+
+  const downloadBlob = (blob: Blob, filename: string) => {
     const url = URL.createObjectURL(blob)
     const a = document.createElement("a")
     a.href = url
-    a.download = `invoices_${new Date().toISOString().slice(0, 10)}.csv`
+    a.download = filename
+    document.body.appendChild(a)
     a.click()
+    a.remove()
     URL.revokeObjectURL(url)
   }
 
-  const totalAmount = allItems.reduce((s, i) => s + i.grand_total, 0)
-  const paidAmount = allItems.filter((i) => i.status === "Paid").reduce((s, i) => s + i.grand_total, 0)
-  const overdueCount = allItems.filter((i) => i.status === "Overdue").length
-  const customerCount = new Set(allItems.map((i) => i.customer)).size
+  const exportScopeFilters = (): unknown[] | undefined => {
+    if (selectedKeys.size > 0) return [["name", "in", Array.from(selectedKeys)]]
+    const filters: unknown[] = []
+    if (activeFilter !== "All") {
+      const statusMap: Record<string, string> = {
+        paid: "Paid", unpaid: "Unpaid", overdue: "Overdue",
+        draft: "Draft", cancelled: "Cancelled", submitted: "Submitted",
+      }
+      filters.push(["status", "=", statusMap[activeFilter.toLowerCase()] || activeFilter])
+    }
+    if (dateFrom) filters.push(["posting_date", ">=", dateFrom])
+    if (dateTo) filters.push(["posting_date", "<=", dateTo])
+    if (assigneeFilter) filters.push(["_assign", "like", `%${assigneeFilter}%`])
+    if (nameFilter) filters.push(["name", "=", nameFilter])
+    return filters.length > 0 ? filters : undefined
+  }
+
+  const toggleExportField = (group: string, field: string) => {
+    setExportFields((prev) => {
+      const groupFields = prev[group] ?? []
+      const has = groupFields.includes(field)
+      return {
+        ...prev,
+        [group]: has ? groupFields.filter((f) => f !== field) : [...groupFields, field],
+      }
+    })
+  }
+
+  const resetExportFields = () => {
+    setExportFields(JSON.parse(JSON.stringify(INVOICE_EXPORT_FIELDS)))
+  }
+
+  const handleExport = async () => {
+    setActingToolbar(true)
+    try {
+      const selectedGroups = Object.fromEntries(
+        Object.entries(exportFields).filter(([, fields]) => fields.length > 0)
+      )
+      if (Object.keys(selectedGroups).length === 0) {
+        throw new Error("Select at least one column to export.")
+      }
+      const blob = await invoiceService.exportRecords({
+        fileType: exportFormat,
+        recordMode: "by_filter",
+        fields: selectedGroups,
+        filters: exportScopeFilters(),
+      })
+      downloadBlob(blob, `Sales-Invoices.${exportFormat === "CSV" ? "csv" : "xlsx"}`)
+      setExportOpen(false)
+      showMessage(`Exported ${selectedKeys.size > 0 ? selectedKeys.size : "filtered"} invoices.`)
+    } catch (err) {
+      showMessage(messageFromError(err, "Export failed."))
+    } finally {
+      setActingToolbar(false)
+    }
+  }
 
   return (
     <>
@@ -203,7 +361,7 @@ export default function Invoices() {
         </div>
 
         {error && (
-          <div className="p-4 bg-red-50 border border-red-200 rounded-[14px] text-sm text-red-700">
+          <div className="p-4 bg-red-50 border border-red-200 rounded-[14px] text-sm text-red-700 whitespace-pre-line">
             {error}
           </div>
         )}
@@ -223,6 +381,13 @@ export default function Invoices() {
           onDateFromChange={(v) => { setDateFrom(v); setStart(0) }}
           dateTo={dateTo}
           onDateToChange={(v) => { setDateTo(v); setStart(0) }}
+          assignedTo={assigneeFilter}
+          onAssigneeFilterChange={(v) => { setAssigneeFilter(v); setStart(0) }}
+          nameFilter={nameFilter}
+          onFilterId={handleFilterId}
+          sortField={sortBy}
+          sortOrder={sortOrder}
+          onSortChange={handleSort}
           onResetFilters={resetFilters}
           hasActiveFilters={hasActiveFilters}
           selectable
@@ -233,33 +398,190 @@ export default function Invoices() {
           onPageLengthChange={handlePageLengthChange}
           onLoadMore={handleLoadMore}
           toolbarActions={
-            selectedKeys.size > 0 ? (
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-muted mr-1">{selectedKeys.size} selected</span>
-                {hasDraftSelected && (
-                  <Button variant="success" size="sm" onClick={handleBulkSubmit} loading={bulkSubmitting}>
-                    <CheckCheck size={13} /> Submit
-                  </Button>
-                )}
-                {hasSubmittedSelected && (
-                  <Button variant="danger" size="sm" onClick={handleBulkCancel} loading={bulkCancelling}>
-                    <X size={13} /> Cancel
-                  </Button>
-                )}
-                <Button variant="danger" size="sm" onClick={handleBulkDelete} loading={bulkDeleting}>
-                  <Trash2 size={13} /> Delete
+            <ListBulkActions
+              count={selectedKeys.size}
+              noun="invoices"
+              fallback={
+                <Button variant="secondary" size="sm" onClick={() => setExportOpen(true)}>
+                  <Download size={13} /> Export
                 </Button>
-                <Button variant="secondary" size="sm" onClick={handleBulkPrint}>
-                  <Printer size={13} /> Print
-                </Button>
-              </div>
-            ) : (
-              <Button variant="secondary" size="sm" onClick={handleExport}>
-                <Download size={13} /> Export
-              </Button>
-            )
+              }
+              items={[
+                {
+                  label: "Submit",
+                  icon: <CheckCheck size={14} />,
+                  show: hasDraftSelected,
+                  disabled: bulkSubmitting,
+                  onClick: handleBulkSubmit,
+                },
+                {
+                  label: "Cancel",
+                  icon: <X size={14} />,
+                  show: hasSubmittedSelected,
+                  disabled: bulkCancelling,
+                  danger: true,
+                  onClick: handleBulkCancel,
+                },
+                {
+                  label: "Delete",
+                  icon: <Trash2 size={14} />,
+                  show: hasDraftSelected || hasCancelledSelected,
+                  disabled: bulkDeleting,
+                  danger: true,
+                  onClick: handleBulkDelete,
+                },
+                {
+                  label: "Export",
+                  icon: <Download size={14} />,
+                  separatorBefore: true,
+                  onClick: () => setExportOpen(true),
+                },
+                {
+                  label: "Print",
+                  icon: <Printer size={14} />,
+                  onClick: handleBulkPrint,
+                },
+                {
+                  label: "Assign to…",
+                  icon: <UserRound size={14} />,
+                  onClick: () => setAssignOpen(true),
+                },
+                {
+                  label: "Clear Assignment",
+                  icon: <UserRound size={14} />,
+                  onClick: () => handleBulkAssign(true),
+                },
+                {
+                  label: "Add Tags",
+                  icon: <Tag size={14} />,
+                  onClick: () => setTagsOpen(true),
+                },
+              ]}
+            />
           }
         />
+
+        {/* Assign dialog */}
+        <Modal
+          open={assignOpen}
+          onClose={() => {
+            setAssignOpen(false)
+            setAssignee("")
+          }}
+          title="Assign Invoices"
+          description={`Assign ${selectedKeys.size} selected invoice${selectedKeys.size === 1 ? "" : "s"} to a user, or clear the current assignment.`}
+        >
+          <LinkSearchField
+            value={assignee || undefined}
+            onChange={(v) => setAssignee(v ?? "")}
+            searchFn={(query) =>
+              invoiceService.searchAssignableUsers(query).then((users) => ({
+                items: users.map((u) => ({ value: u.value, label: u.label, description: u.description })),
+              }))
+            }
+            placeholder="Type to search users..."
+            required
+            className="w-full"
+            clearIconMode="hover"
+          />
+          <ModalFooter>
+            <Button variant="ghost" onClick={() => setAssignOpen(false)}>Cancel</Button>
+            <Button
+              variant="ghost"
+              className="text-danger-600 border border-danger-100 bg-danger-50 hover:bg-danger-100"
+              onClick={() => handleBulkAssign(true)}
+              loading={actingToolbar}
+            >
+              <UserRound size={14} /> Remove
+            </Button>
+            <Button onClick={() => handleBulkAssign(false)} loading={actingToolbar}>
+              <UserRound size={14} /> Assign
+            </Button>
+          </ModalFooter>
+        </Modal>
+
+        {/* Tags dialog */}
+        <Modal
+          open={tagsOpen}
+          onClose={() => {
+            setTagsOpen(false)
+            setTagsInput("")
+          }}
+          title="Add Tags"
+          description={`Add tags to ${selectedKeys.size} selected invoice${selectedKeys.size === 1 ? "" : "s"}. Separate tags with commas.`}
+        >
+          <Input
+            value={tagsInput}
+            onChange={(e) => setTagsInput(e.target.value)}
+            placeholder="e.g. Audit, Q1-Review, Priority"
+            className="w-full"
+          />
+          <ModalFooter>
+            <Button variant="ghost" onClick={() => setTagsOpen(false)}>Cancel</Button>
+            <Button onClick={handleBulkAddTags} loading={actingToolbar}>
+              <Tag size={14} /> Add Tags
+            </Button>
+          </ModalFooter>
+        </Modal>
+
+        {/* Export dialog */}
+        <Modal
+          open={exportOpen}
+          onClose={() => setExportOpen(false)}
+          title="Export Sales Invoices"
+          description={`Export ${selectedKeys.size > 0 ? `${selectedKeys.size} selected` : "all filtered"} invoices.`}
+        >
+          <label className="block text-xs font-semibold text-muted mb-1.5">Format</label>
+          <select
+            value={exportFormat}
+            onChange={(e) => setExportFormat(e.target.value as "CSV" | "Excel")}
+            className="w-full h-9 px-3 text-sm rounded-[10px] border border-border bg-surface text-body focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-400 transition-colors"
+          >
+            <option value="CSV">CSV (.csv)</option>
+            <option value="Excel">Excel (.xlsx)</option>
+          </select>
+          <div className="mt-4 flex items-center justify-between">
+            <label className="text-xs font-semibold text-muted mb-1.5 block">Columns</label>
+            <button
+              type="button"
+              onClick={resetExportFields}
+              className="text-xs text-primary-600 hover:underline"
+            >
+              Reset to all
+            </button>
+          </div>
+          <div className="max-h-56 overflow-y-auto pr-1 space-y-3 mt-1">
+            {Object.entries(INVOICE_EXPORT_FIELDS).map(([group, fields]) => (
+              <div key={group}>
+                <p className="text-xs font-semibold text-body mb-1.5">
+                  {group === "Sales Invoice" ? "Sales Invoice" : "Items (child table)"}
+                </p>
+                <div className="grid grid-cols-2 gap-x-3 gap-y-1.5">
+                  {fields.map((field) => {
+                    const checked = (exportFields[group] ?? []).includes(field)
+                    return (
+                      <label key={field} className="flex items-center gap-2 text-sm text-body cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggleExportField(group, field)}
+                          className="accent-primary-600"
+                        />
+                        <span className="capitalize">{field.replace(/_/g, " ")}</span>
+                      </label>
+                    )
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+          <ModalFooter>
+            <Button variant="ghost" onClick={() => setExportOpen(false)}>Cancel</Button>
+            <Button onClick={handleExport} loading={actingToolbar}>
+              <Download size={14} /> Export
+            </Button>
+          </ModalFooter>
+        </Modal>
       </motion.div>
     </>
   )

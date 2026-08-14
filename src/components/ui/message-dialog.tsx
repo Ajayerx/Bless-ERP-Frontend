@@ -103,7 +103,7 @@ export function MessageDialogProvider({ children }: { children: ReactNode }) {
               </div>
               <div className="px-6 py-5">
                 <div
-                  className="text-sm text-body leading-relaxed break-words [&_strong]:font-semibold"
+                  className="text-sm text-body leading-relaxed break-words whitespace-pre-line [&_strong]:font-semibold"
                   dangerouslySetInnerHTML={{ __html: current.message }}
                 />
               </div>

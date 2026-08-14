@@ -352,6 +352,7 @@ export default function InvoiceLineItems({
         readOnly={readOnly}
         testId="items_grid"
         minWidth="760px"
+        noTopBorder
         footer={
           !readOnly ? (
             <AddMultipleModal

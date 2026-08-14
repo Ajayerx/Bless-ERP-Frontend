@@ -33,8 +33,9 @@ export type {
 export { invoiceService, templateRowsToEditable, invoiceTaxesToEditable, erpnextTaxesToEditable, computeTaxes, computeTotalForDiscountAmount, createEmptyTaxRow, formatExchangeRateError } from "@/modules/invoices/services"
 export type { SalesInvoice, SalesInvoiceFormData, SalesInvoiceItem, SalesInvoiceTax, SalesInvoiceListResponse, EditableTaxRow, ChargeType, AccountInfo, PartyDetailsResponse } from "@/modules/invoices/services"
 
-export { paymentService, allocateAmountToReferences, savePaymentRaw, setMatchedPaymentRequests, buildTimelineItems, fieldLabel } from "@/modules/payments/services"
-export type { PaymentEntry, PaymentEntryListResponse, RecordPaymentData, InvoiceAllocation, PaymentDeductionForm, LedgerPreviewData, LedgerPreviewColumn, PaymentComment, PaymentActivityItem, ReferenceDetails, PaymentEntryDocSnapshot, UnreconcileAllocation, PaymentAfterSaveResult, VersionDoc } from "@/modules/payments/services"
+export { paymentService, allocateAmountToReferences, savePaymentRaw, setMatchedPaymentRequests, buildTimelineItems, 
+fieldLabel } from "@/modules/payments/services"
+export type { PaymentEntry, PaymentEntryListResponse, RecordPaymentData, InvoiceAllocation, PaymentDeductionForm, LedgerPreviewData, LedgerPreviewColumn, PaymentComment, PaymentActivityItem, ActivityMessageSegment, ReferenceDetails, PaymentEntryDocSnapshot, UnreconcileAllocation, PaymentAfterSaveResult, VersionDoc } from "@/modules/payments/services"
 
 export { reportService } from "@/modules/reports/services"
 export type { TaxSummary, TaxBreakdownRow, TaxTransactionRow, TaxSideSummary, NetRemittance, SalesReport, ARReport, InventoryReport, ProfitLoss, BalanceSheet, GeneralLedgerColumn, GeneralLedgerRow, GeneralLedgerFilters, GeneralLedgerReport } from "@/modules/reports/services"

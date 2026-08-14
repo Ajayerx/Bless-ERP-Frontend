@@ -23,6 +23,7 @@ import { frappeCustomerHandlers } from "./frappe-customers"
 import { frappeClientHandlers } from "./frappe-client"
 import { frappeLookupHandlers } from "./frappe-lookups"
 import { activityHandlers } from "./activity"
+import { invoiceMakeHandlers } from "./invoice-make"
 
 export const handlers = [
   ...authHandlers,
@@ -51,4 +52,5 @@ export const handlers = [
   ...frappeClientHandlers,
   ...frappeLookupHandlers,
   ...activityHandlers,
+  ...invoiceMakeHandlers,
 ]

@@ -124,6 +124,7 @@ export function useCustomerSelection({
                   id: crypto.randomUUID(),
                   sales_person: m.sales_person,
                   allocated_percentage: m.allocated_percentage,
+                  allocated_amount: m.allocated_amount,
                   commission_rate: m.commission_rate,
                 })),
               }

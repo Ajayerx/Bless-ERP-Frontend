@@ -7,11 +7,18 @@ import Topbar from "@/components/layout/Topbar"
 import PageHead from "@/components/layout/PageHead"
 import { Avatar, Skeleton, ConfirmationDialog } from "@/components/ui"
 import { useMessageDialog, messageFromError } from "@/components/ui"
-import { paymentService, buildTimelineItems, fieldLabel, type VersionDoc } from "@/services"
+import { DOCTYPE_ROUTES } from "@/lib/doctype-routes"
+import {
+  paymentService,
+  buildTimelineItems,
+  fieldLabel,
+  type VersionDoc,
+  type PaymentActivityItem,
+  type ActivityMessageSegment,
+} from "@/services"
 import { useAuth } from "@/context/AuthContext"
 import { useAutoGrowTextarea } from "@/hooks/useAutoGrowTextarea"
 import { prettyDate, sanitizeHtml, htmlToText } from "@/lib/utils"
-import type { PaymentActivityItem, ActivityMessageSegment } from "../types"
 
 // Shape of the parsed Version.data JSON (see version_timeline_content_builder.js).
 interface VersionData {
@@ -85,7 +92,7 @@ function renderSegments(segments?: ActivityMessageSegment[]) {
 // their own diff block, and only simple fields land in the Property table.
 function VersionBody({
   raw,
-  ref_doctype,
+  ref_doctype: _ref_doctype,
   html_diffs,
 }: {
   raw: string
@@ -626,7 +633,8 @@ export default function VersionDetail() {
     )
   }
 
-  const backTo = version.docname ? `/payments/${encodeURIComponent(version.docname)}` : "/payments"
+  const base = version.ref_doctype ? DOCTYPE_ROUTES[version.ref_doctype] : undefined
+  const backTo = version.docname && base ? `${base}/${encodeURIComponent(version.docname)}` : base ?? "/payments"
 
   return (
     <>

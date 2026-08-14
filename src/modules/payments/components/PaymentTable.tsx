@@ -1,9 +1,9 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { CheckCircle2, Clock, FileText, DollarSign, Send, XCircle, RotateCcw, Trash2, X, Download, Printer, UserRound, Tag, ArrowUp, ArrowDown } from "lucide-react"
+import { CheckCircle2, Clock, FileText, DollarSign, Send, XCircle, RotateCcw, Trash2, Download, Printer, UserRound, Tag } from "lucide-react"
 import DataTable, { type Column } from "@/components/ui/DataTable"
-import { Badge, DateRangePicker, Avatar } from "@/components/ui"
+import { Badge, ListFilterBar, Button, Avatar, ListBulkActions } from "@/components/ui"
 import { type PaymentEntry, type PaymentEntryListResponse } from "@/services"
 import { paymentService } from "@/services"
 import { formatCurrency, formatDate, cn } from "@/lib/utils"
@@ -80,6 +80,7 @@ interface PaymentTableProps {
   onBulkExport: () => void
   onBulkPrint: () => void
   onBulkAssign: () => void
+  onBulkClearAssign: () => void
   onBulkAddTags: () => void
   sortField?: string
   sortOrder?: "asc" | "desc"
@@ -113,7 +114,7 @@ export default function PaymentTable({
   modeFilter, onModeFilterChange,
   partyTypeFilter, onPartyTypeFilterChange, partyTypeOptions,
   searchQuery, onSearchQueryChange,
-  onBulkExport, onBulkPrint, onBulkAssign, onBulkAddTags,
+  onBulkExport, onBulkPrint, onBulkAssign, onBulkClearAssign, onBulkAddTags,
   sortField, sortOrder, onSortChange,
   dateFrom, onDateFromChange,
   dateTo, onDateToChange,
@@ -355,73 +356,66 @@ export default function PaymentTable({
   const hasDraft = selectedStatuses.has(0)
   const hasSubmitted = selectedStatuses.has(1)
   const hasCancelled = selectedStatuses.has(2)
-  const canSubmit = hasDraft && !hasSubmitted && !hasCancelled
-  const canCancel = hasSubmitted && !hasDraft && !hasCancelled
-  const canDelete = (hasDraft || hasCancelled) && !hasSubmitted
 
-  const bulkToolbar = selectedPayments.length > 0 ? (
-    <div className="flex items-center gap-3">
-      <span className="text-sm text-muted font-medium">{selectedPayments.length} selected</span>
-      {canSubmit && (
-        <button
-          onClick={onBulkSubmit}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-primary-600 rounded-[8px] hover:bg-primary-700 transition-colors"
-        >
-          <Send size={12} /> Submit
-        </button>
-      )}
-      {canCancel && (
-        <button
-          onClick={onBulkCancel}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-danger-600 bg-danger-50 border border-danger-100 rounded-[8px] hover:bg-danger-100 transition-colors"
-        >
-          <XCircle size={12} /> Cancel
-        </button>
-      )}
-      {canDelete && (
-        <button
-          onClick={onBulkDelete}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-danger-600 bg-danger-50 border border-danger-100 rounded-[8px] hover:bg-danger-100 transition-colors"
-        >
-          <Trash2 size={12} /> Delete
-        </button>
-      )}
-      <button
-        onClick={onBulkExport}
-        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-body bg-surface border border-border rounded-[8px] hover:bg-gray-100 transition-colors"
-        title="Export selected records (CSV/Excel)"
-      >
-        <Download size={12} /> Export
-      </button>
-      <button
-        onClick={onBulkPrint}
-        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-body bg-surface border border-border rounded-[8px] hover:bg-gray-100 transition-colors"
-        title="Print selected payments (PDF)"
-      >
-        <Printer size={12} /> Print
-      </button>
-      <button
-        onClick={onBulkAssign}
-        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-body bg-surface border border-border rounded-[8px] hover:bg-gray-100 transition-colors"
-        title="Assign selected payments to a user"
-      >
-        <UserRound size={12} /> Assign
-      </button>
-      <button
-        onClick={onBulkAddTags}
-        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-body bg-surface border border-border rounded-[8px] hover:bg-gray-100 transition-colors"
-        title="Add tags to selected payments"
-      >
-        <Tag size={12} /> Tags
-      </button>
-      <button
-        onClick={() => onSelectionChange([])}
-        className="text-xs text-muted hover:text-body transition-colors"
-      >
-        Clear
-      </button>
-    </div>
-  ) : null
+  const bulkToolbar = (
+    <ListBulkActions
+      count={selectedPayments.length}
+      noun="payments"
+      fallback={
+        <Button variant="secondary" size="sm" onClick={onBulkExport}>
+          <Download size={13} /> Export
+        </Button>
+      }
+      items={[
+        {
+          label: "Submit",
+          icon: <Send size={14} />,
+          show: hasDraft,
+          onClick: onBulkSubmit,
+        },
+        {
+          label: "Cancel",
+          icon: <XCircle size={14} />,
+          show: hasSubmitted,
+          danger: true,
+          onClick: onBulkCancel,
+        },
+        {
+          label: "Delete",
+          icon: <Trash2 size={14} />,
+          show: hasDraft || hasCancelled,
+          danger: true,
+          onClick: onBulkDelete,
+        },
+        {
+          label: "Export",
+          icon: <Download size={14} />,
+          separatorBefore: true,
+          onClick: onBulkExport,
+        },
+        {
+          label: "Print",
+          icon: <Printer size={14} />,
+          onClick: onBulkPrint,
+        },
+        {
+          label: "Assign to…",
+          icon: <UserRound size={14} />,
+          onClick: onBulkAssign,
+        },
+        {
+          label: "Clear Assignment",
+          icon: <UserRound size={14} />,
+          onClick: onBulkClearAssign,
+        },
+        {
+          label: "Add Tags",
+          icon: <Tag size={14} />,
+          onClick: onBulkAddTags,
+        },
+      ]}
+    />
+  )
 
   return (
     <div className="space-y-6">
@@ -471,117 +465,75 @@ export default function PaymentTable({
       </div>
 
       {/* Filter bar */}
-      <div className="flex items-center gap-3 flex-wrap">
-        {/* Payment Type dropdown */}
-        <select
-          value={paymentTypeFilter}
-          onChange={(e) => onPaymentTypeFilterChange(e.target.value)}
-          className="h-9 px-3 text-sm rounded-[10px] border border-border bg-surface text-body focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-400 transition-colors"
-        >
-          <option value="">All Types</option>
-          {PAYMENT_TYPES.filter(Boolean).map((t) => (
-            <option key={t} value={t}>{t}</option>
-          ))}
-        </select>
-
-        {/* Mode of Payment dropdown */}
-        <select
-          value={modeFilter}
-          onChange={(e) => onModeFilterChange(e.target.value)}
-          className="h-9 px-3 text-sm rounded-[10px] border border-border bg-surface text-body focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-400 transition-colors"
-        >
-          <option value="">All Methods</option>
-          {modeOptions.map((m) => (
-            <option key={m} value={m}>{m}</option>
-          ))}
-        </select>
-
-        {/* Party Type dropdown */}
-        <select
-          value={partyTypeFilter}
-          onChange={(e) => onPartyTypeFilterChange(e.target.value)}
-          className="h-9 px-3 text-sm rounded-[10px] border border-border bg-surface text-body focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-400 transition-colors"
-        >
-          <option value="">All Parties</option>
-          {partyTypeOptions.map((t) => (
-            <option key={t} value={t}>{t}</option>
-          ))}
-        </select>
-
-        {/* General search (ID / party / title) */}
-        <input
-          type="text"
-          value={searchQuery}
-          onChange={(e) => onSearchQueryChange(e.target.value)}
-          placeholder="Search ID / party..."
-          className="h-9 px-3 text-sm rounded-[10px] border border-border bg-surface text-body placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-400 transition-colors w-44"
-        />
-
-        {/* Date range (single calendar picker) */}
-        <DateRangePicker
-          value={{ from: dateFrom || undefined, to: dateTo || undefined }}
-          onChange={(range) => {
-            onDateFromChange(range.from ?? "")
-            onDateToChange(range.to ?? "")
-          }}
-          className="w-52"
-        />
-
-        {/* Single sort control (ERPNext SortSelector): field dropdown + one order toggle */}
-        <div className="h-9 flex items-center rounded-[10px] border border-border bg-surface text-body focus-within:border-primary-400 focus-within:ring-2 focus-within:ring-primary-500/20 transition-colors overflow-hidden">
-          <span className="pl-3 pr-1 text-xs font-semibold text-muted uppercase tracking-wider">Sort</span>
-          <select
-            value={sortField || "posting_date"}
-            onChange={(e) => onSortChange?.(e.target.value, sortOrder ?? "desc")}
-            className="h-full bg-transparent text-sm focus:outline-none text-body cursor-pointer"
-            title="Sort field"
-          >
-            <option value="posting_date">Posting Date</option>
-            <option value="party_name">Customer</option>
-            <option value="paid_amount">Amount</option>
-            <option value="mode_of_payment">Method</option>
-          </select>
-          <button
-            type="button"
-            onClick={() => onSortChange?.(sortField ?? "posting_date", (sortOrder ?? "desc") === "asc" ? "desc" : "asc")}
-            className="h-full px-2.5 flex items-center justify-center text-muted hover:text-primary-700 hover:bg-gray-100 transition-colors"
-            title={(sortOrder ?? "desc") === "asc" ? "Sort ascending — click for descending" : "Sort descending — click for ascending"}
-            aria-label={`Sort ${sortField ?? "posting_date"} ${sortOrder ?? "desc"}`}
-          >
-            {(sortOrder ?? "desc") === "asc" ? <ArrowUp size={14} /> : <ArrowDown size={14} />}
-          </button>
-        </div>
-
-        {/* Clear filters */}
-        {nameFilter && (
-          <button
-            onClick={() => onFilterId(nameFilter)}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-primary-700 bg-primary-50 border border-primary-200 rounded-[8px] hover:bg-primary-100 transition-colors"
-          >
-            <FileText size={12} />
-            ID: {nameFilter}
-            <X size={12} />
-          </button>
-        )}
-        {assigneeFilter && (
-          <button
-            onClick={() => onAssigneeFilterChange("")}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-primary-700 bg-primary-50 border border-primary-200 rounded-[8px] hover:bg-primary-100 transition-colors"
-          >
-            <UserRound size={12} />
-            Assigned to: {userNames[assigneeFilter]?.full_name || assigneeFilter}
-            <X size={12} />
-          </button>
-        )}
-        {hasActiveFilters && (
-          <button
-            onClick={onResetFilters}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-muted hover:text-body hover:bg-gray-100 rounded-[8px] transition-colors"
-          >
-            <X size={12} /> Clear filters
-          </button>
-        )}
-      </div>
+      <ListFilterBar
+        controls={{
+          selects: [
+            {
+              value: paymentTypeFilter,
+              onChange: onPaymentTypeFilterChange,
+              placeholder: "All Types",
+              options: PAYMENT_TYPES.filter(Boolean).map((t) => ({ value: t, label: t })),
+            },
+            {
+              value: modeFilter,
+              onChange: onModeFilterChange,
+              placeholder: "All Methods",
+              options: modeOptions.map((m) => ({ value: m, label: m })),
+            },
+            {
+              value: partyTypeFilter,
+              onChange: onPartyTypeFilterChange,
+              placeholder: "All Parties",
+              options: partyTypeOptions.map((t) => ({ value: t, label: t })),
+            },
+          ],
+          search: {
+            value: searchQuery,
+            onChange: onSearchQueryChange,
+            placeholder: "Search ID / party...",
+            width: "w-44",
+          },
+          dateRange: {
+            from: dateFrom,
+            to: dateTo,
+            onChange: (from, to) => {
+              onDateFromChange(from)
+              onDateToChange(to)
+            },
+          },
+          sort: {
+            field: sortField || "posting_date",
+            order: sortOrder ?? "desc",
+            onSort: onSortChange ?? (() => {}),
+            options: [
+              { value: "posting_date", label: "Posting Date" },
+              { value: "party_name", label: "Customer" },
+              { value: "paid_amount", label: "Amount" },
+              { value: "mode_of_payment", label: "Method" },
+            ],
+          },
+          chips: [
+            ...(nameFilter
+              ? [{
+                  key: "name",
+                  label: `ID: ${nameFilter}`,
+                  icon: <FileText size={12} />,
+                  onClear: () => onFilterId(nameFilter),
+                }]
+              : []),
+            ...(assigneeFilter
+              ? [{
+                  key: "assignee",
+                  label: `Assigned to: ${userNames[assigneeFilter]?.full_name || assigneeFilter}`,
+                  icon: <UserRound size={12} />,
+                  onClear: () => onAssigneeFilterChange(""),
+                }]
+              : []),
+          ],
+        }}
+        hasActiveFilters={hasActiveFilters}
+        onReset={onResetFilters}
+      />
 
       <section className="space-y-4">
         <DataTable

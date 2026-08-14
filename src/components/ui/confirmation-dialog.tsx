@@ -60,7 +60,7 @@ function ConfirmationDialog({
         {error && (
           <div className="flex items-start gap-2 text-sm text-danger-600 bg-danger-50 border border-danger-100 px-4 py-3 rounded-[10px]">
             <AlertCircle size={16} className="shrink-0 mt-0.5" />
-            <p>{error}</p>
+            <p className="whitespace-pre-line">{error}</p>
           </div>
         )}
         <DialogFooter>

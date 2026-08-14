@@ -1,9 +1,8 @@
 "use client";
 
-import { Plus, Trash2 } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
-import LinkSearchField from "@/components/ui/LinkSearchField";
 import { invoiceService } from "../services";
+import ChildTableGrid, { type GridColumn } from "@/components/ui/ChildTableGrid";
 
 export interface PaymentRow {
   id: string;
@@ -11,9 +10,6 @@ export interface PaymentRow {
   amount: number;
   account?: string;
 }
-
-const inputClass =
-  "w-full px-3 py-2.5 bg-white border border-border rounded-[12px] text-sm text-body placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 transition-all duration-200";
 
 const labelClass =
   "block text-xs font-semibold text-muted mb-1.5 uppercase tracking-wider";
@@ -45,136 +41,80 @@ export default function PaymentsTable({
     ]);
   };
 
-  const updateRow = (id: string, updates: Partial<PaymentRow>) => {
-    onChange(payments.map((r) => (r.id === id ? { ...r, ...updates } : r)));
+  const handleRowsChange = (rows: PaymentRow[]) => {
+    if (readOnly) return;
+    if (rows.length > payments.length) {
+      addRow();
+      return;
+    }
+    onChange(rows);
+    rows.forEach((row, i) => {
+      const old = payments[i];
+      if (
+        old &&
+        row.mode_of_payment !== old.mode_of_payment &&
+        row.mode_of_payment &&
+        company
+      ) {
+        invoiceService.getBankCashAccount(row.mode_of_payment, company).then((acc) => {
+          if (acc) {
+            const withAccount = rows.map((r, j) =>
+              j === i ? { ...r, account: acc } : r
+            );
+            onChange(withAccount);
+          }
+        });
+      }
+    });
   };
 
-  const removeRow = (id: string) => {
-    onChange(payments.filter((r) => r.id !== id));
-  };
+  const totalPaid = payments.reduce((sum, r) => sum + (r.amount || 0), 0);  const changeAmount = grandTotal != null ? totalPaid - grandTotal : 0;
 
-  const totalPaid = payments.reduce((sum, r) => sum + (r.amount || 0), 0);
-  const changeAmount = grandTotal != null ? totalPaid - grandTotal : 0;
+  const columns: GridColumn<PaymentRow>[] = [
+    {
+      key: "mode_of_payment",
+      label: "Mode of Payment",
+      type: "link",
+      searchFn: (q) => invoiceService.searchModesOfPayment(q),
+      placeholder: "Select mode",
+      weight: 1.4,
+    },
+    {
+      key: "amount",
+      label: "Amount",
+      type: "number",
+      align: "right",
+      weight: 1,
+      placeholder: "0.00",
+    },
+    {
+      key: "account",
+      label: "Account",
+      type: "link",
+      searchFn: (q) => invoiceService.searchAccounts(q),
+      placeholder: "Select account",
+      weight: 1.4,
+    },
+  ];
 
   return (
     <div className="space-y-3">
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-gray-100">
-              <th className="text-left py-2 text-xs font-semibold text-muted uppercase tracking-wider">
-                Mode of Payment
-              </th>
-              <th className="text-right py-2 text-xs font-semibold text-muted uppercase tracking-wider">
-                Amount
-              </th>
-              <th className="text-left py-2 text-xs font-semibold text-muted uppercase tracking-wider">
-                Account
-              </th>
-              {!readOnly && (
-                <th className="w-10"></th>
-              )}
-            </tr>
-          </thead>
-          <tbody>
-            {payments.length === 0 ? (
-              <tr>
-                <td
-                  colSpan={readOnly ? 3 : 4}
-                  className="py-3 text-center text-muted text-xs"
-                >
-                  No payments added.
-                </td>
-              </tr>
-            ) : (
-              payments.map((row) => (
-                <tr key={row.id} className="border-b border-gray-50">
-                  <td className="py-1.5">
-                    {readOnly ? (
-                      <span className="text-heading">{row.mode_of_payment}</span>
-                    ) : (
-                      <LinkSearchField
-                        value={row.mode_of_payment}
-                        onChange={(val) => {
-                          const mop = val || ""
-                          updateRow(row.id, { mode_of_payment: mop })
-                          if (mop && company) {
-                            invoiceService.getBankCashAccount(mop, company).then((acc) => {
-                              if (acc) updateRow(row.id, { account: acc })
-                            })
-                          }
-                        }}
-                        searchFn={(q) => invoiceService.searchModesOfPayment(q)}
-                        placeholder="Select mode"
-                      />
-                    )}
-                  </td>
-                  <td className="py-1.5">
-                    {readOnly ? (
-                      <span className="text-heading text-right block">
-                        {formatCurrency(row.amount)}
-                      </span>
-                    ) : (
-                      <input
-                        type="number"
-                        min={0}
-                        step={0.01}
-                        value={row.amount || ""}
-                        onChange={(e) =>
-                          updateRow(row.id, {
-                            amount: e.target.value
-                              ? parseFloat(e.target.value)
-                              : 0,
-                          })
-                        }
-                        className={`${inputClass} text-xs py-1.5 text-right`}
-                        placeholder="0.00"
-                      />
-                    )}
-                  </td>
-                  <td className="py-1.5">
-                    {readOnly ? (
-                      <span className="text-heading">{row.account || ""}</span>
-                    ) : (
-                      <LinkSearchField
-                        value={row.account}
-                        onChange={(val) =>
-                          updateRow(row.id, {
-                            account: val || undefined,
-                          })
-                        }
-                        searchFn={(q) => invoiceService.searchAccounts(q)}
-                        placeholder="Select account"
-                      />
-                    )}
-                  </td>
-                  {!readOnly && (
-                    <td className="py-1.5">
-                      <button
-                        type="button"
-                        onClick={() => removeRow(row.id)}
-                        className="p-1.5 text-muted hover:text-danger-600 transition-colors"
-                      >
-                        <Trash2 size={12} />
-                      </button>
-                    </td>
-                  )}
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
-
-      {!readOnly && (
-        <button
-          type="button"
-          onClick={addRow}
-          className="text-xs font-semibold text-primary-600 hover:text-primary-700 transition-colors flex items-center gap-1"
-        >
-          <Plus size={12} /> Add Payment
-        </button>
-      )}
+      <ChildTableGrid<PaymentRow>
+        title="Payments"
+        titleClassName="text-xs font-semibold text-muted"
+        rows={payments}
+        columns={columns}
+        emptyRow={{
+          id: crypto.randomUUID(),
+          mode_of_payment: "",
+          amount: grandTotal ?? 0,
+          account: "",
+        }}
+        onChange={handleRowsChange}
+        readOnly={readOnly}
+        testId="payments_grid"
+        minWidth="560px"
+      />
 
       {payments.length > 0 && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 pt-2 border-t border-border/50">
@@ -183,7 +123,7 @@ export default function PaymentsTable({
             <input
               type="text"
               value={formatCurrency(totalPaid)}
-              className={`${inputClass} bg-gray-50`}
+              className="w-full px-3 py-2.5 bg-white border border-border rounded-[12px] text-sm text-body placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 transition-all duration-200 bg-gray-50"
               readOnly
             />
           </div>
@@ -193,7 +133,7 @@ export default function PaymentsTable({
               <input
                 type="text"
                 value={formatCurrency(changeAmount)}
-                className={`${inputClass} bg-gray-50`}
+                className="w-full px-3 py-2.5 bg-white border border-border rounded-[12px] text-sm text-body placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 transition-all duration-200 bg-gray-50"
                 readOnly
               />
             </div>

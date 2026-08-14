@@ -74,6 +74,8 @@ export const paymentHandlers = [
     await delay(200)
     const body = (await request.json().catch(() => ({}))) as { docname?: string }
     const docname = body.docname ?? ""
+    const isInvoice = docname.toUpperCase().startsWith("SINV")
+    const againstVoucher = isInvoice ? "Sales Invoice" : "Payment Entry"
     const columns = [
       { name: "Posting Date", editable: false, width: 110, fieldtype: "Date" },
       { name: "Account", editable: false, width: 110, fieldtype: "Link" },
@@ -87,8 +89,8 @@ export const paymentHandlers = [
       { name: "Against Voucher", editable: false, width: 110, fieldtype: "Data" },
     ]
     const data = [
-      ["2026-08-01", "Cash - BE", 0, 200, "Debtors - BE", "Customer", "AlphaCorp", "Main - BE", "Payment Entry", docname],
-      ["2026-08-01", "Debtors - BE", 200, 0, "Cash - BE", "Customer", "AlphaCorp", "Main - BE", "Payment Entry", docname],
+      ["2026-08-01", isInvoice ? "Debtors - BE" : "Cash - BE", isInvoice ? 200 : 0, isInvoice ? 0 : 200, isInvoice ? "Sales Revenue" : "Debtors - BE", "Customer", "AlphaCorp", "Main - BE", againstVoucher, docname],
+      ["2026-08-01", isInvoice ? "Sales Revenue" : "Debtors - BE", isInvoice ? 0 : 200, isInvoice ? 200 : 0, isInvoice ? "Debtors - BE" : "Cash - BE", "Customer", "AlphaCorp", "Main - BE", againstVoucher, docname],
     ]
     return HttpResponse.json({ message: { gl_columns: columns, gl_data: data }, error: null })
   }),
@@ -126,8 +128,9 @@ export const paymentHandlers = [
   http.post("/api/method/frappe.core.doctype.data_import.data_import.download_template", async ({ request }) => {
     await delay(300)
     const body = Object.fromEntries(new URLSearchParams(await request.text()))
+    const doctype = String(body.doctype ?? "Payment Entry")
     const fields = safeJson(body.export_fields ?? "{}", {}) as Record<string, string[]>
-    const parentFields = fields["Payment Entry"] ?? ["name"]
+    const parentFields = fields[doctype] ?? ["name"]
     const header = parentFields.join(",")
     const csv = `${header}\r\n${parentFields.map(() => "value").join(",")}\r\n`
     return new HttpResponse(csv, {

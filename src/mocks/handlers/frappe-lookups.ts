@@ -1,22 +1,32 @@
 import { http, HttpResponse, delay } from "msw"
 
 // ── Sales Invoices (15 records) ──────────────────────────────────────
-const salesInvoices = [
-  { name: "SINV-2026-0001", customer: "CUST-0001", customer_name: "Maple Leaf Bakery", grand_total: 2450.00, outstanding_amount: 0, posting_date: "2026-07-01", creation: "2026-07-01T10:15:00", status: "Paid", docstatus: 1 },
-  { name: "SINV-2026-0002", customer: "CUST-0002", customer_name: "Northern Lights Coffee", grand_total: 1890.50, outstanding_amount: 1890.50, posting_date: "2026-07-01", creation: "2026-07-01T11:30:00", status: "Unpaid", docstatus: 1 },
-  { name: "SINV-2026-0003", customer: "CUST-0003", customer_name: "Blue Mountain Supplies", grand_total: 3720.00, outstanding_amount: 1500.00, posting_date: "2026-07-02", creation: "2026-07-02T09:00:00", status: "Partly Paid", docstatus: 1 },
-  { name: "SINV-2026-0004", customer: "CUST-0004", customer_name: "Great Lakes Trading", grand_total: 560.75, outstanding_amount: 0, posting_date: "2026-07-02", creation: "2026-07-02T14:20:00", status: "Paid", docstatus: 1 },
-  { name: "SINV-2026-0005", customer: "CUST-0005", customer_name: "Red Maple Imports", grand_total: 4150.00, outstanding_amount: 4150.00, posting_date: "2026-07-03", creation: "2026-07-03T08:45:00", status: "Overdue", docstatus: 1 },
-  { name: "SINV-2026-0006", customer: "CUST-0001", customer_name: "Maple Leaf Bakery", grand_total: 890.25, outstanding_amount: 0, posting_date: "2026-07-03", creation: "2026-07-03T16:10:00", status: "Paid", docstatus: 1 },
-  { name: "SINV-2026-0007", customer: "CUST-0006", customer_name: "Pacific Coast Distributors", grand_total: 6780.00, outstanding_amount: 3400.00, posting_date: "2026-07-04", creation: "2026-07-04T10:00:00", status: "Partly Paid", docstatus: 1 },
-  { name: "SINV-2026-0008", customer: "CUST-0002", customer_name: "Northern Lights Coffee", grand_total: 1230.00, outstanding_amount: 0, posting_date: "2026-07-04", creation: "2026-07-04T13:30:00", status: "Paid", docstatus: 1 },
-  { name: "SINV-2026-0009", customer: "CUST-0007", customer_name: "Prairie Grain Co.", grand_total: 2950.00, outstanding_amount: 2950.00, posting_date: "2026-07-05", creation: "2026-07-05T09:15:00", status: "Unpaid", docstatus: 1 },
-  { name: "SINV-2026-0010", customer: "CUST-0003", customer_name: "Blue Mountain Supplies", grand_total: 340.00, outstanding_amount: 0, posting_date: "2026-07-05", creation: "2026-07-05T15:00:00", status: "Paid", docstatus: 1 },
-  { name: "SINV-2026-0011", customer: "CUST-0008", customer_name: "Eastern Seafood Co.", grand_total: 5120.00, outstanding_amount: 5120.00, posting_date: "2026-07-06", creation: "2026-07-06T08:30:00", status: "Overdue", docstatus: 1 },
-  { name: "SINV-2026-0012", customer: "CUST-0004", customer_name: "Great Lakes Trading", grand_total: 1875.00, outstanding_amount: 1875.00, posting_date: "2026-07-06", creation: "2026-07-06T11:00:00", status: "Unpaid", docstatus: 1 },
-  { name: "SINV-2026-0013", customer: "CUST-0009", customer_name: "Golden Harvest Organic", grand_total: 4300.00, outstanding_amount: 0, posting_date: "2026-07-07", creation: "2026-07-07T10:45:00", status: "Paid", docstatus: 1 },
-  { name: "SINV-2026-0014", customer: "CUST-0010", customer_name: "Summit Logistics", grand_total: 2890.00, outstanding_amount: 2890.00, posting_date: "2026-07-07", creation: "2026-07-07T14:20:00", status: "Unpaid", docstatus: 1 },
-  { name: "SINV-2026-0015", customer: "CUST-0001", customer_name: "Maple Leaf Bakery", grand_total: 1670.50, outstanding_amount: 800.00, posting_date: "2026-07-08", creation: "2026-07-08T09:30:00", status: "Partly Paid", docstatus: 1 },
+export const salesInvoices = [
+  { name: "SINV-2026-0001", customer: "CUST-0001", customer_name: "Maple Leaf Bakery", grand_total: 2450.00, outstanding_amount: 0, posting_date: "2026-07-01", due_date: "2026-07-15", creation: "2026-07-01T10:15:00", status: "Paid", docstatus: 1, owner: "admin@blesserp.com", modified: "2026-07-05T09:20:00", modified_by: "jane.doe@blesserp.com", _assign: '["jane.doe@blesserp.com"]', _user_tags: "Audit,Needs-Review" },
+  { name: "SINV-2026-0002", customer: "CUST-0002", customer_name: "Northern Lights Coffee", grand_total: 1890.50, outstanding_amount: 1890.50, posting_date: "2026-07-01", due_date: "2026-07-15", creation: "2026-07-01T11:30:00", status: "Unpaid", docstatus: 1, owner: "admin@blesserp.com", modified: "2026-07-01T11:30:00", modified_by: "admin@blesserp.com", _assign: '["aarav@blesserp.com"]' },
+  { name: "SINV-2026-0003", customer: "CUST-0003", customer_name: "Blue Mountain Supplies", grand_total: 3720.00, outstanding_amount: 1500.00, posting_date: "2026-07-02", due_date: "2026-07-16", creation: "2026-07-02T09:00:00", status: "Partly Paid", docstatus: 1, owner: "admin@blesserp.com", modified: "2026-07-02T09:00:00", modified_by: "admin@blesserp.com" },
+  { name: "SINV-2026-0004", customer: "CUST-0004", customer_name: "Great Lakes Trading", grand_total: 560.75, outstanding_amount: 0, posting_date: "2026-07-02", due_date: "2026-07-16", creation: "2026-07-02T14:20:00", status: "Paid", docstatus: 1, owner: "admin@blesserp.com", modified: "2026-07-02T14:20:00", modified_by: "admin@blesserp.com" },
+  { name: "SINV-2026-0005", customer: "CUST-0005", customer_name: "Red Maple Imports", grand_total: 4150.00, outstanding_amount: 4150.00, posting_date: "2026-07-03", due_date: "2026-07-17", creation: "2026-07-03T08:45:00", status: "Overdue", docstatus: 1, owner: "admin@blesserp.com", modified: "2026-07-03T08:45:00", modified_by: "admin@blesserp.com" },
+  { name: "SINV-2026-0006", customer: "CUST-0001", customer_name: "Maple Leaf Bakery", grand_total: 890.25, outstanding_amount: 0, posting_date: "2026-07-03", due_date: "2026-07-17", creation: "2026-07-03T16:10:00", status: "Paid", docstatus: 1, owner: "admin@blesserp.com", modified: "2026-07-03T16:10:00", modified_by: "admin@blesserp.com" },
+  { name: "SINV-2026-0007", customer: "CUST-0006", customer_name: "Pacific Coast Distributors", grand_total: 6780.00, outstanding_amount: 3400.00, posting_date: "2026-07-04", due_date: "2026-07-18", creation: "2026-07-04T10:00:00", status: "Partly Paid", docstatus: 1, owner: "admin@blesserp.com", modified: "2026-07-04T10:00:00", modified_by: "admin@blesserp.com" },
+  { name: "SINV-2026-0008", customer: "CUST-0002", customer_name: "Northern Lights Coffee", grand_total: 1230.00, outstanding_amount: 0, posting_date: "2026-07-04", due_date: "2026-07-18", creation: "2026-07-04T13:30:00", status: "Paid", docstatus: 1, owner: "admin@blesserp.com", modified: "2026-07-04T13:30:00", modified_by: "admin@blesserp.com" },
+  { name: "SINV-2026-0009", customer: "CUST-0007", customer_name: "Prairie Grain Co.", grand_total: 2950.00, outstanding_amount: 2950.00, posting_date: "2026-07-05", due_date: "2026-07-19", creation: "2026-07-05T09:15:00", status: "Unpaid", docstatus: 1, owner: "admin@blesserp.com", modified: "2026-07-05T09:15:00", modified_by: "admin@blesserp.com" },
+  { name: "SINV-2026-0010", customer: "CUST-0003", customer_name: "Blue Mountain Supplies", grand_total: 340.00, outstanding_amount: 0, posting_date: "2026-07-05", due_date: "2026-07-19", creation: "2026-07-05T15:00:00", status: "Paid", docstatus: 1, owner: "admin@blesserp.com", modified: "2026-07-05T15:00:00", modified_by: "admin@blesserp.com" },
+  { name: "SINV-2026-0011", customer: "CUST-0008", customer_name: "Eastern Seafood Co.", grand_total: 5120.00, outstanding_amount: 5120.00, posting_date: "2026-07-06", due_date: "2026-07-20", creation: "2026-07-06T08:30:00", status: "Overdue", docstatus: 1, owner: "admin@blesserp.com", modified: "2026-07-06T08:30:00", modified_by: "admin@blesserp.com" },
+  { name: "SINV-2026-0012", customer: "CUST-0004", customer_name: "Great Lakes Trading", grand_total: 1875.00, outstanding_amount: 1875.00, posting_date: "2026-07-06", due_date: "2026-07-20", creation: "2026-07-06T11:00:00", status: "Unpaid", docstatus: 1, owner: "admin@blesserp.com", modified: "2026-07-06T11:00:00", modified_by: "admin@blesserp.com" },
+  { name: "SINV-2026-0013", customer: "CUST-0009", customer_name: "Golden Harvest Organic", grand_total: 4300.00, outstanding_amount: 0, posting_date: "2026-07-07", due_date: "2026-07-21", creation: "2026-07-07T10:45:00", status: "Paid", docstatus: 1, owner: "admin@blesserp.com", modified: "2026-07-07T10:45:00", modified_by: "admin@blesserp.com" },
+  { name: "SINV-2026-0014", customer: "CUST-0010", customer_name: "Summit Logistics", grand_total: 2890.00, outstanding_amount: 2890.00, posting_date: "2026-07-07", due_date: "2026-07-21", creation: "2026-07-07T14:20:00", status: "Unpaid", docstatus: 1, owner: "admin@blesserp.com", modified: "2026-07-07T14:20:00", modified_by: "admin@blesserp.com" },
+  { name: "SINV-2026-0015", customer: "CUST-0001", customer_name: "Maple Leaf Bakery", grand_total: 1670.50, outstanding_amount: 800.00, posting_date: "2026-07-08", due_date: "2026-07-22", creation: "2026-07-08T09:30:00", status: "Partly Paid", docstatus: 1, owner: "admin@blesserp.com", modified: "2026-07-08T09:30:00", modified_by: "admin@blesserp.com" },
+]
+
+// ── Sample child tables so Duplicate / Return (Create menu) prefill works in demo ──
+const salesInvoiceItems = [
+  { item_code: "PRD-001", item_name: "Organic All-Purpose Flour", qty: 40, rate: 25.00, amount: 1000.00, uom: "Nos", warehouse: "Main Warehouse", income_account: "Income - BE", cost_center: "Main - BE", discount_percentage: 0, grant_commission: 1 },
+  { item_code: "PRD-005", item_name: "Maple Syrup (Grade A)", qty: 58, rate: 25.00, amount: 1450.00, uom: "Nos", warehouse: "Main Warehouse", income_account: "Income - BE", cost_center: "Main - BE", discount_percentage: 0, grant_commission: 1 },
+]
+const salesInvoiceTaxes = [
+  { charge_type: "On Net Total", account_head: "GST Tax - BE", description: "GST 5%", rate: 5, included_in_print_rate: 0 },
+  { charge_type: "On Net Total", account_head: "QST Tax - BE", description: "QST 9.975%", rate: 9.975, included_in_print_rate: 0 },
 ]
 
 // ── Payment Entries (10 records) ──────────────────────────────────────
@@ -161,7 +171,28 @@ function parseQSParams(url: string) {
   const u = new URL(url, "http://localhost")
   const filters: unknown[] = safeJsonParse(u.searchParams.get("filters"), [])
   const orFilters: unknown[] = safeJsonParse(u.searchParams.get("or_filters"), [])
-  return { filters, orFilters }
+  const orderBy = u.searchParams.get("order_by") ?? ""
+  const limitPageLength = Number(u.searchParams.get("limit_page_length") ?? 0)
+  const limitStart = Number(u.searchParams.get("limit_start") ?? 0)
+  return { filters, orFilters, orderBy, limitPageLength, limitStart }
+}
+
+// Applies an ERPNext `order_by` clause ("posting_date desc", "grand_total asc")
+// to an in-memory row list. Mirrors frappe.utils.get_order_by.
+function applyOrderBy(rows: Record<string, unknown>[], orderBy: string): Record<string, unknown>[] {
+  if (!orderBy.trim()) return rows
+  const [field, dir] = orderBy.trim().split(/\s+/, 2)
+  if (!field) return rows
+  const mult = (dir ?? "desc").toLowerCase() === "asc" ? 1 : -1
+  return [...rows].sort((a, b) => {
+    const va = a[field]
+    const vb = b[field]
+    if (va == null && vb == null) return 0
+    if (va == null) return 1
+    if (vb == null) return -1
+    if (typeof va === "number" && typeof vb === "number") return (va - vb) * mult
+    return String(va).localeCompare(String(vb)) * mult
+  })
 }
 
 export function matchesFilter(row: Record<string, unknown>, filters: unknown[]): boolean {
@@ -235,6 +266,87 @@ export const frappeLookupHandlers = [
       return HttpResponse.json({ data: doc ?? null })
     }
 
+    // Sales Invoice single doc (invoice workspace getById) — serves the list
+    // row enriched with ERPNext metadata fields.
+    if (doctype === "Sales Invoice") {
+      const row = salesInvoices.find((s) => s.name === name)
+      if (!row) return HttpResponse.json({ data: null })
+      return HttpResponse.json({
+        data: {
+          name: row.name,
+          doctype: "Sales Invoice",
+          customer: row.customer,
+          customer_name: row.customer_name,
+          grand_total: row.grand_total,
+          outstanding_amount: row.outstanding_amount,
+          paid_amount: row.grand_total - row.outstanding_amount,
+          posting_date: row.posting_date,
+          due_date: row.due_date ?? "",
+          status: row.status,
+          docstatus: row.docstatus,
+          company: "BlessERP Inc.",
+          currency: "CAD",
+          selling_price_list: "Standard Selling",
+          cost_center: "Main - BE",
+          taxes_and_charges: "Canada GST/QST - BE",
+          items: salesInvoiceItems,
+          taxes: salesInvoiceTaxes,
+          owner: row.owner,
+          creation: row.creation,
+          modified: row.modified ?? row.creation,
+          modified_by: row.modified_by ?? row.owner,
+        },
+      })
+    }
+
+    return HttpResponse.json({ data: null })
+  }),
+
+  // ── Single document update: /api/resource/{doctype}/{name} ──────────
+  http.put("/api/resource/:doctype/:name", async ({ params, request }) => {
+    await delay(80)
+    const doctype = decodeURIComponent(params.doctype as string)
+    const name = decodeURIComponent(params.name as string)
+
+    // Sales Invoice submit/update path (invoice workspace submit/update).
+    // Merge the payload into the stored row but KEEP docstatus as-is, matching
+    // ERPNext: an update on a Submitted doc never resets it to Draft, and a
+    // submit() call sets docstatus=1 explicitly in its payload.
+    if (doctype === "Sales Invoice") {
+      const idx = salesInvoices.findIndex((s) => s.name === name)
+      if (idx === -1) {
+        return HttpResponse.json({ message: "Not Found" }, { status: 404 })
+      }
+      const body = (await request.json()) as Record<string, unknown>
+      salesInvoices[idx] = { ...salesInvoices[idx], ...body, modified: new Date().toISOString().replace("T", " ").slice(0, 19) }
+      const row = salesInvoices[idx]
+      return HttpResponse.json({
+        data: {
+          name: row.name,
+          doctype: "Sales Invoice",
+          customer: row.customer,
+          customer_name: row.customer_name,
+          grand_total: row.grand_total,
+          outstanding_amount: row.outstanding_amount,
+          paid_amount: row.grand_total - row.outstanding_amount,
+          posting_date: row.posting_date,
+          due_date: row.due_date ?? "",
+          status: row.status,
+          docstatus: row.docstatus,
+          company: "BlessERP Inc.",
+          currency: "CAD",
+          selling_price_list: "Standard Selling",
+          cost_center: "Main - BE",
+          taxes_and_charges: "Canada GST/QST - BE",
+          items: salesInvoiceItems,
+          taxes: salesInvoiceTaxes,
+          owner: row.owner,
+          creation: row.creation,
+          modified: row.modified ?? row.creation,
+          modified_by: row.modified_by ?? row.owner,
+        },
+      })
+    }
     return HttpResponse.json({ data: null })
   }),
 
@@ -266,10 +378,14 @@ export const frappeLookupHandlers = [
     // Dashboard & other list doctypes
     const rows = listData[doctype]
     if (rows) {
-      const { filters, orFilters } = parseQSParams(request.url)
-      const filtered = filters.length > 0 || orFilters.length > 0
+      const { filters, orFilters, orderBy, limitPageLength, limitStart } = parseQSParams(request.url)
+      let filtered = filters.length > 0 || orFilters.length > 0
         ? rows.filter((r) => matchesFilterSet(r, filters, orFilters))
         : rows
+      filtered = applyOrderBy(filtered, orderBy)
+      if (limitPageLength > 0) {
+        filtered = filtered.slice(limitStart, limitStart + limitPageLength)
+      }
       return HttpResponse.json({ data: filtered })
     }
 

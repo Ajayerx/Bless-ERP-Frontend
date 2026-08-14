@@ -1,18 +1,29 @@
-import { apiClient, apiFormCall } from "@/services/api-client"
+import { apiClient, apiFormCall, apiClientWithBody, serverMessagesFromBody, failedNamesFromMessages, serverDownloadTemplate, ApiError, type AppMessage } from "@/services/api-client"
+import { postMethod, postMethodRaw } from "@/services/frappe-client"
 import { API_CONFIG } from "@/config/api.config"
 import { getCompany } from "@/services/company"
 import { getDefaultTaxTemplate as sharedGetDefault, getTaxTemplateDetails as sharedGetDetails } from "@/services/tax-template"
 export type { TaxTemplateResult, TaxRow } from "@/services/tax-template"
 import type { TaxTemplateResult, TaxRow } from "@/services/tax-template"
-import type { SalesInvoice, SalesInvoiceFormData, SalesInvoiceItem, SalesInvoiceTax, SalesInvoiceListResponse, EditableTaxRow, ChargeType } from "../types"
+import type { SalesInvoice, SalesInvoiceFormData, SalesInvoiceItem, SalesInvoiceTax, SalesInvoiceListResponse, SalesInvoiceAdvance, EditableTaxRow, ChargeType } from "../types"
+import { buildTimelineItems, toQuillHtml } from "@/modules/payments/services"
+import type { DocInfo, PaymentActivityItem, PaymentComment, LedgerPreviewData } from "@/modules/payments/types"
 
-export type { SalesInvoice, SalesInvoiceFormData, SalesInvoiceItem, SalesInvoiceTax, SalesInvoiceListResponse, EditableTaxRow, ChargeType }
+export type { SalesInvoice, SalesInvoiceFormData, SalesInvoiceItem, SalesInvoiceTax, SalesInvoiceListResponse, SalesInvoiceAdvance, EditableTaxRow, ChargeType }
 
 export interface AccountInfo {
   name: string
   account_name?: string
   account_type?: string
   tax_rate?: number
+}
+
+export interface LoyaltyProgramDetails {
+  loyalty_program?: string
+  expense_account?: string
+  cost_center?: string
+  conversion_factor?: number
+  [key: string]: unknown
 }
 
 interface DocTypeOption {
@@ -39,6 +50,7 @@ function buildListUrl(
   params: {
     fields: string[]
     filters?: unknown[]
+    orFilters?: unknown[]
     limit_page_length?: number
     limit_start?: number
     order_by?: string
@@ -47,17 +59,29 @@ function buildListUrl(
   const qp = new URLSearchParams()
   qp.set("fields", JSON.stringify(params.fields))
   if (params.filters) qp.set("filters", JSON.stringify(params.filters))
+  if (params.orFilters && params.orFilters.length > 0) {
+    qp.set("or_filters", JSON.stringify(params.orFilters))
+  }
   qp.set("limit_page_length", String(params.limit_page_length ?? 0))
   if (params.limit_start !== undefined) qp.set("limit_start", String(params.limit_start))
   if (params.order_by) qp.set("order_by", params.order_by)
   return `/resource/${encodeURIComponent(doctype)}?${qp.toString()}`
 }
 
-async function getCount(doctype: string, filters?: unknown[]): Promise<number> {
+// count via frappe.desk.reportview.get_count: the only count endpoint that
+// accepts a top-level `or_filters` for the list search.
+async function getCount(
+  doctype: string,
+  filters?: unknown[],
+  orFilters?: unknown[]
+): Promise<number> {
   const qp = new URLSearchParams()
   qp.set("doctype", doctype)
   if (filters) qp.set("filters", JSON.stringify(filters))
-  const result = await apiClient<number | string>(`/method/frappe.client.get_count?${qp.toString()}`)
+  if (orFilters && orFilters.length > 0) qp.set("or_filters", JSON.stringify(orFilters))
+  const result = await apiClient<number | string>(
+    `/method/frappe.desk.reportview.get_count?${qp.toString()}`
+  )
   return Number(result)
 }
 
@@ -66,6 +90,20 @@ const LIST_FIELDS = [
   "grand_total", "total_taxes_and_charges", "outstanding_amount", "status", "docstatus",
   "currency", "company",
 ]
+
+// Default columns for the server-side exporter. Keys are the parent doctype
+// ("Sales Invoice") and the child-table field name ("items" -> "Sales Invoice
+// Item" rows), matching the ERPNext Data Export format.
+export const INVOICE_EXPORT_FIELDS: Record<string, string[]> = {
+  "Sales Invoice": [
+    "name", "title", "customer", "customer_name", "posting_date", "due_date",
+    "company", "currency", "grand_total", "total_taxes_and_charges",
+    "outstanding_amount", "paid_amount", "status", "docstatus",
+  ],
+  items: [
+    "item_code", "item_name", "qty", "rate", "amount", "uom", "warehouse",
+  ],
+}
 
 const DETAIL_FIELDS = [
   ...LIST_FIELDS,
@@ -144,7 +182,27 @@ export interface PartyDetailsResponse {
   taxes_and_charges?: string
   sales_partner?: string
   commission_rate?: number
-  sales_team?: Array<{ sales_person: string; allocated_percentage?: number; commission_rate?: number }>
+  sales_team?: Array<{ sales_person: string; allocated_percentage?: number; allocated_amount?: number; commission_rate?: number; incentives?: number }>
+}
+
+function toSalesInvoiceTargetDoc(source: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {
+    doctype: "Sales Invoice",
+  }
+  for (const [key, value] of Object.entries(source)) {
+    if (value === undefined || value === null) continue
+    const mapped =
+      key === "issueDate" ? "posting_date"
+      : key === "dueDate" ? "due_date"
+      : key === "sellingPriceList" ? "selling_price_list"
+      : key === "conversionRate" ? "conversion_rate"
+      : key === "updateStock" ? "update_stock"
+      : key === "isReturn" ? "is_return"
+      : key === "customerName" ? "customer_name"
+      : key
+    out[mapped] = value
+  }
+  return out
 }
 
 export const invoiceService = {
@@ -246,6 +304,7 @@ export const invoiceService = {
     start = 0,
     pageLength = 10,
     customer?: string,
+    extraFilters?: Record<string, unknown>,
   ): Promise<{
     items: Array<{ value: string; label: string; description: string }>
   }> {
@@ -259,6 +318,7 @@ export const invoiceService = {
     const filters: Record<string, unknown> = {
       disabled: 0,
       has_variants: 0,
+      ...(extraFilters ?? {}),
     }
     if (customer) filters["customer"] = customer
     qp.set("filters", JSON.stringify(filters))
@@ -638,8 +698,36 @@ export const invoiceService = {
     })
   },
 
-  searchSalesPersons(query: string): Promise<{ items: Array<{ value: string; label: string; description: string }> }> {
-    return this.searchLink("Sales Person", query)
+  // Byte-parity for the Sales Person Link column inside the Sales Team grid
+  // (ERPNext sales_invoice.js set_query: filters {is_group: 0, enabled: 1}).
+  // Same search_link envelope as searchPaymentTerms: doctype=Sales Person,
+  // reference_doctype=Sales Team (the child table), page_length=10, filters.
+  async searchSalesTeamPersons(
+    query: string,
+  ): Promise<{ items: Array<{ value: string; label: string; description: string }> }> {
+    try {
+      const result = await apiFormCall<Array<{ value: string; label: string; description: string }>>(
+        "/method/frappe.desk.search.search_link",
+        [
+          ["txt", query],
+          ["doctype", "Sales Person"],
+          ["ignore_user_permissions", "0"],
+          ["reference_doctype", "Sales Team"],
+          ["page_length", "10"],
+          [
+            "filters",
+            JSON.stringify([
+              ["Sales Person", "is_group", "=", 0],
+              ["Sales Person", "enabled", "=", 1],
+            ]),
+          ],
+        ],
+        { doctype: "Sales Person" },
+      )
+      return { items: Array.isArray(result) ? result : [] }
+    } catch {
+      return { items: [] }
+    }
   },
 
   searchActivityTypes(query: string): Promise<{ items: Array<{ value: string; label: string; description: string }> }> {
@@ -788,12 +876,12 @@ export const invoiceService = {
       )
       const r = (result && typeof result === "object" && !Array.isArray(result)) ? result : {}
       return {
-        contact_display: (r.full_name as string) || (r.name as string) || undefined,
-        contact_email: (r.email_id as string) || undefined,
-        contact_mobile: (r.mobile_no as string) || undefined,
-        contact_phone: (r.phone as string) || undefined,
-        contact_designation: (r.designation as string) || undefined,
-        contact_department: (r.department as string) || undefined,
+        contact_display: (r.contact_display as string) || (r.contact_person as string) || undefined,
+        contact_email: (r.contact_email as string) || undefined,
+        contact_mobile: (r.contact_mobile as string) || undefined,
+        contact_phone: (r.contact_phone as string) || undefined,
+        contact_designation: (r.contact_designation as string) || undefined,
+        contact_department: (r.contact_department as string) || undefined,
       }
     } catch {
       return {}
@@ -920,14 +1008,15 @@ export const invoiceService = {
     customerId?: string
     postingDateFrom?: string
     postingDateTo?: string
+    assignedTo?: string
+    name?: string
+    sortBy?: string
+    sortOrder?: "asc" | "desc"
   }): Promise<SalesInvoiceListResponse> {
     const pageSize = params.pageLength ?? params.pageSize ?? 10
     const limit_start = params.start != null ? params.start : ((params.page ?? 1) - 1) * pageSize
     const filters: unknown[] = []
 
-    if (params.search) {
-      filters.push(["customer_name", "like", `%${params.search}%`])
-    }
     if (params.customerId) {
       filters.push(["customer", "=", params.customerId])
     }
@@ -949,6 +1038,27 @@ export const invoiceService = {
     if (params.postingDateTo) {
       filters.push(["posting_date", "<=", params.postingDateTo])
     }
+    if (params.assignedTo) {
+      filters.push(["_assign", "like", `%${params.assignedTo}%`])
+    }
+    if (params.name) {
+      filters.push(["name", "=", params.name])
+    }
+
+    // Frappe splits the list search into a top-level `or_filters` group.
+    const orFilters: unknown[] = []
+    if (params.search) {
+      const like = `%${params.search}%`
+      orFilters.push(
+        ["name", "like", like],
+        ["customer", "like", like],
+        ["customer_name", "like", like]
+      )
+    }
+
+    const order_by = params.sortBy
+      ? `${params.sortBy} ${params.sortOrder === "asc" ? "ASC" : "DESC"}`
+      : "posting_date desc"
 
     const computedPage = params.page ?? (params.start != null ? Math.floor(params.start / pageSize) + 1 : 1)
 
@@ -957,12 +1067,17 @@ export const invoiceService = {
         buildListUrl("Sales Invoice", {
           fields: LIST_FIELDS,
           filters: filters.length > 0 ? filters : undefined,
+          orFilters: orFilters.length > 0 ? orFilters : undefined,
           limit_page_length: pageSize,
           limit_start,
-          order_by: "posting_date desc",
+          order_by,
         })
       ),
-      getCount("Sales Invoice", filters.length > 0 ? filters : undefined),
+      getCount(
+        "Sales Invoice",
+        filters.length > 0 ? filters : undefined,
+        orFilters.length > 0 ? orFilters : undefined
+      ),
     ])
 
     return {
@@ -972,6 +1087,23 @@ export const invoiceService = {
       pageSize,
       totalPages: Math.max(1, Math.ceil(total / pageSize)),
     }
+  },
+
+  async exportRecords(options?: {
+    fileType?: "CSV" | "Excel"
+    recordMode?: "all" | "by_filter" | "5_records" | "blank_template"
+    fields?: Record<string, string[]>
+    filters?: unknown[]
+  }): Promise<Blob> {
+    return serverDownloadTemplate({
+      doctype: "Sales Invoice",
+      fileType: options?.fileType ?? "CSV",
+      recordMode: options?.recordMode ?? "by_filter",
+      fields: options?.fields && Object.keys(options.fields).length > 0
+        ? options.fields
+        : INVOICE_EXPORT_FIELDS,
+      filters: options?.filters,
+    })
   },
 
   async getById(name: string): Promise<SalesInvoice> {
@@ -1000,6 +1132,16 @@ export const invoiceService = {
     })
   },
 
+  // Update a Submitted/Paid invoice without touching docstatus. ERPNext only
+  // permits allow_on_submit fields on docstatus=1, so callers must send a
+  // slim payload of exactly those fields (built by the workspace).
+  async updateSubmitted(name: string, payload: Record<string, unknown>): Promise<SalesInvoice> {
+    return apiClient<SalesInvoice>(`/resource/Sales Invoice/${encodeURIComponent(name)}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    })
+  },
+
   async submit(name: string): Promise<SalesInvoice> {
     return apiClient<SalesInvoice>(`/resource/Sales Invoice/${encodeURIComponent(name)}`, {
       method: "PUT",
@@ -1008,10 +1150,17 @@ export const invoiceService = {
   },
 
   async cancel(name: string): Promise<void> {
-    return apiClient<void>("/method/frappe.client.cancel", {
-      method: "POST",
-      body: JSON.stringify({ doctype: "Sales Invoice", name }),
-    })
+    // ERPNext frappe.client.cancel can return HTTP 200 with the human reason in
+    // `_server_messages` (e.g. "Cannot delete or cancel because ... is linked
+    // with GL Entry ..."). apiClient would swallow those, so surface them here.
+    const body = await apiClientWithBody<{ _server_messages?: unknown } & Record<string, unknown>>(
+      "/method/frappe.client.cancel",
+      { method: "POST", body: JSON.stringify({ doctype: "Sales Invoice", name }) },
+    )
+    const messages = serverMessagesFromBody(body)
+    if (messages.length > 0) {
+      throw new ApiError(0, messages.map((m) => m.message).join(" "), undefined, messages[0])
+    }
   },
 
   async amend(name: string): Promise<SalesInvoice> {
@@ -1122,6 +1271,106 @@ export const invoiceService = {
     }
   },
 
+  // Byte-parity for the Payment Term Link column inside the Payment Schedule
+  // grid. Matches the ERPNext capture: doctype=Payment Term,
+  // reference_doctype=Payment Schedule (the child table), page_length=10, no
+  // filters. Same search_link envelope as searchSalesLink.
+  async searchPaymentTerms(
+    query: string,
+  ): Promise<{ items: Array<{ value: string; label: string; description: string }> }> {
+    try {
+      const result = await apiFormCall<Array<{ value: string; label: string; description: string }>>(
+        "/method/frappe.desk.search.search_link",
+        [
+          ["txt", query],
+          ["doctype", "Payment Term"],
+          ["ignore_user_permissions", "0"],
+          ["reference_doctype", "Payment Schedule"],
+          ["page_length", "10"],
+        ],
+        { doctype: "Payment Term" },
+      )
+      return { items: Array.isArray(result) ? result : [] }
+    } catch {
+      return { items: [] }
+    }
+  },
+
+  // Byte-parity with transaction.js payment_terms_template(): POSTs
+  // get_payment_terms with terms_template/posting_date/grand_total/
+  // base_grand_total and replaces the whole payment_schedule.
+  async getPaymentTerms(
+    termsTemplate: string,
+    postingDate: string,
+    grandTotal: number,
+    baseGrandTotal: number,
+  ): Promise<Array<{
+    payment_term?: string
+    description?: string
+    due_date?: string
+    invoice_portion?: number
+    payment_amount?: number
+  }> | null> {
+    try {
+      const result = await apiFormCall<Array<Record<string, unknown>>>(
+        "/method/erpnext.controllers.accounts_controller.get_payment_terms",
+        [
+          ["terms_template", termsTemplate],
+          ["posting_date", postingDate],
+          ["grand_total", String(grandTotal)],
+          ["base_grand_total", String(baseGrandTotal)],
+        ],
+      )
+      return Array.isArray(result) ? result : null
+    } catch {
+      return null
+    }
+  },
+
+  // Byte-parity with transaction.js payment_term(): POSTs
+  // get_payment_term_details for a single row when the Payment Term is
+  // picked, auto-filling description/invoice_portion/payment_amount/due_date.
+  async getPaymentTermDetails(
+    term: string,
+    postingDate: string,
+    grandTotal: number,
+    baseGrandTotal: number,
+  ): Promise<Record<string, unknown> | null> {
+    try {
+      return await apiFormCall<Record<string, unknown>>(
+        "/method/erpnext.controllers.accounts_controller.get_payment_term_details",
+        [
+          ["term", term],
+          ["posting_date", postingDate],
+          ["grand_total", String(grandTotal)],
+          ["base_grand_total", String(baseGrandTotal)],
+        ],
+      )
+    } catch {
+      return null
+    }
+  },
+
+  // Byte-parity with erpnext.utils.get_terms(): renders the Terms and
+  // Conditions template server-side and returns the text to place in `terms`.
+  async getTermsAndConditions(
+    templateName: string,
+    doc: Record<string, unknown>,
+  ): Promise<string | null> {
+    try {
+      const result = await apiFormCall<string | Record<string, unknown>>(
+        "/method/erpnext.setup.doctype.terms_and_conditions.terms_and_conditions.get_terms_and_conditions",
+        [
+          ["template_name", templateName],
+          ["doc", JSON.stringify(doc)],
+        ],
+      )
+      return typeof result === "string" ? result : null
+    } catch {
+      return null
+    }
+  },
+
   async getPrintFormats(): Promise<string[]> {
     try {
       const raw = await apiClient<Array<{ name: string }>>(
@@ -1188,14 +1437,64 @@ export const invoiceService = {
     targetDoc: Record<string, unknown>,
     args?: Record<string, unknown>,
   ): Promise<Record<string, unknown>> {
-    return apiClient<Record<string, unknown>>("/method/frappe.model.mapper.map_docs", {
-      method: "POST",
-      body: JSON.stringify({
-        method,
-        source_names: sourceNames,
-        target_doc: targetDoc,
-        args,
-      }),
+    const mappedTarget = toSalesInvoiceTargetDoc(targetDoc)
+    return apiFormCall<Record<string, unknown>>("/method/frappe.model.mapper.map_docs", [
+      ["method", method],
+      ["source_names", JSON.stringify(sourceNames)],
+      ["target_doc", JSON.stringify(mappedTarget)],
+      ["args", JSON.stringify(args ?? {})],
+    ])
+  },
+
+  async searchWidget(args: {
+    doctype: string
+    txt?: string
+    query?: string
+    searchfield?: string
+    start?: number
+    page_length?: number
+    filters?: Record<string, unknown>
+    filter_fields?: string[]
+    as_dict?: boolean
+  }): Promise<Array<Record<string, unknown>>> {
+    const fields: Array<[string, string]> = [
+      ["doctype", args.doctype],
+      ["txt", args.txt ?? ""],
+      ...(args.query ? [["query", args.query] as [string, string]] : []),
+      ...(args.searchfield ? [["searchfield", args.searchfield] as [string, string]] : []),
+      ["start", String(args.start ?? 0)],
+      ["page_length", String(args.page_length ?? 10)],
+    ]
+    if (args.filters) fields.push(["filters", JSON.stringify(args.filters)])
+    if (args.filter_fields) fields.push(["filter_fields", JSON.stringify(args.filter_fields)])
+    fields.push(["as_dict", args.as_dict === false ? "false" : "true"])
+    return apiFormCall<Array<Record<string, unknown>>>(
+      "/method/frappe.desk.search.search_widget",
+      fields,
+      { doctype: args.doctype },
+    )
+  },
+
+  async getList(args: {
+    doctype: string
+    fields: string[]
+    filters?: unknown[]
+    parent?: string
+    order_by?: string
+    limit_start?: number
+    limit_page_length?: number
+  }): Promise<Array<Record<string, unknown>>> {
+    const fields: Array<[string, string]> = [
+      ["doctype", args.doctype],
+      ["fields", JSON.stringify(args.fields)],
+    ]
+    if (args.filters) fields.push(["filters", JSON.stringify(args.filters)])
+    if (args.parent !== undefined) fields.push(["parent", args.parent])
+    if (args.order_by) fields.push(["order_by", args.order_by])
+    fields.push(["limit_start", String(args.limit_start ?? 0)])
+    fields.push(["limit_page_length", String(args.limit_page_length ?? 20)])
+    return apiFormCall<Array<Record<string, unknown>>>("/method/frappe.client.get_list", fields, {
+      doctype: args.doctype,
     })
   },
 
@@ -1214,6 +1513,21 @@ export const invoiceService = {
     )
   },
 
+  getProjectwiseTimesheetData(args: {
+    from_time: string
+    to_time: string
+    project?: string
+    parent?: string
+  }): Promise<Array<Record<string, unknown>>> {
+    return apiClient<Array<Record<string, unknown>>>(
+      "/method/erpnext.projects.doctype.timesheet.timesheet.get_projectwise_timesheet_data",
+      {
+        method: "POST",
+        body: JSON.stringify(args),
+      },
+    )
+  },
+
   async getLoyaltyPrograms(customer: string): Promise<string[]> {
     try {
       const result = await apiFormCall<{ message: string[] }>(
@@ -1224,6 +1538,51 @@ export const invoiceService = {
     } catch {
       return []
     }
+  },
+
+  async getLoyaltyProgramDetails(args: {
+    customer: string
+    loyalty_program?: string
+    expiry_date?: string
+    company?: string
+  }): Promise<LoyaltyProgramDetails> {
+    const fields: Array<[string, string]> = [["customer", args.customer]]
+    if (args.loyalty_program) fields.push(["loyalty_program", args.loyalty_program])
+    if (args.expiry_date) fields.push(["expiry_date", args.expiry_date])
+    if (args.company) fields.push(["company", args.company])
+    return apiFormCall<LoyaltyProgramDetails>(
+      "/method/erpnext.accounts.doctype.loyalty_program.loyalty_program.get_loyalty_program_details",
+      fields,
+    )
+  },
+
+  async getRedeemptionFactor(loyalty_program: string): Promise<number> {
+    const result = await apiFormCall<number | string>(
+      "/method/erpnext.accounts.doctype.loyalty_program.loyalty_program.get_redeemption_factor",
+      [["loyalty_program", loyalty_program]],
+    )
+    return Number(result)
+  },
+
+  async setAdvances(doc: Record<string, unknown>): Promise<SalesInvoiceAdvance[]> {
+    const body = await postMethodRaw<{ docs?: Array<{ advances?: SalesInvoiceAdvance[] } | null> }>(
+      "run_doc_method",
+      {
+        method: "set_advances",
+        docs: JSON.stringify({
+          ...doc,
+          doctype: "Sales Invoice",
+          name: `new-sales-invoice-${crypto.randomUUID()}`,
+          __islocal: 1,
+          __unsaved: 1,
+          docstatus: 0,
+          idx: 0,
+        }),
+        args: JSON.stringify({}),
+      },
+      { "x-frappe-doctype": encodeURIComponent("Sales Invoice") },
+    )
+    return body.docs?.[0]?.advances ?? []
   },
 
   // --- Create dropdown (navigate to new doc) ---
@@ -1300,39 +1659,6 @@ export const invoiceService = {
     )
     return Array.isArray(result) ? result : []
   },
-  async getUnallocatedAdvances(
-    party: string,
-    company: string,
-    postingDate?: string,
-  ): Promise<Array<{ reference_type: string; reference_name: string; advance_amount: number; allocated_amount: number }>> {
-    const qp = new URLSearchParams()
-    qp.set("fields", JSON.stringify(["name", "paid_amount", "unallocated_amount", "posting_date"]))
-    qp.set(
-      "filters",
-      JSON.stringify([
-        ["party", "=", party],
-        ["docstatus", "=", 1],
-        ["unallocated_amount", ">", 0],
-        ["company", "=", company],
-        ...(postingDate ? [["posting_date", ">=", postingDate]] : []),
-      ]),
-    )
-    qp.set("limit_page_length", "50")
-    try {
-      const entries = await apiClient<Array<{ name: string; paid_amount: number; unallocated_amount: number }>>(
-        `/resource/Payment Entry?${qp.toString()}`,
-      )
-      return entries.map((e) => ({
-        reference_type: "Payment Entry",
-        reference_name: e.name,
-        advance_amount: e.unallocated_amount,
-        allocated_amount: e.unallocated_amount,
-      }))
-    } catch {
-      return []
-    }
-  },
-
   async getProject(projectName: string): Promise<{ is_auto_fetch_timesheet_enabled: boolean } | null> {
     try {
       const qp = new URLSearchParams()
@@ -1410,24 +1736,259 @@ export const invoiceService = {
     )
   },
 
-  async bulkAction(doctype: string, docnames: string[], action: "submit" | "cancel"): Promise<void> {
-    await apiClient<void>(
-      "/method/frappe.desk.doctype.bulk_update.bulk_update.submit_cancel_or_update_docs",
-      { method: "POST", body: JSON.stringify({ doctype, docnames, action }) },
+  // Bulk submit/cancel via frappe.desk.doctype.bulk_update.bulk_update
+  // .submit_cancel_or_update_docs (server-side batching: sync <20 docs,
+  // enqueue 20-500, throws above 500). Mirrors ERPNext's list bulk actions.
+  // `enqueued` is true when the server pushed the batch to the background queue.
+  // `messages` carries ERPNext `_server_messages` (e.g. "Cannot delete or cancel
+  // because ... is linked with GL Entry ...") even though the server reports
+  // HTTP 200 with the failed docnames.
+  async bulkSubmit(names: string[]): Promise<{ failed: string[]; enqueued: boolean; messages: AppMessage[] }> {
+    const result = await postMethodRaw<{ message?: string[] | null; failed?: string[] } & Record<string, unknown>>(
+      "frappe.desk.doctype.bulk_update.bulk_update.submit_cancel_or_update_docs",
+      { doctype: "Sales Invoice", action: "submit", docnames: JSON.stringify(names) }
     )
+    const msg = Array.isArray(result.message) ? result.message : []
+    const messages = serverMessagesFromBody(result)
+    const explicit = Array.isArray(result.failed) ? result.failed : msg
+    return {
+      failed: explicit.length > 0 ? explicit : failedNamesFromMessages(names, messages),
+      enqueued: result.message == null,
+      messages,
+    }
   },
 
-  async bulkDelete(doctype: string, items: string[]): Promise<void> {
-    await apiClient<void>(
-      "/method/frappe.desk.reportview.delete_items",
-      { method: "POST", body: JSON.stringify({ doctype, items: JSON.stringify(items) }) },
+  async bulkCancel(names: string[]): Promise<{ failed: string[]; enqueued: boolean; messages: AppMessage[] }> {
+    const result = await postMethodRaw<{ message?: string[] | null; failed?: string[] } & Record<string, unknown>>(
+      "frappe.desk.doctype.bulk_update.bulk_update.submit_cancel_or_update_docs",
+      { doctype: "Sales Invoice", action: "cancel", docnames: JSON.stringify(names) }
     )
+    const msg = Array.isArray(result.message) ? result.message : []
+    const messages = serverMessagesFromBody(result)
+    const explicit = Array.isArray(result.failed) ? result.failed : msg
+    return {
+      failed: explicit.length > 0 ? explicit : failedNamesFromMessages(names, messages),
+      enqueued: result.message == null,
+      messages,
+    }
+  },
+
+  // Bulk delete via frappe.desk.reportview.delete_items. Mirrors the ERPNext
+  // list "Delete" action (allows selected docs, falls back to filtered rows).
+  async bulkDelete(names: string[]): Promise<{ failed: string[]; messages: AppMessage[] }> {
+    const result = await postMethodRaw<{ message?: { undeleted_items?: string[] } | string[] } & Record<string, unknown>>(
+      "frappe.desk.reportview.delete_items",
+      {
+        doctype: "Sales Invoice",
+        items: JSON.stringify(names),
+      }
+    )
+    const msg = result.message
+    const messages = serverMessagesFromBody(result)
+    if (Array.isArray(msg)) return { failed: msg.length > 0 ? msg : failedNamesFromMessages(names, messages), messages }
+    const undeleted = Array.isArray(msg?.undeleted_items) ? msg.undeleted_items : []
+    return {
+      failed: undeleted.length > 0 ? undeleted : failedNamesFromMessages(names, messages),
+      messages,
+    }
   },
 
   async getLinkedDocs(doctype: string, docname: string): Promise<Record<string, Array<{ name: string; docstatus: number }>>> {
     return apiClient<Record<string, Array<{ name: string; docstatus: number }>>>(
       "/method/frappe.model.utils.get_linked_docs",
       { method: "POST", body: JSON.stringify({ doctype, docname }) },
+    )
+  },
+
+  // ── Docinfo / activity timeline (form footer) ─────────────────────
+
+  // frappe.desk.form.load.get_docinfo — the exact endpoint ERPNext's form
+  // footer uses to fetch comments + versions for the timeline.
+  async getDocInfo(name: string): Promise<DocInfo> {
+    const body = await apiClientWithBody<{ docinfo?: DocInfo }>(
+      `/method/frappe.desk.form.load.get_docinfo?doctype=Sales%20Invoice&name=${encodeURIComponent(name)}`,
+    )
+    return body.docinfo ?? { comments: [], versions: [] }
+  },
+
+  // ERPNext-style timeline built from get_docinfo + the doc's own timestamps.
+  async getActivity(doc: SalesInvoice, currentUserId?: string): Promise<PaymentActivityItem[]> {
+    const docinfo = await this.getDocInfo(doc.name)
+    return buildTimelineItems(doc, docinfo, currentUserId)
+  },
+
+  // ── Comments (frappe.desk.form.utils) ─────────────────────────────
+  async addComment(
+    name: string,
+    content: string,
+    commentEmail: string,
+    commentBy: string,
+  ): Promise<PaymentComment> {
+    const row = await postMethod<{ name: string; content: string; owner: string; creation: string }>(
+      "frappe.desk.form.utils.add_comment",
+      {
+        reference_doctype: "Sales Invoice",
+        reference_name: name,
+        content: toQuillHtml(content),
+        comment_email: commentEmail,
+        comment_by: commentBy,
+      },
+    )
+    return {
+      id: row.name,
+      content: row.content,
+      author: row.owner,
+      createdAt: row.creation,
+    }
+  },
+
+  async updateComment(name: string, content: string): Promise<{ name: string }> {
+    return postMethod<{ name: string }>("frappe.desk.form.utils.update_comment", {
+      name,
+      content: toQuillHtml(content),
+    })
+  },
+
+  async deleteComment(name: string): Promise<{ message: string }> {
+    return postMethod<{ message: string }>("frappe.client.delete", {
+      doctype: "Comment",
+      name,
+    })
+  },
+
+  // ── Assignment (frappe.desk.form.assign_to) ───────────────────────
+
+  async searchAssignableUsers(
+    query: string,
+  ): Promise<{ value: string; label: string; description: string }[]> {
+    const results = await apiClient<{ value: string; label?: string; description?: string }[]>(
+      `/method/frappe.desk.search.search_link?` +
+        new URLSearchParams({
+          doctype: "User",
+          txt: query,
+          page_length: "10",
+          filters: JSON.stringify({ user_type: "System User", enabled: 1 }),
+        }).toString(),
+    )
+    return (results ?? []).map((u) => ({
+      value: u.value,
+      label: u.label ?? u.value,
+      description: u.description ?? "",
+    }))
+  },
+
+  async assignTo(names: string[], user: string): Promise<void> {
+    await postMethod("frappe.desk.form.assign_to.add_multiple", {
+      assign_to: JSON.stringify([user]),
+      doctype: "Sales Invoice",
+      name: JSON.stringify(names),
+    })
+  },
+
+  async removeAssignment(names: string[]): Promise<void> {
+    await postMethod("frappe.desk.form.assign_to.remove_multiple", {
+      doctype: "Sales Invoice",
+      names: JSON.stringify(names),
+    })
+  },
+
+  async assignUserToDoc(name: string, user: string): Promise<void> {
+    await postMethod("frappe.desk.form.assign_to.add", {
+      assign_to: JSON.stringify([user]),
+      doctype: "Sales Invoice",
+      name,
+    })
+  },
+
+  async unassignUserFromDoc(name: string, user: string): Promise<void> {
+    await postMethod("frappe.desk.form.assign_to.remove", {
+      doctype: "Sales Invoice",
+      name,
+      assign_to: user,
+    })
+  },
+
+  async completeOwnAssignment(name: string, user: string): Promise<void> {
+    await postMethod("frappe.desk.form.assign_to.close", {
+      doctype: "Sales Invoice",
+      name,
+      assign_to: user,
+    })
+  },
+
+  // ── Tags (frappe.desk.doctype.tag.tag) ────────────────────────────
+
+  async addTags(names: string[], tags: string | string[], color = ""): Promise<void> {
+    const tagLabels = Array.isArray(tags) ? tags : [tags]
+    await postMethod("frappe.desk.doctype.tag.tag.add_tags", {
+      tags: JSON.stringify(tagLabels),
+      dt: "Sales Invoice",
+      docs: JSON.stringify(names),
+      color,
+    })
+  },
+
+  async addTagToDoc(name: string, tag: string): Promise<void> {
+    await postMethod("frappe.desk.doctype.tag.tag.add_tag", {
+      tag,
+      dt: "Sales Invoice",
+      dn: name,
+    })
+  },
+
+  async removeTagFromDoc(name: string, tag: string): Promise<void> {
+    await postMethod("frappe.desk.doctype.tag.tag.remove_tag", {
+      tag,
+      dt: "Sales Invoice",
+      dn: name,
+    })
+  },
+
+  async searchTags(query: string): Promise<string[]> {
+    try {
+      return (
+        (await postMethod<string[] | null>("frappe.desk.doctype.tag.tag.get_tags", {
+          doctype: "Sales Invoice",
+          txt: query,
+        })) ?? []
+      )
+    } catch {
+      return []
+    }
+  },
+
+  async resolveUserNames(
+    ids: string[],
+  ): Promise<Record<string, { full_name?: string }>> {
+    const uniqueIds = Array.from(new Set(ids.filter(Boolean)))
+    if (uniqueIds.length === 0) return {}
+    try {
+      const rows = await apiClient<Array<{ name: string; full_name?: string }>>(
+        `/resource/User?` +
+          new URLSearchParams({
+            fields: JSON.stringify(["name", "full_name"]),
+            filters: JSON.stringify([["name", "in", uniqueIds]]),
+            limit_page_length: String(uniqueIds.length),
+          }).toString(),
+      )
+      const map: Record<string, { full_name?: string }> = {}
+      for (const row of rows ?? []) {
+        if (row?.name) map[row.name] = { full_name: row.full_name ?? row.name }
+      }
+      return map
+    } catch {
+      return {}
+    }
+  },
+
+  // ── Accounting ledger preview ─────────────────────────────────────
+  async getAccountingLedgerPreview(company: string, name: string): Promise<LedgerPreviewData> {
+    return apiClient<LedgerPreviewData>(
+      "/method/erpnext.controllers.stock_controller.show_accounting_ledger_preview",
+      {
+        method: "POST",
+        body: JSON.stringify({ company, doctype: "Sales Invoice", docname: name }),
+      },
     )
   },
 }
