@@ -1,6 +1,6 @@
 import { apiClient } from "@/services/api-client"
-export type { CompanyInfo, TaxConfig, AppDefaults, AppUser, UserProfile, UserRole, NotificationPreferences, SecuritySettings, AppearanceSettings, Settings } from "../types"
-import type { Settings } from "../types"
+import type { CompanyInfo, TaxConfig, AppDefaults, AppUser, UserProfile, UserRole, NotificationPreferences, SecuritySettings, AppearanceSettings, Settings } from "../types"
+export type { CompanyInfo, TaxConfig, AppDefaults, AppUser, UserProfile, UserRole, NotificationPreferences, SecuritySettings, AppearanceSettings, Settings }
 
 function getCookie(name: string): string | undefined {
   const match = document.cookie.match(new RegExp(`(?:^|; )${name}=([^;]*)`))
@@ -97,7 +97,7 @@ function invertTheme(t: "light" | "dark" | "system"): "Light" | "Dark" | "Automa
   return "Light"
 }
 
-function parseGstRates(company: FrappeCompanyDoc): { gstRate: number; qstRate: number; gstEnabled: boolean; qstEnabled: boolean } {
+function parseGstRates(): { gstRate: number; qstRate: number; gstEnabled: boolean; qstEnabled: boolean } {
   return { gstRate: 0.05, qstRate: 0.09975, gstEnabled: true, qstEnabled: false }
 }
 
@@ -120,7 +120,7 @@ export const settingsService = {
         ? await apiClient<FrappeCompanyDoc>(`/resource/Company/${encodeURIComponent(companyName)}`).catch(() => null)
         : null
 
-      const gst = companyDoc ? parseGstRates(companyDoc) : { gstRate: 0.05, qstRate: 0.09975, gstEnabled: false, qstEnabled: false }
+      const gst = companyDoc ? parseGstRates() : { gstRate: 0.05, qstRate: 0.09975, gstEnabled: false, qstEnabled: false }
 
       const u = userDoc ?? ({} as FrappeUserDoc)
 

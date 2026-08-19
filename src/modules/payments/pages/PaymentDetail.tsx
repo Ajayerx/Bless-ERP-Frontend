@@ -121,7 +121,7 @@ export default function PaymentDetail() {
       const blobUrl = URL.createObjectURL(blob)
       window.open(blobUrl, "_blank")
     } catch {
-      showMessage("Failed to generate PDF", "error")
+      showMessage("Failed to generate PDF")
     }
   }, [payment, showMessage])
 

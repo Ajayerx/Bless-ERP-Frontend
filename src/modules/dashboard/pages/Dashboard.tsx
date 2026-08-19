@@ -116,7 +116,7 @@ export default function Dashboard() {
   const { data, loading } = useDashboard(startDate, endDate)
   const { user } = useAuth()
   const { orderedWidgets, isVisible, toggleWidget, reorderWidgets, resetWidgets, getWidgetSize, availableWidgets } = useDashboardWidgets()
-  const { isKpiVisible, toggleKpi, visibleCount } = useKpiVisibility()
+  const { isKpiVisible, toggleKpi } = useKpiVisibility()
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),

@@ -1,5 +1,6 @@
 import { apiClient } from "@/services/api-client"
-export type { OpportunityStage, Opportunity, OpportunityListResponse, OpportunityFormData } from "../types"
+import type { OpportunityStage, Opportunity, OpportunityListResponse, OpportunityFormData } from "../types"
+export type { OpportunityStage, Opportunity, OpportunityListResponse, OpportunityFormData }
 
 export const opportunityService = {
   list: (params: { search?: string; page?: number } = {}): Promise<OpportunityListResponse> => {

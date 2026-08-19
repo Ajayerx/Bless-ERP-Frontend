@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef, forwardRef, useImperativeHandle } from "react"
-import { useNavigate, Link } from "react-router-dom"
+import { Link } from "react-router-dom"
 import {
   Loader2, Trash2, FileText, RefreshCw, Save,
   Check, Ban, GitBranch, Printer, Mail, Copy, ChevronDown,
@@ -56,7 +56,7 @@ function formatCurrency(n: number | null | undefined, currency?: string): string
       minimumFractionDigits: 2,
     }).format(num)
   } catch {
-    return `$${n.toFixed(2)}`
+    return `$${num.toFixed(2)}`
   }
 }
 
@@ -111,12 +111,10 @@ export default forwardRef<PaymentFormHandle, PaymentFormProps>(function PaymentF
   duplicate = false,
   onDirtyChange,
   hideFooter = false,
-  ledger,
   onAfterSave,
 }: PaymentFormProps, ref) {
   const { showMessage } = useMessageDialog()
   const { addToast } = useToast()
-  const navigate = useNavigate()
   const isAmend = !!initialValues && mode !== "existing" && !duplicate
   const isExisting = mode === "existing" && !!initialValues
   const docstatus = isExisting ? initialValues.docstatus : 0

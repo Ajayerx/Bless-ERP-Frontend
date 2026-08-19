@@ -5,6 +5,7 @@ export interface Vendor {
   email: string
   phone: string
   billingAddress: string
+  shippingAddress?: string
   taxId: string
   balance: number
   status: "active" | "inactive"
@@ -24,5 +25,6 @@ export interface VendorFormData {
   email: string
   phone: string
   billingAddress: string
+  shippingAddress?: string
   taxId: string
 }

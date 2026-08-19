@@ -1,5 +1,6 @@
 import { apiClient } from "@/services/api-client"
-export type { FollowUp, FollowUpListResponse } from "../types"
+import type { FollowUp, FollowUpListResponse } from "../types"
+export type { FollowUp, FollowUpListResponse }
 
 export const followUpService = {
   async list(params: {

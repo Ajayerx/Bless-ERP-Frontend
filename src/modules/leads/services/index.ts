@@ -1,5 +1,6 @@
 import { apiClient } from "@/services/api-client"
-export type { Lead, LeadFormData, LeadListResponse } from "../types"
+import type { Lead, LeadFormData, LeadListResponse } from "../types"
+export type { Lead, LeadFormData, LeadListResponse }
 
 export const leadService = {
   async list(params: { search?: string; page?: number; pageSize?: number }): Promise<LeadListResponse> {

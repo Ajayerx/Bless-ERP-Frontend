@@ -1,8 +1,12 @@
 import { apiClient } from "@/services/api-client"
-export type {
+import type {
   Contact, ContactListResponse, ContactFormData,
   ContactEmailRow, ContactPhoneRow, DynamicLinkRow,
 } from "../types"
+export type {
+  Contact, ContactListResponse, ContactFormData,
+  ContactEmailRow, ContactPhoneRow, DynamicLinkRow,
+}
 export { CONTACT_FIELDS } from "../types"
 
 function buildListUrl(

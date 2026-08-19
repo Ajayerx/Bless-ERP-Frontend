@@ -4,13 +4,12 @@ import { Mail, Phone, Users } from "lucide-react";
 import DataTable, { type Column } from "@/components/ui/DataTable";
 import { Badge, Avatar, ListFilterBar } from "@/components/ui";
 import { type Customer, type CustomerListResponse } from "@/services";
-import { formatCurrency, cn } from "@/lib/utils";
 
 const columns: Column<Customer>[] = [
   {
     key: "customer_name",
     header: "Customer",
-    width: "w-[23%]",
+    width: "w-[28%]",
     render: (c) => (
       <div className="flex items-center gap-3 min-w-0">
         {c.image ? (
@@ -32,7 +31,7 @@ const columns: Column<Customer>[] = [
   {
     key: "email_id",
     header: "Contact",
-    width: "w-[19%]",
+    width: "w-[24%]",
     title: (c) => `Contact: ${[c.email_id, c.mobile_no].filter(Boolean).join(" · ")}`,
     render: (c) => (
       <div className="space-y-0.5 min-w-0">
@@ -50,7 +49,7 @@ const columns: Column<Customer>[] = [
   {
     key: "customer_group",
     header: "Group",
-    width: "w-[12%]",
+    width: "w-[14%]",
     render: (c) => (
       <span className="text-sm text-muted">{c.customer_group || "—"}</span>
     ),
@@ -58,32 +57,15 @@ const columns: Column<Customer>[] = [
   {
     key: "territory",
     header: "Territory",
-    width: "w-[15%]",
+    width: "w-[17%]",
     render: (c) => (
       <span className="text-sm text-muted">{c.territory || "—"}</span>
     ),
   },
   {
-    key: "outstanding",
-    header: "Outstanding",
-    align: "right",
-    width: "w-[16%]",
-    title: (c) => `Outstanding: ${formatCurrency(c.outstanding)}`,
-    render: (c) => (
-      <span
-        className={cn(
-          "font-semibold tabular-nums",
-          c.outstanding > 0 ? "text-heading" : "text-muted",
-        )}
-      >
-        {c.outstanding > 0 ? formatCurrency(c.outstanding) : "—"}
-      </span>
-    ),
-  },
-  {
     key: "status",
     header: "Status",
-    width: "w-[11%]",
+    width: "w-[13%]",
     title: (c) => `Status: ${c.status === "active" ? "Active" : "Inactive"}`,
     render: (c) => (
       <Badge variant={c.status === "active" ? "success" : "default"}>

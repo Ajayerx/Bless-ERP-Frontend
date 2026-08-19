@@ -1,5 +1,6 @@
 import { apiClient } from "@/services/api-client"
-export type { Vendor, VendorListResponse, VendorFormData } from "../types"
+import type { Vendor, VendorListResponse, VendorFormData } from "../types"
+export type { Vendor, VendorListResponse, VendorFormData }
 
 export const vendorService = {
   list: (params: { search?: string; page?: number; pageSize?: number }): Promise<VendorListResponse> => {

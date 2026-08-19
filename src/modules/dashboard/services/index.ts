@@ -1,5 +1,6 @@
 import { apiClient } from "@/services/api-client"
-export type { KpiMetric, SalesDay, RecentInvoice, TopCustomer, InventoryAlert, RecentPayment, TodaySales, LowStockItem, CustomerActivity, DashboardData } from "../types"
+import type { KpiMetric, SalesDay, RecentInvoice, TopCustomer, InventoryAlert, RecentPayment, TodaySales, LowStockItem, CustomerActivity, DashboardData } from "../types"
+export type { KpiMetric, SalesDay, RecentInvoice, TopCustomer, InventoryAlert, RecentPayment, TodaySales, LowStockItem, CustomerActivity, DashboardData }
 export { todoService } from "./todo.service"
 export type { TodoItem } from "./todo.service"
 export { notificationService, timeAgo } from "./notification.service"
@@ -430,7 +431,7 @@ function buildInventoryAlerts(
     if (!pendingItems.has(po.item_code)) pendingItems.set(po.item_code, [])
     pendingItems.get(po.item_code)!.push(po.parent)
   }
-  for (const [itemCode, pos] of pendingItems) {
+  for (const itemCode of pendingItems.keys()) {
     alerts.push({
       id: `pending-${itemCode}`,
       productName: itemNames.get(itemCode) ?? itemCode,

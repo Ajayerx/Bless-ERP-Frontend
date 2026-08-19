@@ -6,6 +6,7 @@ import { Button } from "@/components/ui"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useNotifications } from "../hooks/useNotifications"
 import { timeAgo, type NotificationItem } from "@/services"
+import { sanitizeHtml } from "@/lib/utils"
 
 const dotColors: Record<string, string> = {
   Success: "bg-green-500",
@@ -119,7 +120,7 @@ export default function Notifications() {
                     className={`w-2.5 h-2.5 rounded-full mt-1.5 shrink-0 ${dotColors[n.type] ?? "bg-blue-500"}`}
                   />
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm text-body leading-snug">{n.subject}</p>
+                    <p className="text-sm text-body leading-snug" dangerouslySetInnerHTML={{ __html: sanitizeHtml(n.subject) }} />
                     <p className="text-xs text-muted mt-0.5">{timeAgo(n.creation)}</p>
                   </div>
                   {!n.read && (

@@ -5,7 +5,7 @@ import { useNavigate } from "react-router-dom"
 import { motion } from "framer-motion"
 import { ArrowLeft } from "lucide-react"
 import Topbar from "@/components/layout/Topbar"
-import { Button, Input, Link } from "@/components/ui"
+import { Button, Link } from "@/components/ui"
 import { leadService } from "@/services"
 
 const sourceOptions = [
@@ -23,7 +23,7 @@ export default function NewLead() {
     if (!form.firstName || !form.lastName || !form.email) return
     setSaving(true)
     try {
-      await leadService.create({ ...form, estimatedValue: parseFloat(form.estimatedValue) || 0, status: "new" })
+      await leadService.create({ ...form, estimatedValue: parseFloat(form.estimatedValue) || 0, status: "new" } as Partial<import("@/services").Lead>)
       navigate("/leads")
     } finally { setSaving(false) }
   }

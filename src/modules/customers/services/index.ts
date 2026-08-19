@@ -1,4 +1,7 @@
-import { apiClient } from "@/services/api-client"
+import { apiClient, apiClientWithBody, serverDownloadTemplate } from "@/services/api-client"
+import { postMethod, withDedup } from "@/services/frappe-client"
+import { buildTimelineItems, toQuillHtml } from "@/modules/payments/services"
+import type { DocInfo, PaymentActivityItem, PaymentComment } from "@/modules/payments/types"
 import type {
   Customer, CustomerListResponse, AddressInput, AllowedCompanyRow,
   CreditLimitRow, PartyAccountRow, SalesTeamRow, PortalUserRow,
@@ -36,9 +39,44 @@ async function getCount(doctype: string, filters?: unknown[]): Promise<number> {
   qp.set("doctype", doctype)
   if (filters) qp.set("filters", JSON.stringify(filters))
   const result = await apiClient<number | string>(
-    `/method/frappe.client.get_count?${qp.toString()}`
+    `/method/frappe.desk.reportview.get_count?${qp.toString()}`
   )
   return Number(result)
+}
+
+interface ReportViewParams {
+  doctype: string
+  fields: string[]
+  filters?: unknown[]
+  start?: number
+  page_length?: number
+  order_by?: string
+}
+
+async function fetchReportView(
+  params: ReportViewParams
+): Promise<Array<Record<string, unknown>>> {
+  const body = await postMethod<{ keys: string[]; values: unknown[][] }>(
+    "frappe.desk.reportview.get",
+    {
+      doctype: params.doctype,
+      fields: params.fields,
+      filters: params.filters ?? [],
+      order_by: params.order_by ?? "",
+      start: params.start ?? 0,
+      page_length: params.page_length ?? 20,
+      view: "List",
+      with_comment_count: 1,
+    }
+  )
+  const keys = body.keys ?? []
+  return (body.values ?? []).map((row) => {
+    const obj: Record<string, unknown> = {}
+    keys.forEach((key, index) => {
+      obj[key] = row[index]
+    })
+    return obj
+  })
 }
 
 async function fetchLinkOptions(doctype: string, orderByField = "name", filters?: unknown[]): Promise<string[]> {
@@ -140,6 +178,23 @@ const CUSTOMER_FIELDS: (keyof CustomerRow)[] = [
   "disabled", "is_frozen", "creation", "modified",
   "image",
 ]
+
+// Default columns for the server-side exporter (ERPNext Data Export format).
+export const CUSTOMER_EXPORT_FIELDS: Record<string, string[]> = {
+  Customer: [
+    "name", "customer_name", "customer_type", "customer_group", "territory",
+    "industry", "market_segment", "website", "language", "default_currency",
+    "default_price_list", "payment_terms", "tax_id", "tax_category",
+    "tax_withholding_category", "mobile_no", "email_id",
+    "customer_primary_contact", "customer_primary_address", "customer_details",
+    "so_required", "dn_required", "is_frozen", "disabled", "creation", "modified",
+  ],
+  companies: ["company"],
+  credit_limits: ["company", "credit_limit", "bypass_credit_limit_check"],
+  accounts: ["company", "account", "account_name"],
+  sales_team: ["sales_person", "contact_no", "allocated_percentage", "commission_rate"],
+  portal_users: ["user"],
+}
 
 function toCustomer(row: CustomerRow, outstanding: number): Customer {
   return {
@@ -417,21 +472,23 @@ export const customerService = {
     const filters = [...searchFilters, ...extraFilters] as unknown[]
     const queryFilters = filters.length > 0 ? filters : undefined
 
-    const [rows, total] = await Promise.all([
-      apiClient<CustomerRow[]>(
-        buildListUrl("Customer", {
+    const dedupKey = `customer-list|${JSON.stringify(queryFilters ?? [])}|${limit_start}|${pageSize}`
+    const { rows, total } = await withDedup(dedupKey, 2000, async () => {
+      const [reportViewRows, count] = await Promise.all([
+        fetchReportView({
+          doctype: "Customer",
           fields: CUSTOMER_FIELDS as string[],
           filters: queryFilters,
-          limit_page_length: pageSize,
-          limit_start,
+          start: limit_start,
+          page_length: pageSize,
           order_by: "modified desc",
-        })
-      ),
-      getCount("Customer", queryFilters as unknown[] | undefined),
-    ])
+        }),
+        getCount("Customer", queryFilters as unknown[] | undefined),
+      ])
+      return { rows: reportViewRows as CustomerRow[], total: count }
+    })
 
-    const outstandingMap = await fetchOutstandingByCustomer(rows.map((r) => r.name))
-    const items = rows.map((row) => toCustomer(row, outstandingMap.get(row.name) ?? 0))
+    const items = rows.map((row) => toCustomer(row, 0))
 
     return {
       items,
@@ -625,6 +682,204 @@ export const customerService = {
     return deleteAddress(addressName)
   },
 
+  // ── Activity timeline / comments (ERPNext form footer) ────────────
+
+  async getDocInfo(name: string): Promise<DocInfo> {
+    const body = await apiClientWithBody<{ docinfo?: DocInfo }>(
+      `/method/frappe.desk.form.load.get_docinfo?doctype=Customer&name=${encodeURIComponent(name)}`,
+    )
+    return body.docinfo ?? { comments: [], versions: [] }
+  },
+
+  async getActivity(doc: CustomerDetail, currentUserId?: string): Promise<PaymentActivityItem[]> {
+    const docinfo = await this.getDocInfo(doc.name)
+    return buildTimelineItems(doc, docinfo, currentUserId)
+  },
+
+  async addComment(
+    name: string,
+    content: string,
+    commentEmail: string,
+    commentBy: string,
+  ): Promise<PaymentComment> {
+    const row = await postMethod<{ name: string; content: string; owner: string; creation: string }>(
+      "frappe.desk.form.utils.add_comment",
+      {
+        reference_doctype: "Customer",
+        reference_name: name,
+        content: toQuillHtml(content),
+        comment_email: commentEmail,
+        comment_by: commentBy,
+      },
+    )
+    return {
+      id: row.name,
+      content: row.content,
+      author: row.owner,
+      createdAt: row.creation,
+    }
+  },
+
+  async updateComment(name: string, content: string): Promise<{ name: string }> {
+    return postMethod<{ name: string }>("frappe.desk.form.utils.update_comment", {
+      name,
+      content: toQuillHtml(content),
+    })
+  },
+
+  async deleteComment(name: string): Promise<{ message: string }> {
+    return postMethod<{ message: string }>("frappe.client.delete", {
+      doctype: "Comment",
+      name,
+    })
+  },
+
+  // ── Single-doc assignment (ERPNext form sidebar) ──────────────────
+
+  async assignUserToDoc(name: string, user: string): Promise<void> {
+    await postMethod("frappe.desk.form.assign_to.add", {
+      assign_to: JSON.stringify([user]),
+      doctype: "Customer",
+      name,
+    })
+  },
+
+  async unassignUserFromDoc(name: string, user: string): Promise<void> {
+    await postMethod("frappe.desk.form.assign_to.remove", {
+      doctype: "Customer",
+      name,
+      assign_to: user,
+    })
+  },
+
+  async completeOwnAssignment(name: string, user: string): Promise<void> {
+    await postMethod("frappe.desk.form.assign_to.close", {
+      doctype: "Customer",
+      name,
+      assign_to: user,
+    })
+  },
+
+  // ── Single-doc tags (ERPNext form sidebar) ────────────────────────
+
+  async addTagToDoc(name: string, tag: string): Promise<void> {
+    await postMethod("frappe.desk.doctype.tag.tag.add_tag", {
+      tag,
+      dt: "Customer",
+      dn: name,
+    })
+  },
+
+  async removeTagFromDoc(name: string, tag: string): Promise<void> {
+    await postMethod("frappe.desk.doctype.tag.tag.remove_tag", {
+      tag,
+      dt: "Customer",
+      dn: name,
+    })
+  },
+
+  async searchTags(query: string): Promise<string[]> {
+    try {
+      return (
+        (await postMethod<string[] | null>("frappe.desk.doctype.tag.tag.get_tags", {
+          doctype: "Customer",
+          txt: query,
+        })) ?? []
+      )
+    } catch {
+      return []
+    }
+  },
+
+  async resolveUserNames(
+    ids: string[],
+  ): Promise<Record<string, { full_name?: string }>> {
+    const uniqueIds = Array.from(new Set(ids.filter(Boolean)))
+    if (uniqueIds.length === 0) return {}
+    try {
+      const rows = await apiClient<Array<{ name: string; full_name?: string }>>(
+        `/resource/User?` +
+          new URLSearchParams({
+            fields: JSON.stringify(["name", "full_name"]),
+            filters: JSON.stringify([["name", "in", uniqueIds]]),
+            limit_page_length: String(uniqueIds.length),
+          }).toString(),
+      )
+      const map: Record<string, { full_name?: string }> = {}
+      for (const row of rows ?? []) {
+        if (row?.name) map[row.name] = { full_name: row.full_name ?? row.name }
+      }
+      return map
+    } catch {
+      return {}
+    }
+  },
+
+  // ── Bulk assignment / tags (list toolbar) ─────────────────────────
+
+  async searchAssignableUsers(
+    query: string,
+  ): Promise<{ value: string; label: string; description: string }[]> {
+    const results = await apiClient<{ value: string; label?: string; description?: string }[]>(
+      `/method/frappe.desk.search.search_link?` +
+        new URLSearchParams({
+          doctype: "User",
+          txt: query,
+          page_length: "10",
+          filters: JSON.stringify({ user_type: "System User", enabled: 1 }),
+        }).toString(),
+    )
+    return (results ?? []).map((u) => ({
+      value: u.value,
+      label: u.label ?? u.value,
+      description: u.description ?? "",
+    }))
+  },
+
+  async assignTo(names: string[], user: string): Promise<void> {
+    await postMethod("frappe.desk.form.assign_to.add_multiple", {
+      assign_to: JSON.stringify([user]),
+      doctype: "Customer",
+      name: JSON.stringify(names),
+    })
+  },
+
+  async removeAssignment(names: string[]): Promise<void> {
+    await postMethod("frappe.desk.form.assign_to.remove_multiple", {
+      doctype: "Customer",
+      names: JSON.stringify(names),
+    })
+  },
+
+  async addTags(names: string[], tags: string | string[], color = ""): Promise<void> {
+    const tagLabels = Array.isArray(tags) ? tags : [tags]
+    await postMethod("frappe.desk.doctype.tag.tag.add_tags", {
+      tags: JSON.stringify(tagLabels),
+      dt: "Customer",
+      docs: JSON.stringify(names),
+      color,
+    })
+  },
+
+  // ── Server-side export (ERPNext Data Export, invoice-style) ───────
+
+  async exportRecords(options?: {
+    fileType?: "CSV" | "Excel"
+    recordMode?: "all" | "by_filter" | "5_records" | "blank_template"
+    fields?: Record<string, string[]>
+    filters?: unknown[]
+  }): Promise<Blob> {
+    return serverDownloadTemplate({
+      doctype: "Customer",
+      fileType: options?.fileType ?? "CSV",
+      recordMode: options?.recordMode ?? "by_filter",
+      fields: options?.fields && Object.keys(options.fields).length > 0
+        ? options.fields
+        : CUSTOMER_EXPORT_FIELDS,
+      filters: options?.filters,
+    })
+  },
+
   async exportToCsv(params?: { search?: string }): Promise<void> {
     const result = await customerService.list({ search: params?.search, page: 1, pageSize: 9999 })
     const headers = ["name", "customer_name", "customer_type", "customer_group", "territory", "email_id", "mobile_no", "outstanding", "status", "creation"]
@@ -686,76 +941,5 @@ export const customerService = {
       }
     }
     return { success, failed, errors }
-  },
-}
-
-// --- Notes (ERPNext Communication doctype with comment_type="Comment") ---
-
-export interface CustomerNote {
-  id: string
-  content: string
-  author: string
-  createdAt: string
-}
-
-export const noteService = {
-  async list(customerName: string): Promise<CustomerNote[]> {
-    try {
-      const rows = await apiClient<{
-        name: string
-        content: string
-        owner: string
-        creation: string
-      }[]>(
-        buildListUrl("Communication", {
-          fields: ["name", "content", "owner", "creation"],
-          filters: [
-            ["communication_type", "=", "Comment"],
-            ["reference_doctype", "=", "Customer"],
-            ["reference_name", "=", customerName],
-          ],
-          limit_page_length: 100,
-          order_by: "creation desc",
-        })
-      )
-      return (rows ?? []).map((r) => ({
-        id: r.name,
-        content: r.content,
-        author: r.owner,
-        createdAt: r.creation,
-      }))
-    } catch {
-      return []
-    }
-  },
-
-  async create(customerName: string, content: string): Promise<CustomerNote> {
-    const row = await apiClient<{
-      name: string
-      content: string
-      owner: string
-      creation: string
-    }>("/resource/Communication", {
-      method: "POST",
-      body: JSON.stringify({
-        communication_type: "Comment",
-        comment_type: "Comment",
-        reference_doctype: "Customer",
-        reference_name: customerName,
-        content,
-      }),
-    })
-    return {
-      id: row.name,
-      content: row.content,
-      author: row.owner,
-      createdAt: row.creation,
-    }
-  },
-
-  async delete(noteId: string): Promise<void> {
-    await apiClient<void>(`/resource/Communication/${encodeURIComponent(noteId)}`, {
-      method: "DELETE",
-    })
   },
 }

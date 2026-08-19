@@ -1,6 +1,7 @@
 import { apiClient } from "@/services/api-client"
-export type { SalesOrderItem, SalesOrder, SalesOrderListResponse } from "../types"
-import type { SalesOrder as SOType, SalesOrderListResponse, SalesOrderItem } from "../types"
+import type { SalesOrder, SalesOrderListResponse, SalesOrderItem } from "../types"
+import type { SalesOrder as SOType } from "../types"
+export type { SalesOrder, SalesOrderListResponse, SalesOrderItem }
 
 interface FrappeSalesOrder {
   name: string

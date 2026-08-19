@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react"
-import { Search, Plus, ChevronLeft, ChevronRight, Loader2 } from "lucide-react"
+import { Search, Plus, ChevronRight, Loader2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { invoiceService } from "@/services"
 import {
@@ -33,7 +33,6 @@ export default function ReturnAgainstSearchModal({
   onSelect,
   onCreateNew,
   customer,
-  company,
 }: ReturnAgainstSearchModalProps) {
   const [query, setQuery] = useState("")
   const [results, setResults] = useState<InvoiceResult[]>([])
@@ -41,7 +40,7 @@ export default function ReturnAgainstSearchModal({
   const [page, setPage] = useState(1)
   const [hasMore, setHasMore] = useState(false)
   const searchInputRef = useRef<HTMLInputElement>(null)
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>()
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined)
   const PAGE_SIZE = 10
 
   const doSearch = useCallback(async (q: string, p: number, append = false) => {

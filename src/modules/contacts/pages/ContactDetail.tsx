@@ -65,7 +65,7 @@ export default function ContactDetail() {
                 )}
               </div>
             </div>
-            <Badge variant={contact.is_primary_contact ? "success" : "muted"} className="px-3 py-1 text-sm">
+            <Badge variant={contact.is_primary_contact ? "success" : "default"} className="px-3 py-1 text-sm">
               {contact.is_primary_contact ? "Primary Contact" : "Secondary"}
             </Badge>
           </div>

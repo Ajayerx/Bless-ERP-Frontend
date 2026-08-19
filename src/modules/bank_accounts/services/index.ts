@@ -1,5 +1,6 @@
 import { apiClient } from "@/services/api-client"
-export type { BankAccountType, BankAccount, BankAccountListResponse, BankAccountFormData } from "../types"
+import type { BankAccountType, BankAccount, BankAccountListResponse, BankAccountFormData } from "../types"
+export type { BankAccountType, BankAccount, BankAccountListResponse, BankAccountFormData }
 
 export const bankAccountService = {
   list: (params: { search?: string; page?: number } = {}): Promise<BankAccountListResponse> => {

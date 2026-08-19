@@ -148,7 +148,7 @@ export default function CreatePurchaseOrder() {
         lineItems: lineItems.map(({ id: _id, ...rest }) => rest),
         subtotal, gst: taxSummaries[0]?.amount ?? 0, qst: taxSummaries[1]?.amount ?? 0, total: grandTotal,
       })
-      navigate("/purchases/orders")
+navigate("/purchases")
     } finally {
       setSaving(false)
     }
@@ -169,7 +169,7 @@ export default function CreatePurchaseOrder() {
       >
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <button onClick={() => navigate("/purchases/orders")}
+            <button onClick={() => navigate("/purchases")}
               className="p-2 rounded-[10px] text-muted hover:text-body hover:bg-gray-100 transition-colors">
               <ArrowLeft size={20} />
             </button>
@@ -179,7 +179,7 @@ export default function CreatePurchaseOrder() {
             </div>
           </div>
           <div className="flex items-center gap-3">
-            <Button variant="secondary" onClick={() => navigate("/purchases/orders")}>Cancel</Button>
+            <Button variant="secondary" onClick={() => navigate("/purchases")}>Cancel</Button>
             <Button onClick={handleSave} disabled={saving || !vendorId || templateLoading} loading={saving}>
               <Save size={16} />
               {saving ? "Saving..." : "Save Purchase Order"}

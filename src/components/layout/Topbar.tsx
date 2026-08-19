@@ -29,7 +29,6 @@ import { Avatar } from "@/components/ui/avatar"
 import { useNavigate } from "react-router-dom"
 import { useAuth } from "@/context/AuthContext"
 import { useTheme } from "@/context/ThemeContext"
-import { cn } from "@/lib/utils"
 import GlobalSearch from "./GlobalSearch"
 
 export default function Topbar() {

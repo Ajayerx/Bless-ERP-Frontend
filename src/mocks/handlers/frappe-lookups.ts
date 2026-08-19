@@ -120,6 +120,45 @@ const batches = [
   { name: "BATCH-010", item: "PRD-010", expiry_date: batchDate(4), batch_qty: 5 },
 ]
 
+// ── Quotations (12 records, ERPNext shape) ──────────────────────────
+export const quotations = [
+  { name: "SAL-QTN-2026-0001", title: "Maple Leaf Bakery", quotation_to: "Customer", party_name: "CUST-0001", customer_name: "Maple Leaf Bakery", transaction_date: "2026-07-01", valid_till: "2026-07-31", order_type: "Sales", company: "BlessERP Inc.", currency: "CAD", grand_total: 2450.00, rounded_total: 2450.00, status: "Open", docstatus: 1, owner: "admin@blesserp.com", creation: "2026-07-01T10:15:00", modified: "2026-07-01T10:15:00", modified_by: "admin@blesserp.com", _assign: '["jane.doe@blesserp.com"]', _user_tags: "Follow-up" },
+  { name: "SAL-QTN-2026-0002", title: "Northern Lights Coffee", quotation_to: "Customer", party_name: "CUST-0002", customer_name: "Northern Lights Coffee", transaction_date: "2026-07-02", valid_till: "2026-08-01", order_type: "Sales", company: "BlessERP Inc.", currency: "CAD", grand_total: 1890.50, rounded_total: 1890.50, status: "Open", docstatus: 1, owner: "admin@blesserp.com", creation: "2026-07-02T11:30:00", modified: "2026-07-02T11:30:00", modified_by: "admin@blesserp.com" },
+  { name: "SAL-QTN-2026-0003", title: "Blue Mountain Supplies", quotation_to: "Customer", party_name: "CUST-0003", customer_name: "Blue Mountain Supplies", transaction_date: "2026-07-03", valid_till: "2026-08-02", order_type: "Sales", company: "BlessERP Inc.", currency: "CAD", grand_total: 3720.00, rounded_total: 3720.00, status: "Ordered", docstatus: 1, owner: "admin@blesserp.com", creation: "2026-07-03T09:00:00", modified: "2026-07-03T09:00:00", modified_by: "admin@blesserp.com" },
+  { name: "SAL-QTN-2026-0004", title: "Great Lakes Trading", quotation_to: "Customer", party_name: "CUST-0004", customer_name: "Great Lakes Trading", transaction_date: "2026-07-04", valid_till: "2026-08-03", order_type: "Sales", company: "BlessERP Inc.", currency: "CAD", grand_total: 560.75, rounded_total: 560.75, status: "Draft", docstatus: 0, owner: "admin@blesserp.com", creation: "2026-07-04T14:20:00", modified: "2026-07-04T14:20:00", modified_by: "admin@blesserp.com" },
+  { name: "SAL-QTN-2026-0005", title: "Red Maple Imports", quotation_to: "Customer", party_name: "CUST-0005", customer_name: "Red Maple Imports", transaction_date: "2026-07-05", valid_till: "2026-08-04", order_type: "Sales", company: "BlessERP Inc.", currency: "CAD", grand_total: 4150.00, rounded_total: 4150.00, status: "Partially Ordered", docstatus: 1, owner: "admin@blesserp.com", creation: "2026-07-05T08:45:00", modified: "2026-07-05T08:45:00", modified_by: "admin@blesserp.com" },
+  { name: "SAL-QTN-2026-0006", title: "Pacific Coast Distributors", quotation_to: "Customer", party_name: "CUST-0006", customer_name: "Pacific Coast Distributors", transaction_date: "2026-07-06", valid_till: "2026-08-05", order_type: "Sales", company: "BlessERP Inc.", currency: "CAD", grand_total: 6780.00, rounded_total: 6780.00, status: "Replied", docstatus: 1, owner: "admin@blesserp.com", creation: "2026-07-06T10:00:00", modified: "2026-07-06T10:00:00", modified_by: "admin@blesserp.com" },
+  { name: "SAL-QTN-2026-0007", title: "Prairie Grain Co.", quotation_to: "Customer", party_name: "CUST-0007", customer_name: "Prairie Grain Co.", transaction_date: "2026-07-07", valid_till: "2026-08-06", order_type: "Sales", company: "BlessERP Inc.", currency: "CAD", grand_total: 2950.00, rounded_total: 2950.00, status: "Lost", docstatus: 1, owner: "admin@blesserp.com", creation: "2026-07-07T09:15:00", modified: "2026-07-07T09:15:00", modified_by: "admin@blesserp.com", order_lost_reason: "Supplier gave a better price", _user_tags: "Lost" },
+  { name: "SAL-QTN-2026-0008", title: "Eastern Seafood Co.", quotation_to: "Customer", party_name: "CUST-0008", customer_name: "Eastern Seafood Co.", transaction_date: "2026-07-08", valid_till: "2026-08-07", order_type: "Sales", company: "BlessERP Inc.", currency: "CAD", grand_total: 5120.00, rounded_total: 5120.00, status: "Open", docstatus: 1, owner: "admin@blesserp.com", creation: "2026-07-08T08:30:00", modified: "2026-07-08T08:30:00", modified_by: "admin@blesserp.com" },
+  { name: "SAL-QTN-2026-0009", title: "Golden Harvest Organic", quotation_to: "Customer", party_name: "CUST-0009", customer_name: "Golden Harvest Organic", transaction_date: "2026-07-09", valid_till: "2026-08-08", order_type: "Sales", company: "BlessERP Inc.", currency: "CAD", grand_total: 4300.00, rounded_total: 4300.00, status: "Open", docstatus: 1, owner: "admin@blesserp.com", creation: "2026-07-09T10:45:00", modified: "2026-07-09T10:45:00", modified_by: "admin@blesserp.com" },
+  { name: "SAL-QTN-2026-0010", title: "Summit Logistics", quotation_to: "Customer", party_name: "CUST-0010", customer_name: "Summit Logistics", transaction_date: "2026-07-10", valid_till: "2026-08-09", order_type: "Sales", company: "BlessERP Inc.", currency: "CAD", grand_total: 2890.00, rounded_total: 2890.00, status: "Expired", docstatus: 1, owner: "admin@blesserp.com", creation: "2026-06-10T14:20:00", modified: "2026-07-10T14:20:00", modified_by: "admin@blesserp.com" },
+  { name: "SAL-QTN-2026-0011", title: "Lead Opportunity", quotation_to: "Lead", party_name: "LEAD-0001", customer_name: "Summit Logistics", transaction_date: "2026-07-11", valid_till: "2026-08-10", order_type: "Sales", company: "BlessERP Inc.", currency: "CAD", grand_total: 1670.50, rounded_total: 1670.50, status: "Draft", docstatus: 0, owner: "admin@blesserp.com", creation: "2026-07-11T09:30:00", modified: "2026-07-11T09:30:00", modified_by: "admin@blesserp.com" },
+  { name: "SAL-QTN-2026-0012", title: "Northern Lights Coffee", quotation_to: "Customer", party_name: "CUST-0002", customer_name: "Northern Lights Coffee", transaction_date: "2026-07-12", valid_till: "2026-08-11", order_type: "Sales", company: "BlessERP Inc.", currency: "CAD", grand_total: 890.25, rounded_total: 890.25, status: "Cancelled", docstatus: 2, owner: "admin@blesserp.com", creation: "2026-07-12T16:10:00", modified: "2026-07-12T16:10:00", modified_by: "admin@blesserp.com" },
+]
+
+// Quotation child rows (sample) so the form demo has items/taxes to show.
+export const quotationItems = [
+  { item_code: "PRD-001", item_name: "Organic All-Purpose Flour", qty: 40, uom: "Nos", conversion_factor: 1, price_list_rate: 25.00, rate: 25.00, amount: 1000.00, discount_percentage: 0, is_free_item: 0, warehouse: "Main Warehouse", income_account: "Income - BE", cost_center: "Main - BE", grant_commission: 1 },
+  { item_code: "PRD-005", item_name: "Maple Syrup (Grade A)", qty: 58, uom: "Nos", conversion_factor: 1, price_list_rate: 25.00, rate: 25.00, amount: 1450.00, discount_percentage: 0, is_free_item: 0, warehouse: "Main Warehouse", income_account: "Income - BE", cost_center: "Main - BE", grant_commission: 1 },
+]
+export const quotationTaxes = [
+  { charge_type: "On Net Total", account_head: "GST Tax - BE", description: "GST 5%", rate: 5, tax_amount: 122.50, total: 2572.50, included_in_print_rate: 0, cost_center: "Main - BE" },
+  { charge_type: "On Net Total", account_head: "QST Tax - BE", description: "QST 9.975%", rate: 9.975, tax_amount: 244.39, total: 2816.89, included_in_print_rate: 0, cost_center: "Main - BE" },
+]
+export const paymentScheduleRows = [
+  { payment_term: "50% on Order", description: "50% of the quotation amount due at order", due_date: "2026-07-15", invoice_portion: 50, payment_amount: 1225.00 },
+  { payment_term: "50% on Delivery", description: "50% of the quotation amount due on delivery", due_date: "2026-07-31", invoice_portion: 50, payment_amount: 1225.00 },
+]
+
+// ── Sales Orders (list rows, ERPNext shape) ─────────────────────────
+export const salesOrders = [
+  { name: "SAL-ORD-2026-0001", customer: "CUST-0001", customer_name: "Maple Leaf Bakery", transaction_date: "2026-07-02", delivery_date: "2026-07-15", grand_total: 2450.00, status: "To Deliver and Bill", docstatus: 1, per_delivered: 0, per_billed: 0, owner: "admin@blesserp.com", creation: "2026-07-02T10:15:00", modified: "2026-07-02T10:15:00", modified_by: "admin@blesserp.com", _assign: '["jane.doe@blesserp.com"]' },
+  { name: "SAL-ORD-2026-0002", customer: "CUST-0003", customer_name: "Blue Mountain Supplies", transaction_date: "2026-07-04", delivery_date: "2026-07-18", grand_total: 3720.00, status: "To Deliver and Bill", docstatus: 1, per_delivered: 0, per_billed: 0, owner: "admin@blesserp.com", creation: "2026-07-04T10:00:00", modified: "2026-07-04T10:00:00", modified_by: "admin@blesserp.com" },
+  { name: "SAL-ORD-2026-0003", customer: "CUST-0005", customer_name: "Red Maple Imports", transaction_date: "2026-07-06", delivery_date: "2026-07-20", grand_total: 4150.00, status: "To Deliver and Bill", docstatus: 1, per_delivered: 0, per_billed: 0, owner: "admin@blesserp.com", creation: "2026-07-06T09:00:00", modified: "2026-07-06T09:00:00", modified_by: "admin@blesserp.com" },
+  { name: "SAL-ORD-2026-0004", customer: "CUST-0006", customer_name: "Pacific Coast Distributors", transaction_date: "2026-07-07", delivery_date: "2026-07-21", grand_total: 6780.00, status: "Completed", docstatus: 1, per_delivered: 100, per_billed: 100, owner: "admin@blesserp.com", creation: "2026-07-07T10:00:00", modified: "2026-07-07T10:00:00", modified_by: "admin@blesserp.com" },
+  { name: "SAL-ORD-2026-0005", customer: "CUST-0009", customer_name: "Golden Harvest Organic", transaction_date: "2026-07-10", delivery_date: "2026-07-24", grand_total: 4300.00, status: "Draft", docstatus: 0, per_delivered: 0, per_billed: 0, owner: "admin@blesserp.com", creation: "2026-07-10T10:45:00", modified: "2026-07-10T10:45:00", modified_by: "admin@blesserp.com" },
+]
+
 // ── Draft Purchase Orders ────────────────────────────────────────────
 interface POBatchDoc {
   name: string
@@ -159,6 +198,17 @@ const linkOptions: Record<string, string[]> = {
   "Sales Partner": ["ABC Sales Agency", "Northern Distributors", "Pacific Sales Group"],
   "Account": ["Accounts Receivable", "Accounts Payable", "Cash on Hand", "Sales Revenue", "Cost of Goods Sold"],
   "Sales Person": ["John Smith", "Jane Doe", "Bob Johnson", "Alice Brown"],
+  "Order Type": ["Sales", "Maintenance", "Shopping Cart"],
+  "Sales Taxes and Charges Template": ["Canada GST/QST - BE", "Zero Rated - BE", "Exempt - BE"],
+  "Terms and Conditions": ["Standard Terms and Conditions", "Net 30 Standard", "Custom Shipping Terms"],
+  "Shipping Rule": ["Standard Shipping", "Express Shipping"],
+  "Incoterm": ["EXW", "FOB", "CIF", "DAP", "DDP"],
+  "Campaign": ["Summer Sale 2026", "Q3 Promo", "Loyalty Rewards"],
+  "Competitor": ["Competitor A", "Competitor B", "Competitor C"],
+  "Lost Reason": ["Supplier gave a better price", "No follow-up from us", "Product not available in required quantity", "Customer doesn't respond", "Other"],
+  "Lead": ["LEAD-0001", "LEAD-0002", "LEAD-0003"],
+  "Prospect": ["PROS-0001", "PROS-0002"],
+  "Opportunity": ["OPP-0001", "OPP-0002", "OPP-0003"],
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────
@@ -249,6 +299,8 @@ const listData: Record<string, Record<string, unknown>[]> = {
   "Item Price": itemPrices as unknown as Record<string, unknown>[],
   "Batch": batches as unknown as Record<string, unknown>[],
   "Purchase Order": poDocs as unknown as Record<string, unknown>[],
+  "Quotation": quotations as unknown as Record<string, unknown>[],
+  "Sales Order": salesOrders as unknown as Record<string, unknown>[],
 }
 
 // ── Handlers ────────────────────────────────────────────────────────
@@ -264,6 +316,91 @@ export const frappeLookupHandlers = [
     if (doctype === "Purchase Order") {
       const doc = poDocs.find((p) => p.name === name)
       return HttpResponse.json({ data: doc ?? null })
+    }
+
+    // Quotation single doc (quotation workspace getById / getDoc).
+    if (doctype === "Quotation") {
+      const row = quotations.find((q) => q.name === name)
+      if (!row) return HttpResponse.json({ data: null })
+      return HttpResponse.json({
+        data: {
+          doctype: "Quotation",
+          name: row.name,
+          title: row.customer_name,
+          quotation_to: row.quotation_to,
+          party_name: row.party_name,
+          customer_name: row.customer_name,
+          transaction_date: row.transaction_date,
+          valid_till: row.valid_till,
+          order_type: row.order_type ?? "Sales",
+          company: row.company ?? "BlessERP Inc.",
+          currency: row.currency ?? "CAD",
+          conversion_rate: 1,
+          selling_price_list: "Standard Selling",
+          price_list_currency: row.currency ?? "CAD",
+          plc_conversion_rate: 1,
+          total_qty: 98,
+          base_total: 2450.00,
+          base_net_total: 2450.00,
+          total: 2450.00,
+          net_total: 2450.00,
+          base_total_taxes_and_charges: 366.89,
+          total_taxes_and_charges: 366.89,
+          base_grand_total: 2816.89,
+          base_rounding_adjustment: 0,
+          base_rounded_total: 2816.89,
+          base_in_words: "Two Thousand Eight Hundred Sixteen Dollars and Eighty-Nine Cents Only",
+          grand_total: 2816.89,
+          rounding_adjustment: 0,
+          rounded_total: 2816.89,
+          disable_rounded_total: 0,
+          in_words: "Two Thousand Eight Hundred Sixteen Dollars and Eighty-Nine Cents Only",
+          tax_category: "Standard",
+          taxes_and_charges: "Canada GST/QST - BE",
+          items: quotationItems,
+          taxes: quotationTaxes,
+          payment_schedule: paymentScheduleRows,
+          group_same_items: 0,
+          status: row.status,
+          docstatus: row.docstatus,
+          owner: row.owner,
+          creation: row.creation,
+          modified: row.modified,
+          modified_by: row.modified_by,
+          _assign: row._assign,
+          _user_tags: row._user_tags,
+        },
+      })
+    }
+
+    // Sales Order single doc (sales order list getById + conversion chain).
+    if (doctype === "Sales Order") {
+      const row = salesOrders.find((s) => s.name === name)
+      if (!row) return HttpResponse.json({ data: null })
+      return HttpResponse.json({
+        data: {
+          doctype: "Sales Order",
+          name: row.name,
+          customer: row.customer,
+          customer_name: row.customer_name,
+          transaction_date: row.transaction_date,
+          delivery_date: row.delivery_date,
+          grand_total: row.grand_total,
+          status: row.status,
+          docstatus: row.docstatus,
+          per_delivered: row.per_delivered,
+          per_billed: row.per_billed,
+          company: "BlessERP Inc.",
+          currency: "CAD",
+          items: quotationItems,
+          taxes: quotationTaxes,
+          owner: row.owner,
+          creation: row.creation,
+          modified: row.modified,
+          modified_by: row.modified_by,
+          _assign: row._assign,
+        },
+      })
     }
 
     // Sales Invoice single doc (invoice workspace getById) — serves the list
@@ -344,6 +481,103 @@ export const frappeLookupHandlers = [
           creation: row.creation,
           modified: row.modified ?? row.creation,
           modified_by: row.modified_by ?? row.owner,
+        },
+      })
+    }
+
+    // Quotation submit/update path. KEEP docstatus semantics: a plain update
+    // never resets a Submitted doc to Draft; only an explicit docstatus:1
+    // payload (submit) flips it, as ERPNext's submit endpoint behaves.
+    if (doctype === "Quotation") {
+      const idx = quotations.findIndex((q) => q.name === name)
+      if (idx === -1) {
+        return HttpResponse.json({ message: "Not Found" }, { status: 404 })
+      }
+      const body = (await request.json()) as Record<string, unknown>
+      quotations[idx] = { ...quotations[idx], ...body, modified: new Date().toISOString().replace("T", " ").slice(0, 19) }
+      const row = quotations[idx]
+      return HttpResponse.json({
+        data: {
+          doctype: "Quotation",
+          name: row.name,
+          title: row.customer_name,
+          quotation_to: row.quotation_to,
+          party_name: row.party_name,
+          customer_name: row.customer_name,
+          transaction_date: row.transaction_date,
+          valid_till: row.valid_till,
+          order_type: row.order_type ?? "Sales",
+          company: row.company ?? "BlessERP Inc.",
+          currency: row.currency ?? "CAD",
+          conversion_rate: 1,
+          selling_price_list: "Standard Selling",
+          price_list_currency: row.currency ?? "CAD",
+          plc_conversion_rate: 1,
+          total_qty: 98,
+          base_total: 2450.00,
+          base_net_total: 2450.00,
+          total: 2450.00,
+          net_total: 2450.00,
+          base_total_taxes_and_charges: 366.89,
+          total_taxes_and_charges: 366.89,
+          base_grand_total: 2816.89,
+          base_rounding_adjustment: 0,
+          base_rounded_total: 2816.89,
+          base_in_words: "Two Thousand Eight Hundred Sixteen Dollars and Eighty-Nine Cents Only",
+          grand_total: 2816.89,
+          rounding_adjustment: 0,
+          rounded_total: 2816.89,
+          disable_rounded_total: 0,
+          in_words: "Two Thousand Eight Hundred Sixteen Dollars and Eighty-Nine Cents Only",
+          tax_category: "Standard",
+          taxes_and_charges: "Canada GST/QST - BE",
+          items: quotationItems,
+          taxes: quotationTaxes,
+          payment_schedule: paymentScheduleRows,
+          group_same_items: 0,
+          status: row.status,
+          docstatus: row.docstatus,
+          owner: row.owner,
+          creation: row.creation,
+          modified: row.modified ?? row.creation,
+          modified_by: row.modified_by ?? row.owner,
+          _assign: row._assign,
+          _user_tags: row._user_tags,
+        },
+      })
+    }
+
+    // Sales Order submit/update (SO workspace in D5+).
+    if (doctype === "Sales Order") {
+      const idx = salesOrders.findIndex((s) => s.name === name)
+      if (idx === -1) {
+        return HttpResponse.json({ message: "Not Found" }, { status: 404 })
+      }
+      const body = (await request.json()) as Record<string, unknown>
+      salesOrders[idx] = { ...salesOrders[idx], ...body, modified: new Date().toISOString().replace("T", " ").slice(0, 19) }
+      const row = salesOrders[idx]
+      return HttpResponse.json({
+        data: {
+          doctype: "Sales Order",
+          name: row.name,
+          customer: row.customer,
+          customer_name: row.customer_name,
+          transaction_date: row.transaction_date,
+          delivery_date: row.delivery_date,
+          grand_total: row.grand_total,
+          status: row.status,
+          docstatus: row.docstatus,
+          per_delivered: row.per_delivered,
+          per_billed: row.per_billed,
+          company: "BlessERP Inc.",
+          currency: "CAD",
+          items: quotationItems,
+          taxes: quotationTaxes,
+          owner: row.owner,
+          creation: row.creation,
+          modified: row.modified ?? row.creation,
+          modified_by: row.modified_by ?? row.owner,
+          _assign: row._assign,
         },
       })
     }

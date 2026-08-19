@@ -43,7 +43,7 @@ export type { TaxSummary, TaxBreakdownRow, TaxTransactionRow, TaxSideSummary, Ne
 export { productService } from "@/modules/products/services"
 export type {
   Product, Product as ProductItem, ProductDetail, ProductListResponse,
-  ProductListParams, ProductFormData, WarehouseStock,
+  ProductListParams, ProductFormData, WarehouseStock, ProductFilter, ItemPriceRow,
 } from "@/modules/products/services"
 
 export { supplierService } from "@/modules/suppliers/services"
@@ -68,7 +68,7 @@ export { quotationService } from "@/modules/quotations/services"
 export type { Quotation, QuotationItem, QuotationFormData, QuotationListResponse } from "@/modules/quotations/services"
 
 export { contactService } from "@/modules/contacts/services"
-export type { Contact, ContactListResponse, ContactFormData } from "@/modules/contacts/services"
+export type { Contact, ContactListResponse, ContactFormData, ContactEmailRow, ContactPhoneRow, DynamicLinkRow } from "@/modules/contacts/services"
 
 export { opportunityService } from "@/modules/opportunities/services"
 export type { Opportunity, OpportunityFormData, OpportunityListResponse } from "@/modules/opportunities/services"

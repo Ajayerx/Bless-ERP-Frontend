@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui"
 import type { Lead } from "@/services"
 import { formatCurrency } from "@/lib/utils"
 
-const statusStyles: Record<string, { label: string; variant: "success" | "warning" | "default" | "danger" | "info" | "purple" }> = {
+const statusStyles: Record<string, { label: string; variant: "success" | "warning" | "default" | "danger" | "info" | "purple" | "primary" }> = {
   new: { label: "New", variant: "info" },
   contacted: { label: "Contacted", variant: "warning" },
   qualified: { label: "Qualified", variant: "purple" },

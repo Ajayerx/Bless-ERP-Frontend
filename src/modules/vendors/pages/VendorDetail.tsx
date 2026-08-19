@@ -5,7 +5,7 @@ import { useParams, useNavigate } from "react-router-dom"
 import { motion } from "framer-motion"
 import { ArrowLeft, Mail, Phone, MapPin, CreditCard } from "lucide-react"
 import Topbar from "@/components/layout/Topbar"
-import { Card, CardContent, CardHeader, CardTitle, Button, Badge, Avatar, Skeleton } from "@/components/ui"
+import { Card, CardContent, CardHeader, CardTitle, Badge, Avatar, Skeleton } from "@/components/ui"
 import { vendorService, type Vendor } from "@/services"
 
 export default function VendorDetail() {

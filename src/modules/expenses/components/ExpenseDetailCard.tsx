@@ -1,6 +1,6 @@
 "use client"
 
-import { Wallet, Calendar, DollarSign, Tag, FileText, CreditCard } from "lucide-react"
+import { Wallet, Calendar, DollarSign, Tag } from "lucide-react"
 import { Card, CardContent, Badge } from "@/components/ui"
 import { type Expense } from "@/services"
 import { formatCurrency, formatDate } from "@/lib/utils"

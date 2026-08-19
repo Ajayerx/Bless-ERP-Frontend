@@ -2,13 +2,13 @@ import { apiClient, ApiError } from "@/services/api-client"
 import type {
   Product, ProductDetail, ProductListResponse, ProductListParams,
   ProductFormData, WarehouseStock, ItemDefaultRow, ReorderLevelRow,
-  ProductTaxRow,
+  ProductTaxRow, ProductFilter,
 } from "../types"
 
 export type {
   Product, ProductDetail, ProductListResponse, ProductListParams,
   ProductFormData, WarehouseStock, ItemDefaultRow, ReorderLevelRow,
-  ProductTaxRow,
+  ProductTaxRow, ProductFilter,
 }
 
 export { ApiError }
@@ -392,9 +392,9 @@ export const productService = {
       headers.map((h) => {
         let val: string
         if (h === "is_stock_item" || h === "disabled") {
-          val = String((p as Record<string, unknown>)[h] ? 1 : 0)
+          val = String((p as unknown as Record<string, unknown>)[h] ? 1 : 0)
         } else {
-          val = String((p as Record<string, unknown>)[h] ?? "")
+          val = String((p as unknown as Record<string, unknown>)[h] ?? "")
         }
         return val.includes(",") || val.includes('"') || val.includes("\n")
           ? `"${val.replace(/"/g, '""')}"`
@@ -450,11 +450,29 @@ export const productService = {
           brand: brandIdx >= 0 ? cols[brandIdx] : "",
           image: "",
           is_stock_item: stockIdx >= 0 ? cols[stockIdx] === "1" || cols[stockIdx].toLowerCase() === "true" : true,
+          is_sales_item: true,
+          is_purchase_item: true,
           disabled: false,
+          has_batch_no: false,
+          has_serial_no: false,
+          has_variants: false,
+          valuation_method: "",
+          end_of_life: "",
+          warranty_period: "",
+          allow_negative_stock: true,
+          purchase_uom: "",
+          sales_uom: "",
+          max_discount: 0,
+          safety_stock: 0,
+          min_order_qty: 0,
+          lead_time_days: 0,
           weight_per_unit: 0,
           weight_uom: "",
           company: "",
           default_warehouse: "",
+          income_account: "",
+          cost_center: "",
+          default_price_list: "",
         })
         success++
       } catch (e) {

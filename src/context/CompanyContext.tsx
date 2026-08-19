@@ -16,6 +16,7 @@ interface CompanyContextType {
   selectedCompany: string
   selectedCompanyInfo: CompanyInfo | null
   companyDefaults: CompanyDefaults | null
+  defaultCurrency: string
   loading: boolean
   selectCompany: (companyName: string) => void
 }
@@ -95,6 +96,7 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const selectedCompanyInfo = companies.find((c) => c.name === selectedCompany) || null
+  const defaultCurrency = selectedCompanyInfo?.defaultCurrency || companyDefaults?.currency || "CAD"
 
   return (
     <CompanyContext.Provider
@@ -103,6 +105,7 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
         selectedCompany,
         selectedCompanyInfo,
         companyDefaults,
+        defaultCurrency,
         loading,
         selectCompany,
       }}

@@ -23,11 +23,12 @@ export default function TasksWidget() {
   }, [])
 
   const toggle = (task: TodoItem) => {
+    if (task.status === "Cancelled") return
     const newStatus = task.status === "Open" ? "Closed" : "Open"
     setTasks((prev) =>
       prev.map((t) => (t.name === task.name ? { ...t, status: newStatus as TodoItem["status"] } : t))
     )
-    todoService.toggleStatus(task.name, task.status).catch(() => {
+    todoService.toggleStatus(task.name, task.status === "Open" ? "Open" : "Closed").catch(() => {
       setTasks((prev) =>
         prev.map((t) => (t.name === task.name ? { ...t, status: task.status } : t))
       )

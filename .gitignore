@@ -65,3 +65,11 @@ src/modules/payments/pages/__tests__/PaymentDetail.test.tsx
 PLAN-general-ledger-activity.md
 src/modules/payments/pages/__tests__/VersionDetail.test.tsx
 src/modules/payments/services/__tests__/list.service.test.ts
+
+# Test/QA artifacts
+docs/
+src/components/ui/__tests__/
+src/modules/reports/pages/__tests__/
+src/modules/reports/services/__tests__/
+src/pages/__tests__/
+src/services/__tests__/

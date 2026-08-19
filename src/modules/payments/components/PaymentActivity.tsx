@@ -60,7 +60,7 @@ function EmailItem({ item }: { item: PaymentActivityItem }) {
       const blobUrl = URL.createObjectURL(blob)
       window.open(blobUrl, "_blank")
     } catch {
-      showMessage("Failed to open attachment", "error")
+      showMessage("Failed to open attachment")
     } finally {
       setOpeningUrl(null)
     }

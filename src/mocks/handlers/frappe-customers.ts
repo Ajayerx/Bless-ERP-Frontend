@@ -1,5 +1,5 @@
 import { http, HttpResponse, delay } from "msw"
-import { paymentEntries, salesInvoices, matchesFilterSet } from "./frappe-lookups"
+import { paymentEntries, salesInvoices, quotations, salesOrders, matchesFilterSet } from "./frappe-lookups"
 
 // ── Customers ────────────────────────────────────────────────────────
 interface CustomerRow {
@@ -246,6 +246,14 @@ async function countFor(url: string) {
     count = (salesInvoices as unknown as Record<string, unknown>[]).filter(
       (r) => matchesFilterSet(r, filters, orFilters)
     ).length
+  } else if (doctype === "Quotation") {
+    count = (quotations as unknown as Record<string, unknown>[]).filter(
+      (r) => matchesFilterSet(r, filters, orFilters)
+    ).length
+  } else if (doctype === "Sales Order") {
+    count = (salesOrders as unknown as Record<string, unknown>[]).filter(
+      (r) => matchesFilterSet(r, filters, orFilters)
+    ).length
   }
   return HttpResponse.json({ message: count })
 }
@@ -274,6 +282,37 @@ export const frappeCustomerHandlers = [
   // ── GET /api/method/frappe.desk.reportview.get_count?doctype=... ──
   http.get("/api/method/frappe.desk.reportview.get_count", async ({ request }) => {
     return countFor(request.url)
+  }),
+
+  // ── POST /api/method/frappe.desk.reportview.get ──────────────────
+  http.post("/api/method/frappe.desk.reportview.get", async ({ request }) => {
+    await delay(200)
+    const form = await request.formData()
+    const fields: string[] = safeJsonParse(String(form.get("fields") ?? "[]"), [])
+    const filters: unknown[] = safeJsonParse(String(form.get("filters") ?? "[]"), [])
+    const orderBy = String(form.get("order_by") ?? "")
+    const start = Number(form.get("start") ?? 0)
+    const pageLength = Number(form.get("page_length") ?? 20)
+
+    let rows = customers.filter((c) => customerMatchesFilters(c, filters))
+    if (orderBy) {
+      const [field, dir] = orderBy.split(" ")
+      const sign = dir === "asc" ? 1 : -1
+      rows = [...rows].sort((a, b) => {
+        const av = String((a as unknown as Record<string, unknown>)[field] ?? "")
+        const bv = String((b as unknown as Record<string, unknown>)[field] ?? "")
+        return av.localeCompare(bv) * sign
+      })
+    }
+    if (pageLength > 0) {
+      rows = rows.slice(start, start + pageLength)
+    }
+
+    const keys = fields.length > 0 ? fields : ["name"]
+    const values = rows.map((r) =>
+      keys.map((k) => (r as unknown as Record<string, unknown>)[k] ?? null)
+    )
+    return HttpResponse.json({ message: { keys, values, user_info: {} } })
   }),
 
   // ── GET /api/resource/Customer/{name} ────────────────────────────

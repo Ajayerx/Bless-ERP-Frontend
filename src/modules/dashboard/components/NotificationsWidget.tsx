@@ -2,6 +2,7 @@ import { useEffect, useState } from "react"
 import { ArrowRight } from "lucide-react"
 import { useNavigate } from "react-router-dom"
 import { notificationService, timeAgo, type NotificationItem } from "@/services"
+import { sanitizeHtml } from "@/lib/utils"
 import DashboardListCard from "./DashboardListCard"
 
 const dotColors: Record<string, string> = {
@@ -62,7 +63,7 @@ export default function NotificationsWidget() {
             className={`w-2 h-2 rounded-full mt-1.5 shrink-0 ${dotColors[n.type] ?? "bg-blue-500"}`}
           />
           <div className="flex-1 min-w-0">
-            <p className="text-sm text-body">{n.subject}</p>
+            <p className="text-sm text-body" dangerouslySetInnerHTML={{ __html: sanitizeHtml(n.subject) }} />
             <p className="text-xs text-muted mt-0.5">{timeAgo(n.creation)}</p>
           </div>
           {!n.read && (

@@ -1,347 +1,1148 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react"
 import { useNavigate } from "react-router-dom"
-import { ArrowLeft, Plus, Trash2, Save, Search, ChevronDown, Loader2 } from "lucide-react"
-import { Button, Card, CardContent, CardHeader, CardTitle } from "@/components/ui"
-import { quotationService, customerService, type Customer, productService } from "@/services"
-import { getDefaultTaxTemplate } from "@/services/tax-template"
-import type { Product } from "@/services"
-import type { Quotation, QuotationFormData } from "@/services"
+import { ArrowLeft, Loader2, Save } from "lucide-react"
+import {
+  Button,
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  Checkbox,
+  Input,
+  LinkSearchField,
+  Select,
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+  Textarea,
+} from "@/components/ui"
+import ChildTableGrid, { type GridColumn } from "@/components/ui/ChildTableGrid"
+import { useCompany } from "@/context/CompanyContext"
+import { quotationService } from "@/modules/quotations/services"
+import { customerService } from "@/modules/customers/services"
+import {
+  computeTaxes,
+  createEmptyTaxRow,
+  getCurrencySmallestFraction,
+  roundToSmallestCurrencyFraction,
+  type EditableTaxRow,
+} from "@/modules/invoices/services"
+import type {
+  Quotation,
+  QuotationFormData,
+  QuotationItem,
+  QuotationTax,
+} from "@/modules/quotations/types"
+import { useVisibilityRules, DEFAULT_RULES } from "@/modules/quotations/hooks/useVisibilityRules"
 import { formatCurrency } from "@/lib/utils"
 
-const SALES_DOCTYPE = "Sales Taxes and Charges Template"
+const QUOTATION_TO_OPTIONS = ["Customer", "Lead", "Prospect"] as const
+const ORDER_TYPE_OPTIONS = ["Sales", "Maintenance", "Shopping Cart"] as const
 
-interface LineItemForm {
-  id: string
-  productId: string
-  productName: string
-  qty: number
-  rate: number
-  amount: number
+export interface QuotationFormHandle {
+  save: (action?: "Save" | "Update" | "Submit") => Promise<string | undefined>
+  isDirty: () => boolean
 }
 
-function createEmptyLine(): LineItemForm {
+export interface QuotationFormProps {
+  quotation?: Quotation | null
+  mode?: "create" | "edit"
+  onSaved?: (doc: Quotation) => void
+  onSavingChange?: (saving: boolean) => void
+  onDirtyChange?: (dirty: boolean) => void
+}
+
+function todayISO(): string {
+  return new Date().toISOString().slice(0, 10)
+}
+
+function addDaysISO(days: number): string {
+  const d = new Date()
+  d.setDate(d.getDate() + days)
+  return d.toISOString().slice(0, 10)
+}
+
+function createEmptyItem(): QuotationItem {
   return {
-    id: crypto.randomUUID(),
-    productId: "",
-    productName: "",
+    item_name: "",
+    item_code: "",
     qty: 1,
+    uom: "",
+    conversion_factor: 1,
+    price_list_rate: 0,
     rate: 0,
     amount: 0,
+    discount_percentage: 0,
+    is_free_item: 0,
+    grant_commission: 1,
   }
 }
 
-interface QuotationFormProps {
-  quotation?: Quotation | null
-  onSubmit?: (data: QuotationFormData) => Promise<void>
-  loading?: boolean
+function quotationTaxesToEditable(taxes: QuotationTax[]): EditableTaxRow[] {
+  return taxes.map((t) => ({
+    charge_type: (t.charge_type || "On Net Total") as EditableTaxRow["charge_type"],
+    account_head: t.account_head,
+    description: t.description ?? "",
+    rate: t.rate ?? 0,
+    tax_amount: t.tax_amount ?? 0,
+    net_amount: 0,
+    total: t.total ?? 0,
+    included_in_print_rate: !!t.included_in_print_rate,
+  }))
 }
 
-export default function QuotationForm({ quotation: initialData, onSubmit: externalSubmit, loading: externalLoading }: QuotationFormProps = {}) {
-  const navigate = useNavigate()
-  const mode = initialData ? "edit" : "create"
+function editableToQuotationTaxes(rows: EditableTaxRow[]): QuotationTax[] {
+  return rows.map((r) => ({
+    charge_type: r.charge_type,
+    account_head: r.account_head,
+    rate: r.rate,
+    tax_amount: r.tax_amount,
+    total: r.total,
+    description: r.description,
+    included_in_print_rate: r.included_in_print_rate ? 1 : 0,
+  }))
+}
 
-  const [customerId, setCustomerId] = useState("")
-  const [customerName, setCustomerName] = useState("")
-  const [issueDate, setIssueDate] = useState(new Date().toISOString().slice(0, 10))
-  const [validUntil, setValidUntil] = useState(() => {
-    const d = new Date(); d.setDate(d.getDate() + 30); return d.toISOString().slice(0, 10)
-  })
-  const [notes, setNotes] = useState("")
-  const [lineItems, setLineItems] = useState<LineItemForm[]>([createEmptyLine()])
-  const [saving, setSaving] = useState(false)
-  const [customers, setCustomers] = useState<Customer[]>([])
-  const [customerSearch, setCustomerSearch] = useState("")
-  const [customerDropdownOpen, setCustomerDropdownOpen] = useState(false)
-  const [products, setProducts] = useState<Product[]>([])
-  const [productDropdowns, setProductDropdowns] = useState<Record<string, { open: boolean; search: string }>>({})
-  const [gstRate, setGstRate] = useState(0.05)
-  const [qstRate, setQstRate] = useState(0.09975)
-  const [templateLoading, setTemplateLoading] = useState(true)
+export default forwardRef<QuotationFormHandle, QuotationFormProps>(
+  function QuotationForm(
+    {
+      quotation: initialData,
+      mode = initialData ? "edit" : "create",
+      onSaved,
+      onSavingChange,
+      onDirtyChange,
+    },
+    ref,
+  ) {
+    const navigate = useNavigate()
+    const { companyDefaults } = useCompany()
 
-  useEffect(() => {
-    customerService.list({ pageSize: 100 }).then((res) => setCustomers(res.items))
-    productService.list({ pageSize: 100 }).then((res) => setProducts(res.items))
-    getDefaultTaxTemplate(SALES_DOCTYPE).then((template) => {
-      if (template) {
-        const gst = template.rows.find((r) => r.accountHead?.toLowerCase().includes("gst"))
-        const qst = template.rows.find((r) => r.accountHead?.toLowerCase().includes("qst"))
-        if (gst) setGstRate(gst.rate)
-        if (qst) setQstRate(qst.rate)
+    const companyCurrency = companyDefaults?.currency || "CAD"
+    const defaultCompany = companyDefaults?.company || ""
+    const defaultPriceList = companyDefaults?.defaultSellingPriceList || "Standard Selling"
+
+    const buildEmptyForm = (): QuotationFormData => ({
+      doctype: "Quotation",
+      quotation_to: "Customer",
+      transaction_date: todayISO(),
+      valid_till: addDaysISO(30),
+      order_type: "Sales",
+      company: defaultCompany,
+      currency: companyCurrency,
+      conversion_rate: 1,
+      selling_price_list: defaultPriceList,
+      price_list_currency: companyCurrency,
+      plc_conversion_rate: 1,
+      items: [createEmptyItem()],
+      taxes: [],
+      payment_schedule: [],
+      lost_reasons: [],
+      competitors: [],
+      pricing_rules: [],
+      group_same_items: 0,
+      disable_rounded_total: 0,
+      docstatus: 0,
+      status: "Draft",
+    })
+
+    const [form, setForm] = useState<QuotationFormData>(() =>
+      initialData ? { ...initialData } : buildEmptyForm(),
+    )
+    const [baseline, setBaseline] = useState<QuotationFormData>(() =>
+      initialData ? { ...initialData } : buildEmptyForm(),
+    )
+    const [saving, setSaving] = useState(false)
+    const [currencyFraction, setCurrencyFraction] = useState<number | null>(null)
+    const baselineRef = useRef<QuotationFormData>(baseline)
+
+    useEffect(() => {
+      if (initialData) {
+        const next = { ...initialData }
+        setForm(next)
+        setBaseline(next)
+        baselineRef.current = next
       }
-    }).finally(() => setTemplateLoading(false))
-  }, [])
+    }, [initialData])
 
-  useEffect(() => {
-    if (!initialData) return
-    setCustomerId(initialData.customerId)
-    setCustomerName(initialData.customerName)
-    setCustomerSearch(initialData.customerName)
-    setIssueDate(initialData.issueDate)
-    setValidUntil(initialData.validUntil)
-    setNotes(initialData.notes ?? "")
-    if (initialData.items && initialData.items.length > 0) {
-      setLineItems(
-        initialData.items.map((item) => ({
-          id: crypto.randomUUID(),
-          productId: item.productId,
-          productName: item.productName,
-          qty: item.qty,
-          rate: item.rate,
-          amount: item.amount,
+    useEffect(() => {
+      const frac = getCurrencySmallestFraction(form.currency)
+      frac.then((f) => {
+        if (f !== currencyFraction) setCurrencyFraction(f)
+      })
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [form.currency])
+
+    const isDirty = () => JSON.stringify(form) !== JSON.stringify(baselineRef.current)
+    useEffect(() => {
+      onDirtyChange?.(isDirty())
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [form])
+
+    const rules = useVisibilityRules(form, DEFAULT_RULES)
+    const rule = (fieldname: string) =>
+      rules[fieldname] ?? { visible: true, readOnly: false, reqd: false }
+
+    const update = (patch: QuotationFormData) => setForm((prev) => ({ ...prev, ...patch }))
+
+    const isForeignCurrency = (form.currency || companyCurrency) !== companyCurrency
+
+    // ── Party fetch: party_name select → get_party_details ─────────────
+    const handlePartySelect = async (party: string) => {
+      if (!party || !form.company || !form.transaction_date) return
+      update({ party_name: party, customer_name: "" })
+      try {
+        const details = await quotationService.getPartyDetails(
+          form.quotation_to || "Customer",
+          party,
+          form.company,
+          form.transaction_date,
+          { fetchPaymentTermsTemplate: true },
+        )
+        setForm((prev) => ({
+          ...prev,
+          party_name: party,
+          customer_name: details.customer_name ?? prev.customer_name,
+          customer_group: details.customer_group ?? prev.customer_group,
+          currency: details.currency ?? prev.currency,
+          conversion_rate: details.conversion_rate ?? prev.conversion_rate,
+          selling_price_list: details.selling_price_list ?? prev.selling_price_list,
+          price_list_currency: details.price_list_currency ?? prev.price_list_currency,
+          plc_conversion_rate: details.plc_conversion_rate ?? prev.plc_conversion_rate,
+          tax_category: details.tax_category ?? prev.tax_category,
+          taxes_and_charges: details.taxes_and_charges ?? prev.taxes_and_charges,
+          payment_terms_template: details.payment_terms_template ?? prev.payment_terms_template,
+          customer_address: details.customer_address ?? prev.customer_address,
+          address_display: details.address_display ?? prev.address_display,
+          contact_person: details.contact_person ?? prev.contact_person,
+          contact_display: details.contact_display ?? prev.contact_display,
+          contact_mobile: details.contact_mobile ?? prev.contact_mobile,
+          contact_email: details.contact_email ?? prev.contact_email,
+          shipping_address_name: details.shipping_address_name ?? prev.shipping_address_name,
+          shipping_address: details.shipping_address ?? prev.shipping_address,
         }))
+      } catch {
+        // party details are a best-effort fill
+      }
+    }
+
+    // ── Currency change → get_exchange_rate ────────────────────────────
+    const handleCurrencyChange = async (currency: string) => {
+      update({ currency })
+      if (currency === companyCurrency) {
+        update({ conversion_rate: 1, price_list_currency: companyCurrency, plc_conversion_rate: 1 })
+        return
+      }
+      try {
+        const rate = await quotationService.getExchangeRate(
+          currency,
+          companyCurrency,
+          form.transaction_date || todayISO(),
+        )
+        setForm((prev) => ({
+          ...prev,
+          currency,
+          conversion_rate: rate || prev.conversion_rate,
+          price_list_currency: currency,
+          plc_conversion_rate: rate || prev.plc_conversion_rate,
+        }))
+      } catch {
+        // keep prior conversion rate on failure
+      }
+    }
+
+    // ── Items ──────────────────────────────────────────────────────────
+    const updateItem = (idx: number, item: QuotationItem) =>
+      setForm((prev) => {
+        const items = [...(prev.items ?? [])]
+        items[idx] = item
+        return { ...prev, items }
+      })
+
+    const handleItemCellChange = (idx: number, key: keyof QuotationItem, value: unknown) => {
+      const item = { ...(form.items?.[idx] ?? createEmptyItem()) } as QuotationItem
+      ;(item as Record<keyof QuotationItem, unknown>)[key] = value as QuotationItem[typeof key]
+      switch (key) {
+        case "qty":
+        case "rate":
+        case "discount_percentage":
+          if (item.rate > 0 && item.qty > 0) {
+            const discounted = item.rate - (item.rate * (item.discount_percentage || 0)) / 100
+            item.amount = Math.round(discounted * item.qty * 100) / 100
+          } else {
+            item.amount = 0
+          }
+          break
+        default:
+          break
+      }
+      updateItem(idx, item)
+    }
+
+    const handleItemSelect = async (row: QuotationItem, itemCode: string) => {
+      if (!itemCode || !form.company) return
+      try {
+        const details = await quotationService.getItemDetails(
+          {
+            item_code: itemCode,
+            qty: form.items?.[form.items.indexOf(row)]?.qty ?? 1,
+            price_list: form.selling_price_list,
+            currency: form.currency,
+          },
+          form.company,
+        )
+        const idx = form.items?.indexOf(row)
+        if (idx === undefined || idx < 0) return
+        const next = { ...row, ...details } as QuotationItem
+        next.amount = Math.round((next.rate ?? 0) * (next.qty ?? 0) * 100) / 100
+        updateItem(idx, next)
+      } catch {
+        // item details are a best-effort fill
+      }
+    }
+
+    // ── Taxes & totals ─────────────────────────────────────────────────
+    const itemTotals = useMemo(() => {
+      const items = form.items ?? []
+      const total_qty = items.reduce((s, i) => s + (i.qty || 0), 0)
+      const net_total = items.reduce((s, i) => s + (i.amount || 0), 0)
+      return { total_qty, net_total }
+    }, [form.items])
+
+    const { total_qty, net_total } = itemTotals
+
+    const taxState = useMemo(() => {
+      const editable = quotationTaxesToEditable(form.taxes ?? [])
+      const computed = computeTaxes(editable, net_total, total_qty)
+      const total_taxes = computed.reduce((s, r) => s + r.tax_amount, 0)
+      const grand_total = net_total + total_taxes
+      return { editable, computed, total_taxes, grand_total }
+    }, [form.taxes, net_total, total_qty])
+
+    const rounded_total = roundToSmallestCurrencyFraction(
+      taxState.grand_total,
+      currencyFraction,
+    )
+    const rounding_adjustment = Math.round((rounded_total - taxState.grand_total) * 100) / 100
+    const conversion_rate = form.conversion_rate ?? 1
+    const base_grand_total = taxState.grand_total * conversion_rate
+    const base_rounded_total = Math.round(base_grand_total * 100) / 100
+
+    const handleTaxChange = (rows: EditableTaxRow[]) => {
+      update({ taxes: editableToQuotationTaxes(rows) })
+    }
+
+    const handleTaxesAndChargesSelect = async (template: string) => {
+      update({ taxes_and_charges: template })
+      if (!template) return
+      try {
+        const result = await quotationService.getTaxesAndCharges(template)
+        if (result.taxes && result.taxes.length > 0) {
+          update({ taxes: result.taxes })
+        }
+        if (result.tax_category) update({ tax_category: result.tax_category })
+      } catch {
+        // template fill is best-effort
+      }
+    }
+
+    // ── Payment terms template → get_payment_terms ───────────────────
+    const handlePaymentTermsSelect = async (template: string) => {
+      update({ payment_terms_template: template })
+      if (!template) return
+      try {
+        const result = await quotationService.getPaymentTerms(
+          template,
+          form.transaction_date || todayISO(),
+          taxState.grand_total,
+        )
+        if (result.payment_schedule.length > 0) {
+          update({
+            payment_schedule: result.payment_schedule as unknown as Quotation["payment_schedule"],
+          })
+        }
+      } catch {
+        // payment terms fill is best-effort
+      }
+    }
+
+    // ── Terms & conditions → get_terms_and_conditions ───────────────
+    const handleTcNameSelect = async (template: string) => {
+      update({ tc_name: template, terms: "" })
+      if (!template) return
+      try {
+        const docCtx: Record<string, unknown> = {
+          doctype: "Quotation",
+          transaction_date: form.transaction_date || todayISO(),
+          valid_till: form.valid_till ?? "",
+          company: form.company ?? "",
+          quotation_to: form.quotation_to ?? "Customer",
+          party_name: form.party_name ?? "",
+          customer_name: form.customer_name ?? "",
+        }
+        const rendered = await quotationService.getTerms(template, docCtx)
+        if (rendered) update({ terms: rendered })
+      } catch {
+        // terms fill is best-effort
+      }
+    }
+
+    const itemColumns: GridColumn<QuotationItem>[] = [
+      {
+        key: "item_code",
+        label: "Item Code",
+        type: "link",
+        docType: "Item",
+        searchFn: async (q) => {
+          const results = await customerService.searchLink(
+            "Item",
+            q,
+            "Quotation",
+            { disabled: 0, has_variants: 0 },
+          )
+          return { items: results }
+        },
+        onSelect: (row, value) => {
+          void handleItemSelect(row, value ?? "")
+        },
+        validate: async (v) => {
+          await customerService.validateLink("Item", v)
+        },
+      },
+      { key: "item_name", label: "Item Name", type: "readonly", weight: 2 },
+      { key: "qty", label: "Qty", type: "number", align: "right" },
+      {
+        key: "uom",
+        label: "UOM",
+        type: "link",
+        options: ["Nos", "Kg", "L", "Box", "Bag", "Dozen"],
+      },
+      { key: "rate", label: "Rate", type: "number", align: "right" },
+      { key: "discount_percentage", label: "Disc %", type: "number", align: "right" },
+      {
+        key: "amount",
+        label: "Amount",
+        type: "readonly",
+        align: "right",
+        formatter: (row) => formatCurrency(row.amount ?? 0),
+      },
+      { key: "delivery_date", label: "Delivery Date", type: "date" },
+    ]
+
+    const taxColumns: GridColumn<EditableTaxRow>[] = [
+      {
+        key: "charge_type",
+        label: "Type",
+        type: "link",
+        options: ["On Net Total", "On Previous Row Amount", "On Previous Row Total", "On Item Quantity", "Actual"],
+      },
+      { key: "account_head", label: "Account Head", type: "text", weight: 2 },
+      { key: "rate", label: "Rate", type: "number", align: "right" },
+      { key: "tax_amount", label: "Amount", type: "number", align: "right" },
+      {
+        key: "total",
+        label: "Row Total",
+        type: "readonly",
+        align: "right",
+        formatter: (row) => formatCurrency(row.total ?? 0),
+      },
+    ]
+
+    const paymentScheduleColumns: GridColumn<Quotation["payment_schedule"][number]>[] = [
+      { key: "payment_term", label: "Payment Term", type: "text", weight: 2 },
+      { key: "description", label: "Description", type: "text", weight: 3 },
+      { key: "due_date", label: "Due Date", type: "date" },
+      { key: "invoice_portion", label: "Portion %", type: "number", align: "right" },
+      {
+        key: "payment_amount",
+        label: "Amount",
+        type: "number",
+        align: "right",
+      },
+    ]
+
+    const partyLabel = `Party (${form.quotation_to || "Customer"})`
+    const partyVisible = rule("party_name").visible
+    const partyLocked = rule("party_name").readOnly
+    const customerGroupVisible = rule("customer_group").visible
+
+    const handleSave = async (action?: "Save" | "Update" | "Submit"): Promise<string | undefined> => {
+      if (saving) return undefined
+      setSaving(true)
+      onSavingChange?.(true)
+      try {
+        const doc: Record<string, unknown> = {
+          ...form,
+          doctype: "Quotation",
+          items: (form.items ?? []).map(({ name: _n, ...rest }) => rest),
+          taxes: (form.taxes ?? []).map(({ name: _n, ...rest }) => rest),
+          payment_schedule: (form.payment_schedule ?? []).map(({ name: _n, ...rest }) => rest),
+          lost_reasons: (form.lost_reasons ?? []).map(({ name: _n, ...rest }) => rest),
+          competitors: (form.competitors ?? []).map(({ name: _n, ...rest }) => rest),
+          pricing_rules: (form.pricing_rules ?? []).map(({ name: _n, ...rest }) => rest),
+          total_qty,
+          net_total,
+          total: net_total,
+          base_total: net_total * conversion_rate,
+          base_net_total: net_total * conversion_rate,
+          total_taxes_and_charges: taxState.total_taxes,
+          base_total_taxes_and_charges: taxState.total_taxes * conversion_rate,
+          grand_total: taxState.grand_total,
+          base_grand_total,
+          rounding_adjustment,
+          rounded_total,
+          base_rounding_adjustment: Math.round((base_rounded_total - base_grand_total) * 100) / 100,
+          base_rounded_total,
+        }
+        if (mode === "edit" && initialData?.name) doc.name = initialData.name
+        const saved =
+          action === "Submit"
+            ? await quotationService.saveDoc(doc, "Submit")
+            : mode === "edit" && (initialData?.docstatus ?? 0) === 1
+              ? await quotationService.saveDoc(doc, "Update")
+              : await quotationService.saveDoc(doc, "Save")
+        baselineRef.current = { ...form, name: saved?.name }
+        setBaseline(baselineRef.current)
+        onSaved?.(saved)
+        return saved?.name
+      } finally {
+        setSaving(false)
+        onSavingChange?.(false)
+      }
+    }
+
+    useImperativeHandle(ref, () => ({
+      save: handleSave,
+      isDirty,
+    }))
+
+    const labelClass = "text-xs font-semibold text-muted"
+
+    const Field = ({
+      label,
+      children,
+      fieldname,
+      className = "",
+    }: {
+      label: string
+      children: ReactNode
+      fieldname: string
+      className?: string
+    }) => {
+      const r = rule(fieldname)
+      if (!r.visible) return null
+      return (
+        <div className={className}>
+          <label className={labelClass}>{label}</label>
+          {children}
+        </div>
       )
     }
-  }, [initialData])
 
-  const filteredCustomers = customers.filter(
-    (c) => c.name.toLowerCase().includes(customerSearch.toLowerCase()) ||
-      c.contactName.toLowerCase().includes(customerSearch.toLowerCase())
-  )
-
-  const selectCustomer = (c: Customer) => {
-    setCustomerId(c.id)
-    setCustomerName(c.name)
-    setCustomerSearch(c.name)
-    setCustomerDropdownOpen(false)
-  }
-
-  const addLine = () => setLineItems((prev) => [...prev, createEmptyLine()])
-
-  const removeLine = (id: string) =>
-    setLineItems((prev) => (prev.length > 1 ? prev.filter((l) => l.id !== id) : prev))
-
-  const updateLine = (id: string, updates: Partial<LineItemForm>) =>
-    setLineItems((prev) =>
-      prev.map((l) => {
-        if (l.id !== id) return l
-        const next = { ...l, ...updates }
-        next.amount = Math.round(next.qty * next.rate * 100) / 100
-        return next
-      })
-    )
-
-  const selectProduct = (lineId: string, product: Product) => {
-    updateLine(lineId, { productId: product.item_code, productName: product.item_name, rate: product.standard_rate })
-    setProductDropdowns((prev) => ({ ...prev, [lineId]: { open: false, search: "" } }))
-  }
-
-  const subtotal = lineItems.reduce((sum, l) => sum + l.amount, 0)
-  const gstAmount = Math.round(subtotal * gstRate * 100) / 100
-  const qstAmount = Math.round(subtotal * qstRate * 100) / 100
-  const grandTotal = Math.round((subtotal + gstAmount + qstAmount) * 100) / 100
-
-  const isSaving = externalLoading ?? saving
-
-  const handleSave = async () => {
-    if (!customerId) return
-    if (externalSubmit) {
-      await externalSubmit({
-        customerId, customerName, issueDate, validUntil, notes,
-        items: lineItems.map(({ id, ...rest }) => rest),
-        subtotal, gst: gstAmount, qst: qstAmount, total: grandTotal,
-      })
-      return
-    }
-    setSaving(true)
-    try {
-      if (mode === "edit" && initialData) {
-        await quotationService.update(initialData.id, {
-          customerId, customerName, issueDate, validUntil, notes,
-          items: lineItems.map(({ id, ...rest }) => rest),
-          subtotal, gst: gstAmount, qst: qstAmount, total: grandTotal,
-        })
-      } else {
-        await quotationService.create({
-          customerId, customerName, issueDate, validUntil, notes,
-          items: lineItems.map(({ id, ...rest }) => rest),
-          subtotal, gst: gstAmount, qst: qstAmount, total: grandTotal,
-        })
-      }
-      navigate("/quotations")
-    } finally { setSaving(false) }
-  }
-
-  const inputClass =
-    "w-full px-3 py-2.5 bg-white border border-border rounded-[12px] text-sm text-body placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 transition-all duration-200"
-  const labelClass = "block text-xs font-semibold text-muted mb-1.5 uppercase tracking-wider"
-
-  return (
-    <>
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <button onClick={() => navigate("/quotations")}
-            className="p-2 rounded-[10px] text-muted hover:text-body hover:bg-gray-100 transition-colors">
-            <ArrowLeft size={20} />
-          </button>
-          <div>
-            <h1 className="text-2xl font-bold text-heading">{mode === "create" ? "New Quotation" : "Edit Quotation"}</h1>
-            <p className="text-sm text-muted mt-0.5">{mode === "create" ? "Create a new customer quotation." : "Update an existing quotation."}</p>
+    return (
+      <>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <button
+              onClick={() => navigate("/quotations")}
+              className="p-2 rounded-[10px] text-muted hover:text-body hover:bg-gray-100 transition-colors"
+            >
+              <ArrowLeft size={20} />
+            </button>
+            <div>
+              <h1 className="text-2xl font-bold text-heading">
+                {mode === "create" ? "New Quotation" : `Quotation ${initialData?.name ?? ""}`}
+              </h1>
+              <p className="text-sm text-muted mt-0.5">
+                {mode === "create" ? "Create a new customer quotation." : "Update an existing quotation."}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <Button variant="secondary" onClick={() => navigate("/quotations")}>
+              Cancel
+            </Button>
+            <Button onClick={() => void handleSave()} disabled={saving} data-testid="quotation-save">
+              {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+              {saving ? "Saving..." : mode === "create" ? "Save Draft" : "Save"}
+            </Button>
           </div>
         </div>
-        <div className="flex items-center gap-3">
-          <Button variant="secondary" onClick={() => navigate("/quotations")}>Cancel</Button>
-          <Button onClick={handleSave} disabled={isSaving || !customerId || templateLoading}>
-            {isSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
-            {isSaving ? "Saving..." : mode === "create" ? "Save Quotation" : "Update Quotation"}
-          </Button>
-        </div>
-      </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-        <Card>
-          <CardHeader><CardTitle>Customer</CardTitle></CardHeader>
-          <CardContent className="space-y-3">
-            <div className="relative">
-              <input type="text" value={customerSearch}
-                onChange={(e) => { setCustomerSearch(e.target.value); setCustomerDropdownOpen(true) }}
-                onFocus={() => setCustomerDropdownOpen(true)}
-                placeholder="Search customer..."
-                className="w-full pl-10 pr-10 py-2.5 bg-white border border-border rounded-[12px] text-sm text-body placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 transition-all"
-              />
-              <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted" />
-              <ChevronDown size={15} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-muted" />
-              {customerDropdownOpen && (
-                <div className="absolute z-10 mt-1.5 w-full bg-surface border border-border rounded-[14px] shadow-xl max-h-48 overflow-y-auto">
-                  {filteredCustomers.length === 0 ? (
-                    <p className="px-4 py-3 text-sm text-muted">No customers found</p>
-                  ) : (
-                    filteredCustomers.map((c) => (
-                      <button key={c.id} type="button" onClick={() => selectCustomer(c)}
-                        className="w-full text-left px-4 py-2.5 text-sm transition-colors"
-                        style={c.id === customerId ? { backgroundColor: "var(--primary-50)", color: "var(--primary-700)", fontWeight: 600 } : {}}>
-                        <span className="font-medium">{c.name}</span>
-                        <span className="text-xs text-muted ml-2">{c.contactName}</span>
-                      </button>
-                    ))
-                  )}
+        <Tabs defaultValue="sellings" className="w-full">
+          <TabsList>
+            <TabsTrigger value="sellings">Sellings</TabsTrigger>
+            <TabsTrigger value="address">Address &amp; Contact</TabsTrigger>
+            <TabsTrigger value="terms">Terms</TabsTrigger>
+            <TabsTrigger value="more_info">More Info</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="sellings" className="space-y-6">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+          <Card>
+            <CardHeader>
+              <CardTitle>Party</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <Field label="Quotation To" fieldname="quotation_to">
+                <Select
+                  value={form.quotation_to}
+                  onChange={(e) => update({ quotation_to: e.target.value as Quotation["quotation_to"], party_name: "" })}
+                  disabled={rule("party_name").readOnly}
+                >
+                  {QUOTATION_TO_OPTIONS.map((opt) => (
+                    <option key={opt} value={opt}>
+                      {opt}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+              {partyVisible && (
+                <div>
+                  <label className={labelClass}>{partyLabel}</label>
+                  <LinkSearchField
+                    value={form.party_name}
+                    onChange={(v) => {
+                      if (v !== form.party_name) void handlePartySelect(v ?? "")
+                    }}
+                    searchFn={async (q) => {
+                      const results = await customerService.searchLink(
+                        form.quotation_to || "Customer",
+                        q,
+                        "Quotation",
+                      )
+                      return { items: results }
+                    }}
+                    validate={async (v) => {
+                      await customerService.validateLink(form.quotation_to || "Customer", v)
+                    }}
+                    docType={form.quotation_to || "Customer"}
+                    placeholder="Select party…"
+                    readOnly={partyLocked}
+                    required={rule("party_name").reqd}
+                  />
                 </div>
               )}
-            </div>
-          </CardContent>
-        </Card>
+              {customerGroupVisible && (
+                <div>
+                  <label className={labelClass}>Customer Group</label>
+                  <Input
+                    value={form.customer_group ?? ""}
+                    onChange={(e) => update({ customer_group: e.target.value })}
+                    readOnly={rule("customer_group").readOnly}
+                  />
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Dates & Company</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="grid grid-cols-2 gap-4">
+                <Field label="Transaction Date" fieldname="transaction_date">
+                  <Input
+                    type="date"
+                    value={form.transaction_date}
+                    onChange={(e) => update({ transaction_date: e.target.value })}
+                  />
+                </Field>
+                <Field label="Valid Till" fieldname="valid_till">
+                  <Input
+                    type="date"
+                    value={form.valid_till}
+                    onChange={(e) => update({ valid_till: e.target.value })}
+                  />
+                </Field>
+              </div>
+              <Field label="Order Type" fieldname="order_type">
+                <Select
+                  value={form.order_type}
+                  onChange={(e) => update({ order_type: e.target.value })}
+                >
+                  {ORDER_TYPE_OPTIONS.map((opt) => (
+                    <option key={opt} value={opt}>
+                      {opt}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+              <Field label="Company" fieldname="company">
+                <Input
+                  value={form.company}
+                  onChange={(e) => update({ company: e.target.value })}
+                />
+              </Field>
+            </CardContent>
+          </Card>
+        </div>
 
         <Card>
-          <CardHeader><CardTitle>Details</CardTitle></CardHeader>
-          <CardContent className="space-y-3">
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className={labelClass}>Issue Date</label>
-                <input type="date" value={issueDate} onChange={(e) => setIssueDate(e.target.value)} className={inputClass} />
-              </div>
-              <div>
-                <label className={labelClass}>Valid Until</label>
-                <input type="date" value={validUntil} onChange={(e) => setValidUntil(e.target.value)} className={inputClass} />
-              </div>
+          <CardHeader>
+            <CardTitle>Currency & Price List</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+              <Field label="Currency" fieldname="currency">
+                <Select
+                  value={form.currency}
+                  onChange={(e) => void handleCurrencyChange(e.target.value)}
+                >
+                  <option value="CAD">CAD — Canadian Dollar</option>
+                  <option value="USD">USD — US Dollar</option>
+                  <option value="EUR">EUR — Euro</option>
+                </Select>
+              </Field>
+              <Field label="Conversion Rate" fieldname="conversion_rate">
+                <Input
+                  type="number"
+                  step="any"
+                  value={form.conversion_rate ?? 1}
+                  onChange={(e) => update({ conversion_rate: Number(e.target.value) || 0 })}
+                  readOnly={!isForeignCurrency}
+                />
+              </Field>
+              <Field label="Selling Price List" fieldname="selling_price_list">
+                <Input
+                  value={form.selling_price_list}
+                  onChange={(e) => update({ selling_price_list: e.target.value })}
+                />
+              </Field>
+              <Field label="Price List Currency" fieldname="price_list_currency">
+                <Input value={form.price_list_currency} readOnly />
+              </Field>
+              <Field label="PLC Conversion Rate" fieldname="plc_conversion_rate">
+                <Input type="number" step="any" value={form.plc_conversion_rate ?? 1} readOnly />
+              </Field>
             </div>
           </CardContent>
         </Card>
-      </div>
 
-      <Card className="p-0 overflow-hidden">
-        <CardHeader><CardTitle>Line Items</CardTitle></CardHeader>
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-border">
-            <thead>
-              <tr className="bg-gray-50/50">
-                <th className="px-6 py-3 text-left text-xs font-semibold text-muted uppercase tracking-wider w-[35%]">Product</th>
-                <th className="px-3 py-3 text-right text-xs font-semibold text-muted uppercase tracking-wider w-[12%]">Qty</th>
-                <th className="px-3 py-3 text-right text-xs font-semibold text-muted uppercase tracking-wider w-[15%]">Rate</th>
-                <th className="px-3 py-3 text-right text-xs font-semibold text-muted uppercase tracking-wider w-[15%]">Amount</th>
-                <th className="px-3 py-3 w-[8%]" />
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border/50">
-              {lineItems.map((line) => (
-                <tr key={line.id} className="hover:bg-gray-50/30 transition-colors">
-                  <td className="px-6 py-2.5">
-                    <div className="relative">
-                      <input type="text" value={line.productName}
-                        onChange={(e) => {
-                          updateLine(line.id, { productName: e.target.value, productId: "" })
-                          setProductDropdowns(prev => ({ ...prev, [line.id]: { open: true, search: e.target.value } }))
-                        }}
-                        onFocus={() => setProductDropdowns(prev => ({ ...prev, [line.id]: { open: true, search: line.productName } }))}
-                        placeholder="Search product..."
-                        className="w-full px-3 py-2 text-sm border border-border rounded-[10px] focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 transition-all"
-                      />
-                      {productDropdowns[line.id]?.open && (
-                        <div className="absolute z-10 mt-1 w-full bg-surface border border-border rounded-[12px] shadow-xl max-h-40 overflow-y-auto">
-                          {products.filter((p) =>
-                            p.item_name?.toLowerCase().includes((productDropdowns[line.id]?.search ?? "").toLowerCase()) ||
-                            p.item_code?.toLowerCase().includes((productDropdowns[line.id]?.search ?? "").toLowerCase())
-                          ).map((p) => (
-                            <button key={p.name} type="button" onClick={() => selectProduct(line.id, p)}
-                              className="w-full text-left px-3 py-2 text-sm hover:bg-primary-50 text-body transition-colors">
-                              <span className="font-medium">{p.item_name}</span>
-                              <span className="text-xs text-muted ml-2">{p.item_code}</span>
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </td>
-                  <td className="px-3 py-2.5">
-                    <input type="number" min={1} value={line.qty}
-                      onChange={(e) => updateLine(line.id, { qty: Math.max(1, parseInt(e.target.value) || 1) })}
-                      className="w-20 px-2 py-1.5 text-sm text-right border border-border rounded-[10px] focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500" />
-                  </td>
-                  <td className="px-3 py-2.5">
-                    <input type="number" min={0} step={0.01} value={line.rate}
-                      onChange={(e) => updateLine(line.id, { rate: Math.max(0, parseFloat(e.target.value) || 0) })}
-                      className="w-full px-2 py-1.5 text-sm text-right border border-border rounded-[10px] focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500" />
-                  </td>
-                  <td className="px-3 py-2.5 text-right">
-                    <span className="text-sm font-semibold tabular-nums text-heading">{formatCurrency(line.amount)}</span>
-                  </td>
-                  <td className="px-3 py-2.5 text-center">
-                    <button type="button" onClick={() => removeLine(line.id)} disabled={lineItems.length <= 1}
-                      className="p-1.5 rounded-[8px] text-muted hover:text-danger-600 hover:bg-danger-50 disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
-                      <Trash2 size={14} />
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <div className="px-6 py-3 border-t border-border">
-          <button onClick={addLine} className="flex items-center gap-1.5 text-sm font-semibold text-primary-600 hover:text-primary-700 transition-colors">
-            <Plus size={14} /> Add Item
-          </button>
-        </div>
-      </Card>
-
-      <div className="flex justify-end">
-        <Card className="w-72">
-          <CardContent className="space-y-2">
-            <div className="flex justify-between text-sm">
-              <span className="text-muted">Subtotal</span>
-              <span className="font-semibold text-heading tabular-nums">{formatCurrency(subtotal)}</span>
-            </div>
-            <div className="flex justify-between text-sm">
-              <span className="text-muted">GST ({(gstRate * 100).toFixed(1)}%)</span>
-              <span className="text-body tabular-nums">{formatCurrency(gstAmount)}</span>
-            </div>
-            <div className="flex justify-between text-sm">
-              <span className="text-muted">QST ({(qstRate * 100).toFixed(3)}%)</span>
-              <span className="text-body tabular-nums">{formatCurrency(qstAmount)}</span>
-            </div>
-            <div className="border-t border-border pt-2 flex justify-between text-base">
-              <span className="font-bold text-heading">Total</span>
-              <span className="font-bold text-heading tabular-nums">{formatCurrency(grandTotal)}</span>
-            </div>
+        <Card className="p-0 overflow-hidden">
+          <CardHeader>
+            <CardTitle>Items</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ChildTableGrid<QuotationItem>
+              title=""
+              noTopBorder
+              rows={form.items ?? []}
+              columns={itemColumns}
+              emptyRow={createEmptyItem()}
+              onChange={(rows) => update({ items: rows })}
+              onCellChange={handleItemCellChange}
+              canAdd={mode === "create" || (initialData?.docstatus ?? 0) !== 1}
+              readOnly={(initialData?.docstatus ?? 0) === 1}
+              minWidth="960px"
+              testId="quotation-items"
+            />
           </CardContent>
         </Card>
-      </div>
 
-      <Card>
-        <CardHeader><CardTitle>Notes</CardTitle></CardHeader>
-        <CardContent>
-          <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} className={inputClass} placeholder="Terms, conditions, or special instructions..." />
-        </CardContent>
-      </Card>
-    </>
-  )
-}
+        <div className="grid grid-cols-1 lg:grid-cols-5 gap-5">
+          <Card className="lg:col-span-3 p-0 overflow-hidden">
+            <CardHeader>
+              <CardTitle>Taxes and Charges</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div>
+                <label className={labelClass}>Taxes and Charges Template</label>
+                <LinkSearchField
+                  value={form.taxes_and_charges ?? ""}
+                  onChange={(v) => void handleTaxesAndChargesSelect(v ?? "")}
+                  searchFn={async (q) => {
+                    const results = await customerService.searchLink(
+                      "Sales Taxes and Charges Template",
+                      q,
+                      "Quotation",
+                      { disabled: 0 },
+                    )
+                    return { items: results }
+                  }}
+                  docType="Sales Taxes and Charges Template"
+                  placeholder="Select template…"
+                  clearIconMode="hover"
+                />
+              </div>
+              <ChildTableGrid<EditableTaxRow>
+                title=""
+                noTopBorder
+                rows={taxState.editable}
+                columns={taxColumns}
+                emptyRow={createEmptyTaxRow()}
+                onChange={handleTaxChange}
+                readOnly={(initialData?.docstatus ?? 0) === 1}
+                minWidth="720px"
+              />
+            </CardContent>
+          </Card>
+
+          <Card className="lg:col-span-2">
+            <CardHeader>
+              <CardTitle>Totals({form.currency || companyCurrency})</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {rule("total_qty").visible && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted">Total Quantity</span>
+                  <span className="font-semibold text-heading tabular-nums">{total_qty}</span>
+                </div>
+              )}
+              <div className="flex justify-between text-sm">
+                <span className="text-muted">Net Total</span>
+                <span className="font-semibold text-heading tabular-nums">
+                  {formatCurrency(net_total)}
+                </span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-muted">Taxes</span>
+                <span className="text-body tabular-nums">
+                  {formatCurrency(taxState.total_taxes)}
+                </span>
+              </div>
+              <div className="flex justify-between text-base border-t border-border pt-2">
+                <span className="font-bold text-heading">Grand Total</span>
+                <span className="font-bold text-heading tabular-nums">
+                  {formatCurrency(taxState.grand_total)}
+                </span>
+              </div>
+              {rule("rounding_adjustment").visible && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted">Rounding Adjustment</span>
+                  <span className="text-body tabular-nums">{formatCurrency(rounding_adjustment)}</span>
+                </div>
+              )}
+              <div className="flex justify-between text-sm">
+                <span className="text-muted">Rounded Total</span>
+                <span className="font-semibold text-heading tabular-nums">
+                  {formatCurrency(rounded_total)}
+                </span>
+              </div>
+              <div className="flex items-center gap-2 pt-1">
+                <Checkbox
+                  checked={!!form.disable_rounded_total}
+                  onCheckedChange={(checked) =>
+                    update({ disable_rounded_total: checked ? 1 : 0 })
+                  }
+                  disabled={(initialData?.docstatus ?? 0) === 1}
+                />
+                <label className={labelClass}>Disable Rounded Total</label>
+              </div>
+              {isForeignCurrency && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted">Base Grand Total ({companyCurrency})</span>
+                  <span className="font-semibold text-heading tabular-nums">
+                    {formatCurrency(base_grand_total)}
+                  </span>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+        </TabsContent>
+
+          <TabsContent value="address" className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle>Address</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <Field label={`${form.quotation_to || "Party"} Address`} fieldname="customer_address">
+                    <LinkSearchField
+                      value={form.customer_address ?? ""}
+                      onChange={(v) => update({ customer_address: v ?? "" })}
+                      searchFn={async (q) => {
+                        const results = await customerService.searchLink("Address", q, "Quotation")
+                        return { items: results }
+                      }}
+                      docType="Address"
+                      placeholder="Select address…"
+                      clearIconMode="hover"
+                    />
+                  </Field>
+                  <Field label="Address Display" fieldname="address_display">
+                    <Textarea
+                      rows={4}
+                      value={form.address_display ?? ""}
+                      onChange={(e) => update({ address_display: e.target.value })}
+                      readOnly
+                    />
+                  </Field>
+                </div>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <Field label="Shipping Address" fieldname="shipping_address_name">
+                    <LinkSearchField
+                      value={form.shipping_address_name ?? ""}
+                      onChange={(v) => update({ shipping_address_name: v ?? "" })}
+                      searchFn={async (q) => {
+                        const results = await customerService.searchLink("Address", q, "Quotation")
+                        return { items: results }
+                      }}
+                      docType="Address"
+                      placeholder="Select shipping address…"
+                      clearIconMode="hover"
+                    />
+                  </Field>
+                  <Field label="Shipping Address Display" fieldname="shipping_address">
+                    <Textarea
+                      rows={4}
+                      value={form.shipping_address ?? ""}
+                      onChange={(e) => update({ shipping_address: e.target.value })}
+                      readOnly
+                    />
+                  </Field>
+                </div>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <Field label="Company Address" fieldname="company_address">
+                    <LinkSearchField
+                      value={form.company_address ?? ""}
+                      onChange={(v) => update({ company_address: v ?? "" })}
+                      searchFn={async (q) => {
+                        const results = await customerService.searchLink("Address", q, "Quotation")
+                        return { items: results }
+                      }}
+                      docType="Address"
+                      placeholder="Select company address…"
+                      clearIconMode="hover"
+                    />
+                  </Field>
+                  <Field label="Company Address Display" fieldname="company_address_display">
+                    <Textarea
+                      rows={4}
+                      value={form.company_address_display ?? ""}
+                      onChange={(e) => update({ company_address_display: e.target.value })}
+                      readOnly
+                    />
+                  </Field>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Contact</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <Field label="Contact Person" fieldname="contact_person">
+                    <LinkSearchField
+                      value={form.contact_person ?? ""}
+                      onChange={(v) => update({ contact_person: v ?? "" })}
+                      searchFn={async (q) => {
+                        const results = await customerService.searchLink("Contact", q, "Quotation")
+                        return { items: results }
+                      }}
+                      docType="Contact"
+                      placeholder="Select contact…"
+                      clearIconMode="hover"
+                    />
+                  </Field>
+                  <Field label="Contact Display" fieldname="contact_display">
+                    <Input value={form.contact_display ?? ""} readOnly />
+                  </Field>
+                </div>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <Field label="Contact Mobile" fieldname="contact_mobile">
+                    <Input value={form.contact_mobile ?? ""} readOnly />
+                  </Field>
+                  <Field label="Contact Email" fieldname="contact_email">
+                    <Input value={form.contact_email ?? ""} readOnly />
+                  </Field>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="terms" className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle>Payment Terms</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div>
+                  <label className={labelClass}>Payment Terms Template</label>
+                  <LinkSearchField
+                    value={form.payment_terms_template ?? ""}
+                    onChange={(v) => void handlePaymentTermsSelect(v ?? "")}
+                    searchFn={async (q) => {
+                      const results = await customerService.searchLink(
+                        "Payment Terms Template",
+                        q,
+                        "Quotation",
+                        { disabled: 0 },
+                      )
+                      return { items: results }
+                    }}
+                    docType="Payment Terms Template"
+                    placeholder="Select template…"
+                    clearIconMode="hover"
+                  />
+                </div>
+                <ChildTableGrid<Quotation["payment_schedule"][number]>
+                  title="Payment Schedule"
+                  noTopBorder
+                  rows={form.payment_schedule ?? []}
+                  columns={paymentScheduleColumns}
+                  emptyRow={{ payment_term: "", description: "", due_date: "", invoice_portion: 0, payment_amount: 0 }}
+                  onChange={(rows) => update({ payment_schedule: rows })}
+                  readOnly={(initialData?.docstatus ?? 0) === 1}
+                  minWidth="720px"
+                />
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Terms and Conditions</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div>
+                  <label className={labelClass}>Terms Template</label>
+                  <LinkSearchField
+                    value={form.tc_name ?? ""}
+                    onChange={(v) => void handleTcNameSelect(v ?? "")}
+                    searchFn={async (q) => {
+                      const results = await customerService.searchLink(
+                        "Terms and Conditions",
+                        q,
+                        "Quotation",
+                        { disabled: 0 },
+                      )
+                      return { items: results }
+                    }}
+                    docType="Terms and Conditions"
+                    placeholder="Select terms…"
+                    clearIconMode="hover"
+                  />
+                </div>
+                <Field label="Terms" fieldname="terms">
+                  <Textarea
+                    rows={5}
+                    value={form.terms ?? ""}
+                    onChange={(e) => update({ terms: e.target.value })}
+                    readOnly={(initialData?.docstatus ?? 0) === 1}
+                  />
+                </Field>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="more_info" className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle>Printing &amp; Language</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                  <Field label="Letter Head" fieldname="letter_head">
+                    <LinkSearchField
+                      value={form.letter_head ?? ""}
+                      onChange={(v) => update({ letter_head: v ?? "" })}
+                      searchFn={async (q) => {
+                        const results = await customerService.searchLink("Letter Head", q, "Quotation")
+                        return { items: results }
+                      }}
+                      docType="Letter Head"
+                      placeholder="Select letter head…"
+                      clearIconMode="hover"
+                    />
+                  </Field>
+                  <Field label="Print Heading" fieldname="select_print_heading">
+                    <LinkSearchField
+                      value={form.select_print_heading ?? ""}
+                      onChange={(v) => update({ select_print_heading: v ?? "" })}
+                      searchFn={async (q) => {
+                        const results = await customerService.searchLink("Print Heading", q, "Quotation")
+                        return { items: results }
+                      }}
+                      docType="Print Heading"
+                      placeholder="Select print heading…"
+                      clearIconMode="hover"
+                    />
+                  </Field>
+                  <Field label="Language" fieldname="language">
+                    <Input
+                      value={form.language ?? ""}
+                      onChange={(e) => update({ language: e.target.value })}
+                      readOnly
+                    />
+                  </Field>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    checked={!!form.group_same_items}
+                    onCheckedChange={(checked) => update({ group_same_items: checked ? 1 : 0 })}
+                    disabled={(initialData?.docstatus ?? 0) === 1}
+                  />
+                  <label className={labelClass}>Group Same Items</label>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>More Information</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                  <Field label="Campaign" fieldname="campaign">
+                    <LinkSearchField
+                      value={form.campaign ?? ""}
+                      onChange={(v) => update({ campaign: v ?? "" })}
+                      searchFn={async (q) => {
+                        const results = await customerService.searchLink("Campaign", q, "Quotation")
+                        return { items: results }
+                      }}
+                      docType="Campaign"
+                      placeholder="Select campaign…"
+                      clearIconMode="hover"
+                    />
+                  </Field>
+                  <Field label="Source" fieldname="source">
+                    <LinkSearchField
+                      value={form.source ?? ""}
+                      onChange={(v) => update({ source: v ?? "" })}
+                      searchFn={async (q) => {
+                        const results = await customerService.searchLink("Lead Source", q, "Quotation")
+                        return { items: results }
+                      }}
+                      docType="Lead Source"
+                      placeholder="Select source…"
+                      clearIconMode="hover"
+                    />
+                  </Field>
+                  <Field label="Opportunity" fieldname="opportunity">
+                    <LinkSearchField
+                      value={form.opportunity ?? ""}
+                      onChange={(v) => update({ opportunity: v ?? "" })}
+                      searchFn={async (q) => {
+                        const results = await customerService.searchLink("Opportunity", q, "Quotation")
+                        return { items: results }
+                      }}
+                      docType="Opportunity"
+                      placeholder="Select opportunity…"
+                      clearIconMode="hover"
+                    />
+                  </Field>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
+      </>
+    )
+  },
+)

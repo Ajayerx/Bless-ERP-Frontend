@@ -1,5 +1,6 @@
 import { apiClient } from "@/services/api-client"
-export type { Supplier, SupplierListResponse, SupplierFormData } from "../types"
+import type { Supplier, SupplierListResponse, SupplierFormData } from "../types"
+export type { Supplier, SupplierListResponse, SupplierFormData }
 
 export const supplierService = {
   list: (params: { search?: string; page?: number; pageSize?: number }): Promise<SupplierListResponse> => {

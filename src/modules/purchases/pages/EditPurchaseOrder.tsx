@@ -44,10 +44,10 @@ export default function EditPurchaseOrder() {
         <div className="bg-white rounded-2xl shadow-card p-6">
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
             <div className="grid grid-cols-2 gap-4">
-              <Input label="Supplier Name" {...register("supplierName", { required: "Required" })} error={errors.supplierName?.message} />
+              <Input label="Supplier Name" {...register("vendorName", { required: "Required" })} error={errors.vendorName?.message} />
               <Input label="Total ($)" type="number" {...register("total", { valueAsNumber: true, required: "Required" })} error={errors.total?.message} />
-              <Input label="Order Date" type="date" {...register("orderDate")} />
-              <Input label="Expected Delivery" type="date" {...register("expectedDelivery")} />
+              <Input label="Order Date" type="date" {...register("issueDate")} />
+              <Input label="Expected Delivery" type="date" {...register("deliveryDate")} />
               <Select label="Status" {...register("status")}>
                 <option value="draft">Draft</option>
                 <option value="sent">Sent</option>

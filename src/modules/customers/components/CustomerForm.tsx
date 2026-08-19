@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef, forwardRef, useImperativeHandle, useCallback } from "react";
 import {
   customerService,
   searchLink,
@@ -22,8 +22,16 @@ import { Input, FormField, Select, Checkbox, Tabs, TabsList, TabsTrigger, TabsCo
 interface CustomerFormProps {
   customer?: CustomerDetail | null;
   initialValues?: Partial<CustomerFormData>;
-  onSaved: () => void;
+  onSaved?: (name: string) => void;
   onSavingChange?: (saving: boolean) => void;
+  onDirtyChange?: (dirty: boolean) => void;
+}
+
+// Imperative handle so the header Save/Update button (outside the <form>) can
+// trigger the same create/update flow as the form's own submit button.
+export interface CustomerFormHandle {
+  save: () => Promise<string | undefined>
+  isDirty: () => boolean
 }
 
 const TABS = [
@@ -83,25 +91,42 @@ const emptyForm: CustomerFormData = {
 
 
 
-export default function CustomerForm({
+export default forwardRef<CustomerFormHandle, CustomerFormProps>(function CustomerForm({
   customer,
   initialValues,
   onSaved,
   onSavingChange,
-}: CustomerFormProps) {
+  onDirtyChange,
+}: CustomerFormProps, ref) {
   const isEdit = !!customer;
   const [activeTab, setActiveTab] = useState<TabName>("Details");
   const [form, setForm] = useState<CustomerFormData>(emptyForm);
   const [error, setError] = useState("");
+  // Baseline snapshot of the loaded values; dirty = current form != baseline.
+  const baselineRef = useRef<string>("");
 
   const customerTypeOptions = ["Company", "Individual", "Partnership"];
 
+  const setDirty = useCallback((dirty: boolean) => {
+    onDirtyChange?.(dirty);
+  }, [onDirtyChange]);
+
+  useEffect(() => {
+    setDirty(JSON.stringify(form) !== baselineRef.current);
+  }, [form, setDirty]);
+
+  const applyLoaded = useCallback((next: CustomerFormData) => {
+    setForm(next);
+    baselineRef.current = JSON.stringify(next);
+    setDirty(false);
+  }, [setDirty]);
+
   useEffect(() => {
     if (!customer) {
-      setForm(initialValues ? { ...emptyForm, ...initialValues } : emptyForm);
+      applyLoaded(initialValues ? { ...emptyForm, ...initialValues } : emptyForm);
       return;
     }
-    setForm({
+    applyLoaded({
       salutation: customer.salutation ?? "",
       customer_name: customer.customer_name,
       customer_type: customer.customer_type,
@@ -144,7 +169,7 @@ export default function CustomerForm({
       sales_team: customer.sales_team ?? [],
       portal_users: customer.portal_users ?? [],
     });
-  }, [customer, initialValues]);
+  }, [customer, initialValues, applyLoaded]);
 
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>,
@@ -229,18 +254,18 @@ export default function CustomerForm({
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  // Shared save flow used both by the form submit and the imperative handle.
+  const save = useCallback(async (): Promise<string | undefined> => {
     setError("");
 
     if (!form.customer_name.trim()) {
       setError("Customer name is required.");
-      return;
+      return undefined;
     }
 
     if (form.is_internal_customer && !form.represents_company) {
       setError("Represents Company is required when Is Internal Customer is checked.");
-      return;
+      return undefined;
     }
 
     if (form.sales_team && form.sales_team.length > 0) {
@@ -250,7 +275,7 @@ export default function CustomerForm({
       if (total !== 100) {
         setError(`Total contribution percentage should be equal to 100 (currently ${total}%).`);
         setActiveTab("Sales Team");
-        return;
+        return undefined;
       }
     }
 
@@ -261,21 +286,36 @@ export default function CustomerForm({
 
     onSavingChange?.(true);
     try {
+      let savedName: string | undefined;
       if (isEdit && customer) {
         await customerService.update(customer.name, payload);
+        savedName = customer.name;
       } else {
-        await customerService.create(payload);
+        const created = await customerService.create(payload);
+        savedName = created.name;
       }
-      onSaved();
+      onSaved?.(savedName ?? "");
+      return savedName;
     } catch (err) {
       setError(
         err instanceof Error
           ? err.message
           : "Failed to save customer. Please try again.",
       );
+      return undefined;
     } finally {
       onSavingChange?.(false);
     }
+  }, [form, customer, isEdit, onSaved, onSavingChange]);
+
+  useImperativeHandle(ref, () => ({
+    save,
+    isDirty: () => JSON.stringify(form) !== baselineRef.current,
+  }), [form, save, baselineRef]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await save();
   };
 
   const sectionTitle = "text-base font-bold text-heading mb-3";
@@ -832,4 +872,4 @@ export default function CustomerForm({
       </Tabs>
     </form>
   );
-}
+});

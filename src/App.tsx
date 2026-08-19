@@ -14,7 +14,7 @@ import { Expenses, NewExpense, ExpenseDetail, EditExpense } from "./modules/expe
 import { Suppliers, NewSupplier, SupplierDetail, EditSupplier } from "./modules/suppliers/pages";
 import { Bills, BillDetail, CreateBill, EditBill } from "./modules/bills/pages";
 import { Purchases, PurchaseDetail, CreatePurchaseOrder, EditPurchaseOrder } from "./modules/purchases/pages";
-import { Quotations, NewQuotation, QuotationDetail, EditQuotation } from "./modules/quotations/pages";
+import { Quotations, QuotationCreateWorkspace, QuotationDetailWorkspace } from "./modules/quotations/pages";
 import { SalesOrders, SalesOrderDetail } from "./modules/sales-orders/pages";
 import { Taxes } from "./modules/taxes/pages";
 import { Settings } from "./modules/settings/pages";
@@ -93,9 +93,8 @@ function App() {
         <Route path="payments/:id" element={<PaymentDetail />} />
         <Route path="versions/:id" element={<VersionDetail />} />
         <Route path="quotations" element={<Quotations />} />
-        <Route path="quotations/new" element={<NewQuotation />} />
-        <Route path="quotations/:id" element={<QuotationDetail />} />
-        <Route path="quotations/:id/edit" element={<EditQuotation />} />
+        <Route path="quotations/new" element={<QuotationCreateWorkspace />} />
+        <Route path="quotations/:id" element={<QuotationDetailWorkspace />} />
         <Route path="sales-orders" element={<SalesOrders />} />
         <Route path="sales-orders/:id" element={<SalesOrderDetail />} />
         <Route path="suppliers" element={<Suppliers />} />

@@ -39,7 +39,7 @@ const columns: Column<Contact>[] = [
     key: "is_primary_contact",
     header: "Status",
     render: (c) => (
-      <Badge variant={c.is_primary_contact ? "success" : "muted"}>
+      <Badge variant={c.is_primary_contact ? "success" : "default"}>
         {c.is_primary_contact ? "Primary" : "Secondary"}
       </Badge>
     ),
@@ -54,7 +54,7 @@ export default function ContactTable({ data, loading, search, onSearch, page, on
       keyExtractor={(c) => c.name}
       total={data?.total ?? 0}
       loading={loading}
-      search={search}
+      searchQuery={search}
       onSearch={onSearch}
       page={page}
       pageSize={10}

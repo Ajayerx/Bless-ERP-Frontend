@@ -1,5 +1,5 @@
 import { http, HttpResponse, delay } from "msw"
-import purchaseOrdersData from "../data/purchase_orders.json"
+import purchaseOrdersData from "../data/purchase-orders.json"
 
 let purchaseOrders = [...purchaseOrdersData]
 
@@ -13,7 +13,7 @@ export const purchaseOrderHandlers = [
     const pageSize = parseInt(url.searchParams.get("pageSize") ?? "10", 10)
 
     let filtered = purchaseOrders
-    if (search) filtered = purchaseOrders.filter((po) => po.number.toLowerCase().includes(search) || po.supplierName.toLowerCase().includes(search))
+    if (search) filtered = purchaseOrders.filter((po) => po.number.toLowerCase().includes(search) || po.vendorName.toLowerCase().includes(search))
     if (status) filtered = filtered.filter((po) => po.status === status)
 
     const total = filtered.length

@@ -139,11 +139,11 @@ function buildColumns(opts: {
     { label: "Debit (CAD)", fieldname: "debit", fieldtype: "Currency", width: 130 },
     { label: "Credit (CAD)", fieldname: "credit", fieldtype: "Currency", width: 130 },
     { label: "Balance (CAD)", fieldname: "balance", fieldtype: "Currency", width: 130 },
-    { label: "Voucher Type", fieldname: "voucher_type", width: 130 },
+    { label: "Voucher Type", fieldname: "voucher_type", fieldtype: "Select", width: 130 },
     { label: "Voucher No", fieldname: "voucher_no", fieldtype: "Dynamic Link", options: "voucher_type", width: 200 },
-    { label: "Against Account", fieldname: "against", width: 160 },
+    { label: "Against Account", fieldname: "against", fieldtype: "Link", options: "Account", width: 160 },
     { label: "Party Type", fieldname: "party_type", fieldtype: "Link", options: "Party Type", width: 110 },
-    { label: "Party", fieldname: "party", width: 150 },
+    { label: "Party", fieldname: "party", fieldtype: "Dynamic Link", options: "party_type", width: 150 },
   ]
   if (opts.addTransactionCurrency) {
     cols.push(
@@ -164,7 +164,7 @@ function buildColumns(opts: {
     )
   }
   if (opts.showRemarks) {
-    cols.push({ label: "Remarks", fieldname: "remarks", width: 300 })
+    cols.push({ label: "Remarks", fieldname: "remarks", fieldtype: "Data", width: 300 })
   }
   return cols
 }
@@ -190,8 +190,16 @@ export function generateGeneralLedger(filters: GlFilters = {}): { columns: GlCol
   if (partyType && partyFilter.length) {
     vouchers = vouchers.filter((v) => v.party_type === partyType && partyFilter.includes(v.party))
   }
-  if (costCenterFilter.length) vouchers = vouchers.filter((v) => costCenterFilter.includes(v.cost_center))
-  if (projectFilter.length) vouchers = vouchers.filter((v) => projectFilter.includes(v.project))
+  if (costCenterFilter.length) {
+    vouchers = vouchers
+      .map((v) => ({ ...v, entries: v.entries.filter((e) => costCenterFilter.includes(e.cost_center)) }))
+      .filter((v) => v.entries.length > 0)
+  }
+  if (projectFilter.length) {
+    vouchers = vouchers
+      .map((v) => ({ ...v, entries: v.entries.filter((e) => projectFilter.includes(e.project)) }))
+      .filter((v) => v.entries.length > 0)
+  }
   if (accountFilter.length) {
     vouchers = vouchers
       .map((v) => ({ ...v, entries: v.entries.filter((e) => accountFilter.includes(e.account)) }))

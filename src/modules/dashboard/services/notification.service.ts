@@ -60,7 +60,7 @@ export const notificationService = {
     return Array.isArray(data) ? data.length : 0
   },
 
-  async getFiltered(type?: string, read?: number, page = 1, limit = 20): Promise<NotificationItem[]> {
+  async getFiltered(type?: string, read?: number, limit = 20): Promise<NotificationItem[]> {
     const filters: unknown[] = []
     if (type) filters.push(["type", "=", type])
     if (read !== undefined) filters.push(["read", "=", read])
@@ -77,7 +77,7 @@ export const notificationService = {
   async markAsRead(name: string): Promise<void> {
     await apiClient(`/resource/Notification Log/${name}`, {
       method: "PUT",
-      body: { read: 1 },
+      body: JSON.stringify({ read: 1 }),
     })
   },
 
@@ -94,7 +94,7 @@ export const notificationService = {
       unread.map((n) =>
         apiClient(`/resource/Notification Log/${n.name}`, {
           method: "PUT",
-          body: { read: 1 },
+          body: JSON.stringify({ read: 1 }),
         })
       )
     )

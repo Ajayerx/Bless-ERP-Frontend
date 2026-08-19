@@ -7,6 +7,7 @@ import Topbar from "@/components/layout/Topbar"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui"
 import { reportService, type TaxSummary } from "@/services"
 import { formatCurrency, formatDate, cn } from "@/lib/utils"
+import { useCompany } from "@/context/CompanyContext"
 
 type ReportTab = "sales-summary" | "stock-report" | "tax-summary"
 
@@ -41,12 +42,16 @@ function StockReportPlaceholder() {
 }
 
 function TaxSummaryReport() {
+  const { selectedCompany } = useCompany()
   const [data, setData] = useState<TaxSummary | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    reportService.getTaxSummary().then(setData).finally(() => setLoading(false))
-  }, [])
+    const now = new Date()
+    const fromDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`
+    const toDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`
+    reportService.getTaxSummary({ company: selectedCompany, fromDate, toDate }).then(setData).finally(() => setLoading(false))
+  }, [selectedCompany])
 
   if (loading) {
     return (

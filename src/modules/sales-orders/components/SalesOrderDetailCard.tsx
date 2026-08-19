@@ -98,7 +98,7 @@ export default function SalesOrderDetailCard({ salesOrder }: SalesOrderDetailCar
           <DataTable
             columns={itemColumns}
             data={salesOrder.items}
-            keyExtractor={(_, i) => String(i)}
+            keyExtractor={(item) => `${item.productName}-${item.qty}-${item.rate}`}
             pageSize={50}
           />
         </CardContent>

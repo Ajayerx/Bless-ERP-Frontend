@@ -1,5 +1,6 @@
 import { apiClient } from "@/services/api-client"
-export type { Bill, BillListResponse, BillFormData } from "../types"
+import type { Bill, BillListResponse, BillFormData } from "../types"
+export type { Bill, BillListResponse, BillFormData }
 
 export const billService = {
   list: (params: { search?: string; page?: number; pageSize?: number; status?: string } = {}): Promise<BillListResponse> => {

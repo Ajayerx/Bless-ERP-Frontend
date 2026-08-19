@@ -1,6 +1,6 @@
 "use client"
 
-import { ShoppingCart, CheckCircle2, Clock, XCircle, FileText } from "lucide-react"
+import { ShoppingCart, CheckCircle2, Clock, XCircle } from "lucide-react"
 import DataTable, { type Column } from "@/components/ui/DataTable"
 import { Badge } from "@/components/ui"
 import { type PurchaseOrder, type PurchaseOrderListResponse } from "@/services"
@@ -64,23 +64,23 @@ const columns: Column<PurchaseOrder>[] = [
         <div>
           <p className="font-semibold text-heading">{po.number}</p>
           <p className="text-xs text-muted">
-            {formatDate(po.orderDate)}
+            {formatDate(po.issueDate ?? "")}
           </p>
         </div>
       </div>
     ),
   },
   {
-    key: "supplierName",
+    key: "vendorName",
     header: "Supplier",
-    render: (po) => <span className="text-sm text-body">{po.supplierName}</span>,
+    render: (po) => <span className="text-sm text-body">{po.vendorName}</span>,
   },
   {
     key: "total",
     header: "Amount",
     className: "text-right",
     render: (po) => (
-      <span className="font-semibold tabular-nums text-heading">{formatCurrency(po.total)}</span>
+      <span className="font-semibold tabular-nums text-heading">{formatCurrency(po.total ?? 0)}</span>
     ),
   },
   {
@@ -93,10 +93,10 @@ const columns: Column<PurchaseOrder>[] = [
     ),
   },
   {
-    key: "expectedDate",
+    key: "deliveryDate",
     header: "Expected",
     render: (po) => (
-      <span className="text-sm text-muted">{formatDate(po.expectedDate)}</span>
+      <span className="text-sm text-muted">{formatDate(po.deliveryDate ?? "")}</span>
     ),
   },
 ]
@@ -125,8 +125,8 @@ export default function PurchaseTable({
   onRowClick,
 }: PurchaseTableProps) {
   const allItems = data?.items ?? []
-  const totalAmount = allItems.reduce((s, po) => s + po.total, 0)
-  const receivedAmount = allItems.filter((po) => po.status === "received").reduce((s, po) => s + po.total, 0)
+  const totalAmount = allItems.reduce((s, po) => s + (po.total ?? 0), 0)
+  const receivedAmount = allItems.filter((po) => po.status === "received").reduce((s, po) => s + (po.total ?? 0), 0)
   const pendingCount = allItems.filter((po) => po.status === "sent" || po.status === "draft").length
   const cancelledCount = allItems.filter((po) => po.status === "cancelled").length
 

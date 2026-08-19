@@ -43,7 +43,7 @@ export default function JournalEntryTable({ data, loading, search, onSearch, pag
       keyExtractor={(j) => j.id}
       total={data?.total ?? 0}
       loading={loading}
-      search={search}
+      searchQuery={search}
       onSearch={onSearch}
       page={page}
       pageSize={10}

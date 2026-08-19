@@ -215,7 +215,7 @@ export default function Sidebar() {
   const { logout } = useAuth();
   const location = useLocation();
   const { collapsed, setCollapsed } = useSidebar();
-  const { installed, isInstalled } = useInstalledApps();
+  const { installed } = useInstalledApps();
   const [expandedSections, setExpandedSections] = useState<string[]>([]);
   const [expandedSubGroups, setExpandedSubGroups] = useState<string[]>([]);
 

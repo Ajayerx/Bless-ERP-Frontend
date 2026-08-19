@@ -26,7 +26,7 @@ export default function PurchaseDetailCard({ purchaseOrder }: PurchaseDetailCard
           </div>
           <div>
             <h1 className="text-2xl font-bold text-heading">{purchaseOrder.number}</h1>
-            <p className="text-sm text-muted">{purchaseOrder.supplierName}</p>
+            <p className="text-sm text-muted">{purchaseOrder.vendorName}</p>
           </div>
         </div>
         <Badge variant={statusVariant[purchaseOrder.status] ?? "info"}>
@@ -41,7 +41,7 @@ export default function PurchaseDetailCard({ purchaseOrder }: PurchaseDetailCard
               <DollarSign size={18} className="text-muted mt-0.5" />
               <div>
                 <p className="text-xs font-semibold text-muted uppercase tracking-wider">Total</p>
-                <p className="text-2xl font-bold text-heading mt-1 tabular-nums">{formatCurrency(purchaseOrder.total)}</p>
+                <p className="text-2xl font-bold text-heading mt-1 tabular-nums">{formatCurrency(purchaseOrder.total ?? 0)}</p>
               </div>
             </div>
           </CardContent>
@@ -52,7 +52,7 @@ export default function PurchaseDetailCard({ purchaseOrder }: PurchaseDetailCard
               <Calendar size={18} className="text-muted mt-0.5" />
               <div>
                 <p className="text-xs font-semibold text-muted uppercase tracking-wider">Order Date</p>
-                <p className="text-2xl font-bold text-heading mt-1">{formatDate(purchaseOrder.orderDate)}</p>
+                <p className="text-2xl font-bold text-heading mt-1">{formatDate(purchaseOrder.issueDate ?? "")}</p>
               </div>
             </div>
           </CardContent>
@@ -63,7 +63,7 @@ export default function PurchaseDetailCard({ purchaseOrder }: PurchaseDetailCard
               <Truck size={18} className="text-muted mt-0.5" />
               <div>
                 <p className="text-xs font-semibold text-muted uppercase tracking-wider">Expected</p>
-                <p className="text-2xl font-bold text-heading mt-1">{formatDate(purchaseOrder.expectedDate)}</p>
+                <p className="text-2xl font-bold text-heading mt-1">{formatDate(purchaseOrder.deliveryDate ?? "")}</p>
               </div>
             </div>
           </CardContent>
@@ -76,7 +76,7 @@ export default function PurchaseDetailCard({ purchaseOrder }: PurchaseDetailCard
           <div className="grid grid-cols-2 gap-4 text-sm">
             <div>
               <p className="text-muted">Supplier</p>
-              <p className="font-semibold text-heading">{purchaseOrder.supplierName}</p>
+              <p className="font-semibold text-heading">{purchaseOrder.vendorName}</p>
             </div>
             <div>
               <p className="text-muted">Status</p>

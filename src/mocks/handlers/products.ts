@@ -1,8 +1,22 @@
 import { http, HttpResponse, delay } from "msw"
 import productsData from "../data/products.json"
-import type { Product } from "@/services/products.service"
 
-const products: Product[] = productsData as Product[]
+interface LegacyProduct {
+  id: string
+  sku: string
+  name: string
+  category: string
+  description: string
+  price: number
+  cost: number
+  stock: number
+  unit: string
+  warehouse: string
+  taxable: boolean
+  reorderLevel: number
+}
+
+const products: LegacyProduct[] = productsData as unknown as LegacyProduct[]
 
 export const productsHandlers = [
     http.get("/api/products", async ({ request }) => {
@@ -48,8 +62,8 @@ export const productsHandlers = [
     }),
 
     http.post("/api/products", async ({ request }) => {
-        const body = (await request.json()) as Omit<Product, "id">
-        const newProduct: Product = {
+        const body = (await request.json()) as Omit<LegacyProduct, "id">
+        const newProduct: LegacyProduct = {
             ...body,
             id: `prd_${Date.now()}`,
         }
@@ -60,7 +74,7 @@ export const productsHandlers = [
     http.put("/api/products/:id", async ({ params, request }) => {
         const idx = products.findIndex((p) => p.id === params.id)
         if (idx === -1) return new HttpResponse(null, { status: 404 })
-        const body = (await request.json()) as Partial<Product>
+        const body = (await request.json()) as Partial<LegacyProduct>
         products[idx] = { ...products[idx], ...body }
         return HttpResponse.json({ data: products[idx], error: null })
     }),

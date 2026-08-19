@@ -199,7 +199,7 @@ export default function DataTable<T>({
           <thead>
             <tr className="bg-gray-50/50">
               {selectable && (
-                <th className="px-4 py-3.5 w-12">
+                <th className="px-4 py-3.5 w-12 text-left">
                   <Checkbox
                     checked={allSelected}
                     ref={(el) => {

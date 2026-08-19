@@ -1,4 +1,5 @@
 import { http, HttpResponse, delay } from "msw"
+import { salesInvoices, salesOrders } from "./frappe-lookups"
 
 // ERPNext "Create" actions from the Sales Invoice toolbar (sales_invoice.js
 // + frappe.model.mapper.make_mapped_doc). Each returns the fresh target doc
@@ -38,6 +39,14 @@ const MAPPED_TARGETS: Record<string, { doctype: string; prefix: string }> = {
     doctype: "Maintenance Schedule",
     prefix: "MNT-SCH",
   },
+  "erpnext.selling.doctype.quotation.quotation.make_sales_order": {
+    doctype: "Sales Order",
+    prefix: "SAL-ORD",
+  },
+  "erpnext.selling.doctype.quotation.quotation.make_sales_invoice": {
+    doctype: "Sales Invoice",
+    prefix: "SINV",
+  },
 }
 
 function jsonBody(body: string): Record<string, unknown> {
@@ -73,6 +82,46 @@ export const invoiceMakeHandlers = [
     const method = String(body.method ?? "")
     const target = MAPPED_TARGETS[method] ?? { doctype: "Sales Invoice", prefix: "SINV-MAP" }
     const result: MakeDocResult = { doctype: target.doctype, name: nextName(target.prefix) }
+
+    // Seed the created doc so its detail route resolves within the session.
+    const today = new Date().toISOString().slice(0, 10)
+    const stamp = new Date().toISOString().replace("T", " ").slice(0, 19)
+    if (target.doctype === "Sales Order" && !salesOrders.some((so) => so.name === result.name)) {
+      salesOrders.push({
+        name: result.name,
+        customer: "CUST-0001",
+        customer_name: "Maple Leaf Bakery",
+        transaction_date: today,
+        delivery_date: today,
+        grand_total: 2450.0,
+        status: "Draft",
+        docstatus: 0,
+        per_delivered: 0,
+        per_billed: 0,
+        owner: "admin@blesserp.com",
+        creation: stamp,
+        modified: stamp,
+        modified_by: "admin@blesserp.com",
+      })
+    }
+    if (target.doctype === "Sales Invoice" && !salesInvoices.some((si) => si.name === result.name)) {
+      salesInvoices.push({
+        name: result.name,
+        customer: "CUST-0001",
+        customer_name: "Maple Leaf Bakery",
+        grand_total: 2450.0,
+        outstanding_amount: 2450.0,
+        posting_date: today,
+        due_date: today,
+        creation: stamp,
+        status: "Draft",
+        docstatus: 0,
+        owner: "admin@blesserp.com",
+        modified: stamp,
+        modified_by: "admin@blesserp.com",
+      })
+    }
+
     return HttpResponse.json({ message: result })
   }),
 ]

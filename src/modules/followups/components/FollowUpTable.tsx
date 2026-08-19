@@ -29,7 +29,7 @@ interface FollowUpTableProps {
 }
 
 export default function FollowUpTable({
-  data, loading, search, onSearch, page, onPageChange, statusFilter, onStatusFilterChange, onComplete,
+  data, loading, search, onSearch, page, onPageChange, onStatusFilterChange, onComplete,
 }: FollowUpTableProps) {
   const columns: Column<FollowUp>[] = [
     {

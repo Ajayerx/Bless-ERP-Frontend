@@ -1,128 +1,370 @@
 "use client"
 
-import { FileText, CheckCircle2, XCircle, Clock, ArrowRight } from "lucide-react"
+import { FileText, CheckCircle2, Clock, XCircle, ArrowRight, Users, TrendingDown } from "lucide-react"
+import { Badge, ListFilterBar } from "@/components/ui"
 import DataTable, { type Column } from "@/components/ui/DataTable"
-import { Card, CardContent, Badge } from "@/components/ui"
 import { type Quotation, type QuotationListResponse } from "@/services"
-import { formatCurrency, formatDate, cn } from "@/lib/utils"
+import type { QuotationStatus } from "../types"
+import { formatCurrency, cn, formatDate } from "@/lib/utils"
 
-const statusConfig: Record<string, { variant: "success" | "warning" | "danger" | "info" | "default"; icon: React.ReactNode }> = {
-  draft: { variant: "warning", icon: <Clock size={14} /> },
-  sent: { variant: "info", icon: <FileText size={14} /> },
-  accepted: { variant: "success", icon: <CheckCircle2 size={14} /> },
-  declined: { variant: "danger", icon: <XCircle size={14} /> },
-  converted: { variant: "success", icon: <ArrowRight size={14} /> },
-}
+type StatusFilter = "All" | QuotationStatus
 
-const columns: Column<Quotation>[] = [
-  {
-    key: "number",
-    header: "Quotation",
-    render: (q) => (
-      <div className="flex items-center gap-3">
-        <div className="w-9 h-9 rounded-[10px] bg-primary-50 text-primary-600 flex items-center justify-center shrink-0">
-          <FileText size={16} />
-        </div>
-        <div>
-          <p className="font-semibold text-heading">{q.number}</p>
-          <p className="text-xs text-muted">{q.customerName}</p>
-        </div>
-      </div>
-    ),
-  },
-  {
-    key: "total",
-    header: "Amount",
-    className: "text-right",
-    render: (q) => <span className="font-semibold tabular-nums text-heading">{formatCurrency(q.total)}</span>,
-  },
-  {
-    key: "issueDate",
-    header: "Date",
-    render: (q) => <span className="text-sm text-muted">{formatDate(q.issueDate)}</span>,
-  },
-  {
-    key: "validUntil",
-    header: "Valid Until",
-    render: (q) => <span className="text-sm text-muted">{formatDate(q.validUntil)}</span>,
-  },
-  {
-    key: "status",
-    header: "Status",
-    render: (q) => {
-      const cfg = statusConfig[q.status] ?? statusConfig.draft
-      return <Badge variant={cfg.variant} className="gap-1">{cfg.icon}{q.status.charAt(0).toUpperCase() + q.status.slice(1)}</Badge>
-    },
-  },
+const STATUS_FILTERS: StatusFilter[] = [
+  "All",
+  "Draft",
+  "Open",
+  "Replied",
+  "Partially Ordered",
+  "Ordered",
+  "Lost",
+  "Cancelled",
+  "Expired",
 ]
 
-const FILTERS = ["All", "Draft", "Sent", "Accepted", "Declined", "Converted"] as const
-type Filter = (typeof FILTERS)[number]
+const statusVariant: Record<QuotationStatus, "success" | "info" | "warning" | "danger" | "default"> = {
+  Draft: "default",
+  Open: "info",
+  Replied: "info",
+  "Partially Ordered": "warning",
+  Ordered: "success",
+  Lost: "danger",
+  Cancelled: "default",
+  Expired: "default",
+}
+
+const statusIcon: Record<QuotationStatus, React.ReactNode> = {
+  Draft: <Clock size={14} />,
+  Open: <FileText size={14} />,
+  Replied: <FileText size={14} />,
+  "Partially Ordered": <ArrowRight size={14} />,
+  Ordered: <CheckCircle2 size={14} />,
+  Lost: <XCircle size={14} />,
+  Cancelled: <XCircle size={14} />,
+  Expired: <Clock size={14} />,
+}
+
+function SummaryCard({
+  label,
+  value,
+  sub,
+  icon: Icon,
+  iconClass,
+  iconBg,
+}: {
+  label: string
+  value: string | number
+  sub: string
+  icon: React.ElementType
+  iconClass: string
+  iconBg: string
+}) {
+  return (
+    <div className="bg-surface rounded-[16px] border border-border shadow-card p-5 flex items-start gap-4">
+      <div className={cn("p-2.5 rounded-[10px] shrink-0", iconBg, iconClass)}>
+        <Icon size={18} />
+      </div>
+      <div className="min-w-0">
+        <p className="text-xs font-semibold text-muted uppercase tracking-wider truncate">{label}</p>
+        <p className="text-2xl font-bold text-heading tracking-tight mt-0.5">{value}</p>
+        <p className="text-xs text-muted mt-0.5">{sub}</p>
+      </div>
+    </div>
+  )
+}
+
+function buildColumns(): Column<Quotation>[] {
+  return [
+    {
+      key: "name",
+      header: "Quotation",
+      width: "w-[23%]",
+      title: (q) => `Quotation: ${q.name} · ${q.customer_name || q.party_name}`,
+      render: (q) => (
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="w-9 h-9 rounded-[10px] bg-primary-50 text-primary-600 flex items-center justify-center shrink-0">
+            <FileText size={16} />
+          </div>
+          <div className="min-w-0">
+            <p className="font-semibold text-heading truncate">{q.name}</p>
+            <p className="text-xs text-muted truncate">{q.customer_name || q.party_name}</p>
+          </div>
+        </div>
+      ),
+    },
+    {
+      key: "quotation_to",
+      header: "Customer Type",
+      width: "w-[13%]",
+      render: (q) => <span className="text-sm text-body">{q.quotation_to}</span>,
+    },
+    {
+      key: "grand_total",
+      header: "Amount",
+      align: "right",
+      width: "w-[12%]",
+      title: (q) => `Amount: ${formatCurrency(q.grand_total)}`,
+      render: (q) => (
+        <span className="font-semibold tabular-nums text-heading">{formatCurrency(q.grand_total)}</span>
+      ),
+    },
+    {
+      key: "status",
+      header: "Status",
+      width: "w-[16%]",
+      render: (q) => (
+        <Badge variant={statusVariant[q.status] ?? "default"} className="gap-1">
+          {statusIcon[q.status]}
+          {q.status}
+        </Badge>
+      ),
+    },
+    {
+      key: "transaction_date",
+      header: "Date",
+      width: "w-[12%]",
+      render: (q) => <span className="text-sm text-muted">{formatDate(q.transaction_date)}</span>,
+    },
+    {
+      key: "valid_till",
+      header: "Valid Until",
+      width: "w-[12%]",
+      render: (q) => {
+        const expired = q.status === "Expired" && !!q.valid_till
+        return (
+          <span className={cn("text-xs", expired ? "text-danger-600 font-semibold" : "text-muted")}>
+            {q.valid_till ? formatDate(q.valid_till) : "—"}
+          </span>
+        )
+      },
+    },
+    {
+      key: "actions",
+      header: "",
+      width: "w-[12%]",
+      render: (q) =>
+        q.status === "Open" && q.docstatus === 1 ? (
+          <span className="text-xs font-semibold text-primary-600">Open</span>
+        ) : null,
+    },
+  ]
+}
 
 interface QuotationTableProps {
   data: QuotationListResponse | null
   loading: boolean
-  search: string
-  onSearch: (q: string) => void
   page: number
   onPageChange: (page: number) => void
-  activeFilter: Filter
-  onFilterChange: (filter: Filter) => void
-  onRowClick?: (quotation: Quotation) => void
+  activeFilter: string
+  onFilterChange: (filter: string) => void
+  onRowClick: (quotation: Quotation) => void
+  customerSearch: string
+  onCustomerSearchChange: (v: string) => void
+  dateFrom: string
+  onDateFromChange: (v: string) => void
+  dateTo: string
+  onDateToChange: (v: string) => void
+  validTillFrom: string
+  onValidTillFromChange: (v: string) => void
+  validTillTo: string
+  onValidTillToChange: (v: string) => void
+  assignedTo: string
+  onAssigneeFilterChange: (v: string) => void
+  sortField: string
+  sortOrder: "asc" | "desc"
+  onSortChange: (field: string, order: "asc" | "desc") => void
+  onResetFilters: () => void
+  hasActiveFilters: boolean
+  toolbarActions?: React.ReactNode
+  selectable?: boolean
+  selectedKeys?: Set<string>
+  onSelectionChange?: (keys: Set<string>) => void
+  paginationMode?: "pages" | "loadMore"
+  currentPageLength?: number
+  onPageLengthChange?: (size: number) => void
+  onLoadMore?: () => void
 }
 
 export default function QuotationTable({
-  data, loading, search, onSearch, page, onPageChange, activeFilter, onFilterChange, onRowClick,
+  data,
+  loading,
+  page,
+  onPageChange,
+  activeFilter,
+  onFilterChange,
+  onRowClick,
+  customerSearch,
+  onCustomerSearchChange,
+  dateFrom,
+  onDateFromChange,
+  dateTo,
+  onDateToChange,
+  validTillFrom,
+  onValidTillFromChange,
+  validTillTo,
+  onValidTillToChange,
+  assignedTo,
+  onAssigneeFilterChange,
+  sortField,
+  sortOrder,
+  onSortChange,
+  onResetFilters,
+  hasActiveFilters,
+  toolbarActions,
+  selectable,
+  selectedKeys,
+  onSelectionChange,
+  paginationMode,
+  currentPageLength,
+  onPageLengthChange,
+  onLoadMore,
 }: QuotationTableProps) {
+  const allItems = data?.items ?? []
+  const totalAmount = allItems.reduce((s, i) => s + (i.grand_total || 0), 0)
+  const openAmount = allItems.filter((i) => i.status === "Open").reduce((s, i) => s + (i.grand_total || 0), 0)
+  const draftCount = allItems.filter((i) => i.status === "Draft").length
+  const lostCount = allItems.filter((i) => i.status === "Lost").length
+
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card>
-          <CardContent>
-            <p className="text-xs font-semibold text-muted uppercase tracking-wider">Total</p>
-            <p className="text-2xl font-bold text-heading mt-1.5">{data?.total ?? 0}</p>
-            <p className="text-xs text-muted mt-0.5">Quotations</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent>
-            <p className="text-xs font-semibold text-muted uppercase tracking-wider">Accepted</p>
-            <p className="text-2xl font-bold text-success-600 mt-1.5">{data?.items?.filter((q) => q.status === "accepted").length ?? 0}</p>
-            <p className="text-xs text-muted mt-0.5">Ready to convert</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent>
-            <p className="text-xs font-semibold text-muted uppercase tracking-wider">Declined</p>
-            <p className="text-2xl font-bold text-danger-600 mt-1.5">{data?.items?.filter((q) => q.status === "declined").length ?? 0}</p>
-            <p className="text-xs text-muted mt-0.5">Lost quotations</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent>
-            <p className="text-xs font-semibold text-muted uppercase tracking-wider">Converted</p>
-            <p className="text-2xl font-bold text-info-600 mt-1.5">{data?.items?.filter((q) => q.status === "converted").length ?? 0}</p>
-            <p className="text-xs text-muted mt-0.5">Became invoices</p>
-          </CardContent>
-        </Card>
+        <SummaryCard
+          label="Total Quotations"
+          value={formatCurrency(totalAmount)}
+          sub={`${data?.total ?? 0} quotations`}
+          icon={FileText}
+          iconClass="text-primary-600"
+          iconBg="bg-primary-50"
+        />
+        <SummaryCard
+          label="Open"
+          value={formatCurrency(openAmount)}
+          sub="Active quotations"
+          icon={CheckCircle2}
+          iconClass="text-success-600"
+          iconBg="bg-success-50"
+        />
+        <SummaryCard
+          label="Draft"
+          value={draftCount}
+          sub="Not yet submitted"
+          icon={Clock}
+          iconClass="text-purple-600"
+          iconBg="bg-purple-50"
+        />
+        <SummaryCard
+          label="Lost"
+          value={lostCount}
+          sub="Declined or lost"
+          icon={TrendingDown}
+          iconClass="text-danger-600"
+          iconBg="bg-danger-50"
+        />
       </div>
 
+      {/* Status pill tabs */}
       <div className="flex items-center gap-2 flex-wrap">
-        {FILTERS.map((f) => (
-          <button key={f} onClick={() => { onFilterChange(f); onPageChange(1) }}
-            className={cn("px-4 py-1.5 rounded-[10px] text-sm font-semibold transition-colors",
-              activeFilter === f ? "bg-primary-600 text-white shadow-sm" : "text-muted hover:bg-gray-100 hover:text-body")}>
+        {STATUS_FILTERS.map((f) => (
+          <button
+            key={f}
+            onClick={() => {
+              onFilterChange(f)
+              onPageChange(1)
+            }}
+            className={cn(
+              "px-4 py-1.5 rounded-[10px] text-sm font-semibold transition-colors",
+              activeFilter === f
+                ? "bg-primary-600 text-white shadow-sm"
+                : "text-muted hover:bg-gray-100 hover:text-body",
+            )}
+          >
             {f}
           </button>
         ))}
       </div>
 
+      {/* Customer search + date filters + sort */}
+      <ListFilterBar
+        controls={{
+          search: {
+            value: customerSearch,
+            onChange: onCustomerSearchChange,
+            placeholder: "Search customer / ID...",
+            width: "w-48",
+          },
+          dateRange: {
+            from: dateFrom,
+            to: dateTo,
+            onChange: (from, to) => {
+              onDateFromChange(from)
+              onDateToChange(to)
+            },
+          },
+          sort: {
+            field: sortField || "transaction_date",
+            order: sortOrder ?? "desc",
+            onSort: onSortChange,
+            options: [
+              { value: "transaction_date", label: "Date" },
+              { value: "party_name", label: "Customer" },
+              { value: "grand_total", label: "Amount" },
+              { value: "valid_till", label: "Valid Until" },
+            ],
+          },
+          chips: [
+            ...(validTillFrom || validTillTo
+              ? [{
+                  key: "validTill",
+                  label: `Valid until: ${validTillFrom || "…"} → ${validTillTo || "…"}`,
+                  icon: <Clock size={12} />,
+                  onClear: () => {
+                    onValidTillFromChange("")
+                    onValidTillToChange("")
+                  },
+                }]
+              : []),
+            ...(assignedTo
+              ? [{
+                  key: "assignee",
+                  label: `Assigned to: ${assignedTo}`,
+                  icon: <Users size={12} />,
+                  onClear: () => onAssigneeFilterChange(""),
+                }]
+              : []),
+          ],
+        }}
+        hasActiveFilters={hasActiveFilters}
+        onReset={onResetFilters}
+      />
+
       <DataTable
-        columns={columns} data={data?.items ?? []} keyExtractor={(q) => q.id}
-        searchable searchPlaceholder="Search quotations..." searchQuery={search}
-        onSearch={(q) => { onSearch(q); onPageChange(1) }}
-        loading={loading} page={page} total={data?.total} pageSize={10} onPageChange={onPageChange}
+        columns={buildColumns()}
+        data={allItems}
+        keyExtractor={(q) => q.name}
+        loading={loading}
+        page={page}
+        total={data?.total}
+        pageSize={10}
+        onPageChange={onPageChange}
         onRowClick={onRowClick}
+        toolbarActions={toolbarActions}
+        selectable={selectable}
+        selectedKeys={selectedKeys}
+        onSelectionChange={onSelectionChange}
+        paginationMode={paginationMode}
+        currentPageLength={currentPageLength}
+        onPageLengthChange={onPageLengthChange}
+        onLoadMore={onLoadMore}
+        emptyState={
+          <div className="flex flex-col items-center gap-2 py-4">
+            <FileText size={32} className="text-muted opacity-40" />
+            <p className="font-semibold text-body">No quotations found</p>
+            <p className="text-xs text-muted">
+              {hasActiveFilters
+                ? "No quotations match the current filters."
+                : "Create your first quotation to get started."}
+            </p>
+          </div>
+        }
       />
     </div>
   )

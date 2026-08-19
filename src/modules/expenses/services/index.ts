@@ -1,5 +1,6 @@
 import { apiClient } from "@/services/api-client"
-export type { Expense, ExpenseListResponse, ExpenseFormData } from "../types"
+import type { Expense, ExpenseListResponse, ExpenseFormData } from "../types"
+export type { Expense, ExpenseListResponse, ExpenseFormData }
 
 export const expenseService = {
   list: (params: { search?: string; page?: number; pageSize?: number; category?: string }): Promise<ExpenseListResponse> => {

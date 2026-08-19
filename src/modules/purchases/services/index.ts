@@ -4,17 +4,24 @@ import type {
   Vendor, VendorListResponse, VendorFormData,
   Bill, BillListResponse, BillFormData,
 } from "../types"
+export type {
+  PurchaseOrder, PurchaseOrderListResponse, PurchaseOrderFormData,
+  Vendor, VendorListResponse, VendorFormData,
+  Bill, BillListResponse, BillFormData,
+}
 
 export const purchaseOrderService = {
   async list(params: {
     search?: string
     page?: number
     pageSize?: number
+    status?: string
   }): Promise<PurchaseOrderListResponse> {
     const qs = new URLSearchParams()
     if (params.search) qs.set("search", params.search)
     if (params.page) qs.set("page", String(params.page))
     if (params.pageSize) qs.set("pageSize", String(params.pageSize))
+    if (params.status) qs.set("status", params.status)
     return apiClient<PurchaseOrderListResponse>(`/purchase-orders?${qs.toString()}`)
   },
 
