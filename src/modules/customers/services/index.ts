@@ -5,13 +5,12 @@ import type { DocInfo, PaymentActivityItem, PaymentComment } from "@/modules/pay
 import type {
   Customer, CustomerListResponse, AddressInput, AllowedCompanyRow,
   CreditLimitRow, PartyAccountRow, SalesTeamRow, PortalUserRow,
-  SupplierNumberRow, CustomerFormData, CustomerDetail, TransactionCounts,
-  ContactDetail,
+  SupplierNumberRow, CustomerFormData, CustomerDetail,
 } from "../types"
 export type {
   Customer, CustomerListResponse, AddressInput, AllowedCompanyRow,
   CreditLimitRow, PartyAccountRow, SalesTeamRow, PortalUserRow,
-  SupplierNumberRow, CustomerFormData, CustomerDetail, TransactionCounts,
+  SupplierNumberRow, CustomerFormData, CustomerDetail,
   ContactDetail,
 } from "../types"
 
@@ -42,6 +41,62 @@ async function getCount(doctype: string, filters?: unknown[]): Promise<number> {
     `/method/frappe.desk.reportview.get_count?${qp.toString()}`
   )
   return Number(result)
+}
+
+// Coalesces concurrent get_docinfo calls for the same customer (the activity
+// timeline and the assignments/tags sidebar both fetch it on page load), so
+// the two read-only callers share a single network round-trip. The entry is
+// removed once the promise settles so post-mutation refetches stay fresh.
+const docinfoInFlight = new Map<string, Promise<DocInfo>>()
+
+// Coalesces concurrent getById calls for the same customer: the route wrapper
+// (AppLayout's AnimatePresence) can mount the detail page twice at once, so
+// both executions share a single round-trip for the doc + addresses +
+// contacts. The entry clears on settle so a later on-save refresh refetches.
+const customerDetailInFlight = new Map<string, Promise<CustomerDetail>>()
+
+// ── frappe.desk.form.load.getdoc response (ERPNext form-open payload) ──
+
+interface GetdocAddressRow {
+  name: string
+  address_type?: string
+  address_line1?: string
+  address_line2?: string
+  city?: string
+  state?: string
+  country?: string
+  pincode?: string
+}
+
+interface GetdocContactRow {
+  name: string
+  first_name?: string
+  last_name?: string
+  email_ids?: Array<{ email_id?: string; is_primary?: 0 | 1 }>
+  phone_nos?: Array<{ phone?: string; is_primary_mobile_no?: 0 | 1 }>
+  is_primary_contact?: 0 | 1
+}
+
+type CustomerFullDoc = CustomerRow & {
+  companies?: AllowedCompanyRow[]
+  credit_limits?: CreditLimitRow[]
+  accounts?: PartyAccountRow[]
+  sales_team?: SalesTeamRow[]
+  portal_users?: PortalUserRow[]
+  supplier_numbers?: SupplierNumberRow[]
+}
+
+interface CustomerGetdocBody {
+  docs?: CustomerFullDoc[]
+  docinfo?: DocInfo
+  __onload?: {
+    addr_list?: GetdocAddressRow[]
+    contact_list?: GetdocContactRow[]
+  }
+}
+
+function buildGetdocUrl(name: string): string {
+  return `/method/frappe.desk.form.load.getdoc?doctype=Customer&name=${encodeURIComponent(name)}`
 }
 
 interface ReportViewParams {
@@ -108,20 +163,29 @@ export async function fetchFieldOptions(doctype: string, fieldname: string): Pro
   }
 }
 
+// Coalesces concurrent search_link requests with identical parameters (e.g.
+// the same doctype being resolved for the label of two pre-filled link
+// fields), sharing one network round-trip. Entries clear on settle.
+const searchLinkInFlight = new Map<string, Promise<{ value: string; label: string; description: string }[]>>()
+
 export async function searchLink(doctype: string, query: string, referenceDoctype?: string, filters?: unknown[][] | Record<string, string | number | boolean | Array<string | number>>, customQuery?: string, ignoreUserPermissions?: boolean): Promise<{ value: string; label: string; description: string }[]> {
-  try {
-    const qp = new URLSearchParams()
-    qp.set("doctype", doctype)
-    qp.set("txt", query)
-    if (referenceDoctype) qp.set("reference_doctype", referenceDoctype)
-    if (ignoreUserPermissions) qp.set("ignore_user_permissions", "1")
-    if (filters) qp.set("filters", JSON.stringify(filters))
-    if (customQuery) qp.set("query", customQuery)
-    qp.set("page_length", "10")
-    return apiClient(`/method/frappe.desk.search.search_link?${qp.toString()}`)
-  } catch {
-    return []
-  }
+  const qp = new URLSearchParams()
+  qp.set("doctype", doctype)
+  qp.set("txt", query)
+  if (referenceDoctype) qp.set("reference_doctype", referenceDoctype)
+  if (ignoreUserPermissions) qp.set("ignore_user_permissions", "1")
+  if (filters) qp.set("filters", JSON.stringify(filters))
+  if (customQuery) qp.set("query", customQuery)
+  qp.set("page_length", "10")
+  const url = `/method/frappe.desk.search.search_link?${qp.toString()}`
+  const inflight = searchLinkInFlight.get(url)
+  if (inflight) return inflight
+  const promise = apiClient<{ value: string; label: string; description: string }[]>(url).catch(() => [])
+  searchLinkInFlight.set(url, promise)
+  promise.finally(() => {
+    searchLinkInFlight.delete(url)
+  })
+  return promise
 }
 
 export async function validateLink(doctype: string, docname: string): Promise<void> {
@@ -326,84 +390,6 @@ async function deleteAddress(addressName: string): Promise<void> {
   })
 }
 
-async function fetchContactsForCustomer(customerName: string): Promise<ContactDetail[]> {
-  try {
-    const rows = await apiClient<Array<{
-      name: string
-      first_name: string
-      last_name?: string
-      email_ids?: Array<{ email_id: string; is_primary: 0 | 1 }>
-      phone_nos?: Array<{ phone: string; is_primary_mobile_no: 0 | 1 }>
-    }>>(
-      buildListUrl("Contact", {
-        fields: ["name", "first_name", "last_name", "email_ids", "phone_nos"],
-        filters: [
-          ["Dynamic Link", "link_doctype", "=", "Customer"],
-          ["Dynamic Link", "link_name", "=", customerName],
-        ],
-      })
-    )
-    return (rows ?? []).map((r) => ({
-      name: r.name,
-      first_name: r.first_name,
-      last_name: r.last_name,
-      email_id: r.email_ids?.find((e) => e.is_primary)?.email_id ?? r.email_ids?.[0]?.email_id,
-      mobile_no: r.phone_nos?.find((p) => p.is_primary_mobile_no)?.phone ?? r.phone_nos?.[0]?.phone,
-      is_primary_contact: 0 as const,
-    }))
-  } catch {
-    return []
-  }
-}
-
-async function fetchAddressesForCustomer(customerName: string): Promise<AddressDoc[]> {
-  return apiClient<AddressDoc[]>(
-    buildListUrl("Address", {
-      fields: [
-        "name", "address_type", "address_line1", "address_line2",
-        "city", "state", "country", "pincode",
-        "is_primary_address", "is_shipping_address",
-      ],
-      filters: [
-        ["Dynamic Link", "link_doctype", "=", "Customer"],
-        ["Dynamic Link", "link_name", "=", customerName],
-      ],
-    })
-  )
-}
-
-async function fetchTransactionCounts(customerName: string): Promise<TransactionCounts> {
-  const [
-    sales_orders, sales_invoices, opportunities, issues,
-    quotations, delivery_notes, payment_entries, bank_accounts,
-    dunnings, maintenance_visits, installation_notes, warranty_claims,
-    projects, pricing_rules, subscriptions,
-  ] = await Promise.all([
-    getCount("Sales Order", [["customer", "=", customerName], ["docstatus", "!=", 2]]),
-    getCount("Sales Invoice", [["customer", "=", customerName], ["docstatus", "!=", 2]]),
-    getCount("Opportunity", [["party_name", "=", customerName], ["docstatus", "!=", 2]]),
-    getCount("Issue", [["customer", "=", customerName]]),
-    getCount("Quotation", [["party_name", "=", customerName], ["docstatus", "!=", 2]]),
-    getCount("Delivery Note", [["customer", "=", customerName], ["docstatus", "!=", 2]]),
-    getCount("Payment Entry", [["party", "=", customerName], ["docstatus", "!=", 2]]),
-    getCount("Bank Account", [["party_type", "=", "Customer"], ["party", "=", customerName]]),
-    getCount("Dunning", [["customer", "=", customerName], ["docstatus", "!=", 2]]),
-    getCount("Maintenance Visit", [["customer", "=", customerName], ["docstatus", "!=", 2]]),
-    getCount("Installation Note", [["customer", "=", customerName], ["docstatus", "!=", 2]]),
-    getCount("Warranty Claim", [["customer", "=", customerName]]),
-    getCount("Project", [["customer", "=", customerName]]),
-    getCount("Pricing Rule", [["customer", "=", customerName]]),
-    getCount("Subscription", [["party_type", "=", "Customer"], ["party", "=", customerName]]),
-  ])
-  return {
-    sales_orders, sales_invoices, opportunities, issues,
-    quotations, delivery_notes, payment_entries, bank_accounts,
-    dunnings, maintenance_visits, installation_notes, warranty_claims,
-    projects, pricing_rules, subscriptions,
-  }
-}
-
-
 function toCustomerDocPayload(data: CustomerFormData): Record<string, unknown> {
   return {
     naming_series: data.naming_series,
@@ -500,41 +486,52 @@ export const customerService = {
   },
 
   async getById(name: string): Promise<CustomerDetail> {
-    const [fullDoc, addresses, contacts, outstandingMap, transaction_counts] = await Promise.all([
-      apiClient<CustomerRow & {
-        companies?: AllowedCompanyRow[]
-        credit_limits?: CreditLimitRow[]
-        accounts?: PartyAccountRow[]
-        sales_team?: SalesTeamRow[]
-        portal_users?: PortalUserRow[]
-        supplier_numbers?: SupplierNumberRow[]
-      }>(`/resource/Customer/${encodeURIComponent(name)}`),
-      fetchAddressesForCustomer(name),
-      fetchContactsForCustomer(name),
-      fetchOutstandingByCustomer([name]),
-      fetchTransactionCounts(name),
-    ])
-    return {
-      ...toCustomer(fullDoc, outstandingMap.get(name) ?? 0),
-      transaction_counts,
-      addresses: addresses.map((a) => ({
-        name: a.name,
-        address_type: a.address_type,
-        address_line1: a.address_line1,
-        address_line2: a.address_line2,
-        city: a.city,
-        state: a.state,
-        country: a.country,
-        pincode: a.pincode,
-      })),
-      contacts,
-      companies: fullDoc.companies ?? [],
-      credit_limits: fullDoc.credit_limits ?? [],
-      accounts: fullDoc.accounts ?? [],
-      sales_team: fullDoc.sales_team ?? [],
-      portal_users: fullDoc.portal_users ?? [],
-      supplier_numbers: fullDoc.supplier_numbers ?? [],
-    }
+    const inflight = customerDetailInFlight.get(name)
+    if (inflight) return inflight
+    const promise = (async () => {
+      // ERPNext form-open parity: a single getdoc round-trip returns the full
+      // doc (incl. child tables), the linked addresses/contacts in __onload,
+      // and the docinfo the timeline + assignments sidebar need. The payload
+      // sits at the top level (docs/docinfo/__onload); some proxies wrap it in
+      // `message`, so normalize both shapes.
+      const raw = await apiClientWithBody<CustomerGetdocBody>(buildGetdocUrl(name))
+      const payload = (raw.message as CustomerGetdocBody | undefined) ?? raw
+      const fullDoc = payload.docs?.[0] ?? ({} as unknown as CustomerFullDoc)
+      const addressRows = payload.__onload?.addr_list ?? []
+      const contactRows = payload.__onload?.contact_list ?? []
+      return {
+        ...toCustomer(fullDoc, 0),
+        addresses: addressRows.map((a) => ({
+          name: a.name,
+          address_type: a.address_type ?? "",
+          address_line1: a.address_line1 ?? "",
+          address_line2: a.address_line2,
+          city: a.city ?? "",
+          state: a.state,
+          country: a.country ?? "",
+          pincode: a.pincode,
+        })),
+        contacts: contactRows.map((c) => ({
+          name: c.name,
+          first_name: c.first_name ?? c.name,
+          last_name: c.last_name,
+          email_id: c.email_ids?.find((e) => e.is_primary)?.email_id ?? c.email_ids?.[0]?.email_id,
+          mobile_no: c.phone_nos?.find((p) => p.is_primary_mobile_no)?.phone ?? c.phone_nos?.[0]?.phone,
+          is_primary_contact: c.is_primary_contact ?? 0,
+        })),
+        companies: fullDoc.companies ?? [],
+        credit_limits: fullDoc.credit_limits ?? [],
+        accounts: fullDoc.accounts ?? [],
+        sales_team: fullDoc.sales_team ?? [],
+        portal_users: fullDoc.portal_users ?? [],
+        supplier_numbers: fullDoc.supplier_numbers ?? [],
+        docinfo: payload.docinfo ?? { comments: [], versions: [] },
+      }
+    })().finally(() => {
+      customerDetailInFlight.delete(name)
+    })
+    customerDetailInFlight.set(name, promise)
+    return promise
   },
 
   async quickCreate(data: CustomerFormData): Promise<Customer> {
@@ -685,14 +682,29 @@ export const customerService = {
   // ── Activity timeline / comments (ERPNext form footer) ────────────
 
   async getDocInfo(name: string): Promise<DocInfo> {
-    const body = await apiClientWithBody<{ docinfo?: DocInfo }>(
-      `/method/frappe.desk.form.load.get_docinfo?doctype=Customer&name=${encodeURIComponent(name)}`,
-    )
-    return body.docinfo ?? { comments: [], versions: [] }
+    const inflight = docinfoInFlight.get(name)
+    if (inflight) return inflight
+    const promise = (async () => {
+      const body = await apiClientWithBody<{ docinfo?: DocInfo }>(
+        `/method/frappe.desk.form.load.get_docinfo?doctype=Customer&name=${encodeURIComponent(name)}`,
+      )
+      return body.docinfo ?? { comments: [], versions: [] }
+    })().finally(() => {
+      docinfoInFlight.delete(name)
+    })
+    docinfoInFlight.set(name, promise)
+    return promise
   },
 
-  async getActivity(doc: CustomerDetail, currentUserId?: string): Promise<PaymentActivityItem[]> {
-    const docinfo = await this.getDocInfo(doc.name)
+  async getActivity(
+    doc: CustomerDetail,
+    currentUserId?: string,
+    forceRefresh = false,
+  ): Promise<PaymentActivityItem[]> {
+    // The page-load doc bundle already carries docinfo, so the timeline needs
+    // no extra call. Mutations pass forceRefresh to refetch a fresh docinfo.
+    const docinfo =
+      !forceRefresh && doc.docinfo ? doc.docinfo : await this.getDocInfo(doc.name)
     return buildTimelineItems(doc, docinfo, currentUserId)
   },
 

@@ -1,3 +1,5 @@
+import type { DocInfo } from "@/modules/payments/types"
+
 export interface Customer {
   name: string
   naming_series?: string
@@ -168,26 +170,7 @@ export interface ContactDetail {
   is_primary_contact?: 0 | 1
 }
 
-export interface TransactionCounts {
-  sales_orders: number
-  sales_invoices: number
-  opportunities: number
-  issues: number
-  quotations: number
-  delivery_notes: number
-  payment_entries: number
-  bank_accounts: number
-  dunnings: number
-  maintenance_visits: number
-  installation_notes: number
-  warranty_claims: number
-  projects: number
-  pricing_rules: number
-  subscriptions: number
-}
-
 export interface CustomerDetail extends Customer {
-  transaction_counts?: TransactionCounts
   addresses: Array<{
     name: string
     address_type: string
@@ -205,4 +188,5 @@ export interface CustomerDetail extends Customer {
   sales_team: SalesTeamRow[]
   portal_users: PortalUserRow[]
   supplier_numbers?: SupplierNumberRow[]
+  docinfo?: DocInfo
 }

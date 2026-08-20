@@ -11,12 +11,14 @@ import {
   useMessageDialog,
   messageFromError,
 } from "@/components/ui"
-import type { DocInfoAssignment, DocInfoUserInfo } from "@/modules/payments/types"
+import type { DocInfo, DocInfoAssignment, DocInfoUserInfo } from "@/modules/payments/types"
 import { customerService } from "../services"
 import { useAuth } from "@/context/AuthContext"
 
 interface CustomerMetaPanelProps {
   name: string
+  /** Docinfo bundled with the page-load getdoc payload; skips the fetch on mount. */
+  initialDocinfo?: DocInfo
   /** Collapse the panel (shown as a chevron at its top-right corner). */
   onCollapse?: () => void
 }
@@ -29,7 +31,7 @@ function displayName(userId: string, userInfo: DocInfoUserInfo): string {
 // PaymentMetaPanel: sidebar/assign_to.js (avatars, add/remove/complete) and
 // ui/tag_editor.js (chips + add/remove with existing-Tag suggestions). Data
 // comes from frappe.desk.form.load.get_docinfo; every mutation refetches.
-export default function CustomerMetaPanel({ name, onCollapse }: CustomerMetaPanelProps) {
+export default function CustomerMetaPanel({ name, initialDocinfo, onCollapse }: CustomerMetaPanelProps) {
   const { user } = useAuth()
   const currentUserId = user?.id ?? null
   const { showMessage } = useMessageDialog()
@@ -46,29 +48,40 @@ export default function CustomerMetaPanel({ name, onCollapse }: CustomerMetaPane
   const [tagSuggestions, setTagSuggestions] = useState<string[]>([])
   const [tagOpen, setTagOpen] = useState(false)
 
+  const applyDocInfo = useCallback((doc: DocInfo) => {
+    setAssignments(doc.assignments ?? [])
+    setTags(
+      (doc.tags ?? "")
+        .split(",")
+        .map((t) => t.trim())
+        .filter(Boolean)
+    )
+    setUserInfo(doc.user_info ?? {})
+    setCanWrite(!!doc.permissions?.write)
+  }, [])
+
   const reload = useCallback(async () => {
     setLoading(true)
     try {
-      const doc = await customerService.getDocInfo(name)
-      setAssignments(doc.assignments ?? [])
-      setTags(
-        (doc.tags ?? "")
-          .split(",")
-          .map((t) => t.trim())
-          .filter(Boolean)
-      )
-      setUserInfo(doc.user_info ?? {})
-      setCanWrite(!!doc.permissions?.write)
+      applyDocInfo(await customerService.getDocInfo(name))
     } catch (err) {
       showMessage(messageFromError(err, "Failed to load assignments and tags."))
     } finally {
       setLoading(false)
     }
-  }, [name, showMessage])
+  }, [applyDocInfo, name, showMessage])
 
   useEffect(() => {
-    reload()
-  }, [reload])
+    // The page-load getdoc payload already bundles docinfo; reuse it so this
+    // collapsible sidebar adds no extra fetch. Only falls back to get_docinfo
+    // when it wasn't provided. Mutations still refetch via reload().
+    if (initialDocinfo) {
+      applyDocInfo(initialDocinfo)
+      setLoading(false)
+    } else {
+      reload()
+    }
+  }, [initialDocinfo, applyDocInfo, reload])
 
   const run = useCallback(
     async (action: () => Promise<unknown>) => {

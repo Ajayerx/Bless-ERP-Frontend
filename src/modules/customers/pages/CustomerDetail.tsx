@@ -80,10 +80,10 @@ export default function CustomerDetail() {
 
   useEffect(() => { fetchCustomer() }, [fetchCustomer])
 
-  const loadActivity = useCallback(async (doc: CustomerDetail, currentUser: string | null) => {
+  const loadActivity = useCallback(async (doc: CustomerDetail, currentUser: string | null, refresh = false) => {
     setActivityLoading(true)
     try {
-      setActivity(await customerService.getActivity(doc, currentUser ?? undefined))
+      setActivity(await customerService.getActivity(doc, currentUser ?? undefined, refresh))
     } catch (err) {
       setActivity([])
       showMessage(messageFromError(err, "Failed to load activity."))
@@ -108,17 +108,17 @@ export default function CustomerDetail() {
   const handleAddComment = async (content: string) => {
     if (!id) return
     await customerService.addComment(id, content, user?.id ?? "", user?.name ?? "")
-    if (customer) await loadActivity(customer, currentUserId)
+    if (customer) await loadActivity(customer, currentUserId, true)
   }
 
   const handleUpdateComment = async (commentName: string, content: string) => {
     await customerService.updateComment(commentName, content)
-    if (customer) await loadActivity(customer, currentUserId)
+    if (customer) await loadActivity(customer, currentUserId, true)
   }
 
   const handleDeleteComment = async (commentName: string) => {
     await customerService.deleteComment(commentName)
-    if (customer) await loadActivity(customer, currentUserId)
+    if (customer) await loadActivity(customer, currentUserId, true)
   }
 
   const handleDeleteCustomer = async () => {
@@ -266,7 +266,7 @@ export default function CustomerDetail() {
       />
       <motion.div className="p-6" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.3 }}>
         <div className="flex items-start gap-6">
-          {metaOpen && <CustomerMetaPanel name={customer.name} onCollapse={toggleMeta} />}
+          {metaOpen && <CustomerMetaPanel name={customer.name} initialDocinfo={customer.docinfo} onCollapse={toggleMeta} />}
           <div className="flex-1 min-w-0 space-y-6">
             <div className="bg-white rounded-2xl shadow-card p-6">
               <CustomerForm

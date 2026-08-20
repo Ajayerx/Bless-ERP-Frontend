@@ -75,5 +75,7 @@ export const DEFAULT_RULES: QuotationFieldRule[] = [
   { fieldname: "party_name", readOnlyWhen: "opportunity", reqd: true },
   { fieldname: "total_qty", hiddenWhen: "!total_qty" },
   { fieldname: "total_net_weight", hiddenWhen: "!total_net_weight" },
+  { fieldname: "in_words", hiddenWhen: "!in_words" },
+  { fieldname: "base_in_words", hiddenWhen: "!base_in_words" },
   { fieldname: "grand_total", reqd: true },
 ]

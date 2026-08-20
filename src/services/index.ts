@@ -26,7 +26,7 @@ export type { CalendarEvent } from "@/modules/dashboard/services/event.service"
 
 export { customerService, fetchFieldOptions, searchLink, validateLink, getPartyDetails } from "@/modules/customers/services"
 export type {
-  Customer, CustomerFormData, CustomerListResponse, CustomerDetail, TransactionCounts,
+  Customer, CustomerFormData, CustomerListResponse, CustomerDetail,
   AddressInput, AllowedCompanyRow, CreditLimitRow, PartyAccountRow, SalesTeamRow, PortalUserRow, SupplierNumberRow,
 } from "@/modules/customers/services"
 

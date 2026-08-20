@@ -22,6 +22,10 @@ interface LinkSearchFieldProps {
   docType?: string
   clearIconMode?: "always" | "hover"
   suppressExternalLabelFetch?: boolean
+  /** Eagerly resolve a label for a pre-filled value on mount. Off by default
+   * so link inputs don't fire a search_link request just to display a value;
+   * labels resolve on focus/typing. */
+  fetchLabelOnMount?: boolean
   displayLabel?: string
   onMouseDownCapture?: (e: React.MouseEvent) => void
 }
@@ -42,6 +46,7 @@ export default function LinkSearchField({
   inputClassName,
   clearIconMode = "always",
   suppressExternalLabelFetch = false,
+  fetchLabelOnMount = false,
   displayLabel,
   onMouseDownCapture,
 }: LinkSearchFieldProps) {
@@ -192,13 +197,13 @@ export default function LinkSearchField({
   }, [value, displayLabel])
 
   useEffect(() => {
-    if (suppressExternalLabelFetch) return
+    if (suppressExternalLabelFetch || !fetchLabelOnMount) return
     if (value && labelFetchValueRef.current !== value && selectedLabel === value) {
       labelFetchValueRef.current = value
       fetchedRef.current = true
       doSearch("")
     }
-  }, [value, selectedLabel, doSearch, suppressExternalLabelFetch])
+  }, [value, selectedLabel, doSearch, suppressExternalLabelFetch, fetchLabelOnMount])
 
   const handleSelect = (item: SearchResult) => {
     onChange?.(item.value)
