@@ -26,11 +26,30 @@ export interface QuotationItem {
   rate: number
   amount: number
   discount_percentage: number
+  discount_amount?: number
+  margin_type?: string
+  margin_rate_or_amount?: number
+  base_net_rate?: number
+  item_tax_template?: string
+  item_tax_rate?: string
+  barcode?: string | null
+  pricing_rules?: string
+  weight_per_unit?: number
+  weight_uom?: string
+  total_weight?: number
+  item_group?: string
+  brand?: string
+  description?: string
+  image?: string
+  actual_qty?: number
+  projected_qty?: number
+  reserved_qty?: number
   is_free_item: number
   delivery_date?: string
   warehouse?: string
   customer_item_code?: string
   income_account?: string
+  expense_account?: string
   base_rate?: number
   base_amount?: number
   grant_commission?: number
@@ -97,6 +116,11 @@ export interface Quotation {
   status: QuotationStatus
   docstatus: QuotationDocStatus
   customer_group?: string
+  crm_deal?: string
+  territory?: string
+
+  scan_barcode?: string
+  last_scanned_warehouse?: string
 
   currency: string
   conversion_rate: number
@@ -136,6 +160,7 @@ export interface Quotation {
   base_discount_amount?: number
   additional_discount_percentage?: number
   discount_amount?: number
+  ignore_pricing_rule?: number
 
   customer_address?: string
   address_display?: string

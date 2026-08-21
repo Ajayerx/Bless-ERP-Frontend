@@ -48,6 +48,10 @@ export interface SalesInvoiceTax {
   tax_amount?: number
   total?: number
   included_in_print_rate?: boolean | number
+  /** "Total" (default) or "Valuation"; Valuation rows are excluded from the Tax Breakup. */
+  category?: string
+  /** ERPNext/erpnext stored JSON `{item_code: [rate, amount]}` in base currency. */
+  item_wise_tax_detail?: string
 }
 
 export type ChargeType =
@@ -68,6 +72,8 @@ export interface EditableTaxRow {
   tax_amount_after_discount_amount?: number
   included_in_print_rate: boolean
   row_id?: number
+  /** "Total" (default) or "Valuation"; Valuation rows are excluded from the Tax Breakup. */
+  category?: string
 }
 
 export interface SalesInvoicePayment {
@@ -120,6 +126,8 @@ export interface SalesInvoice {
   status: string
   docstatus: number
   taxes_and_charges?: string
+  /** ERPNext/erpnext stores the pre-rendered "Tax Breakup" HTML here (itemised_tax_breakup.html). */
+  other_charges_calculation?: string
   tax_category?: string
   customer_address?: string
   address_display?: string

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useNavigate, Link } from "react-router-dom";
 
 import {
@@ -8,15 +8,28 @@ import {
   useMessageDialog,
   messageFromError,
 } from "@/components/ui";
+import { Combobox, LinkField as SharedLinkField, inputClass, labelClass, errCls } from "@/components/ui/form-fields";
 import ChildTableGrid, { type GridColumn } from "@/components/ui/ChildTableGrid";
 import LinkSearchField from "@/components/ui/LinkSearchField";
 import ReturnAgainstSearchModal from "./ReturnAgainstSearchModal";
 import { type Customer } from "@/services";
 import { invoiceService } from "@/services";
-import { useLazyOptions, type LazyOptionsState } from "@/services/lookup-cache";
+import { useAuth } from "@/context/AuthContext";
+import { useLazyOptions } from "@/services/lookup-cache";
 import { formatCurrency, formatDateDDMMYYYY } from "@/lib/utils";
 import type { EditableTaxRow, ChargeType } from "../types";
-import { createEmptyTaxRow, getCurrencySmallestFraction, roundToSmallestCurrencyFraction } from "../services";
+import {
+  buildDeskSetMissingValuesDoc,
+  createEmptyTaxRow,
+  deskRandomString,
+  getCurrencySmallestFraction,
+  getItemisedTaxBreakupData,
+  invoiceTaxesToEditable,
+  roundToSmallestCurrencyFraction,
+  type ItemisedTaxBreakupTaxRow,
+} from "../services";
+import type { LineItemForm } from "./InvoiceLineItems";
+import ItemisedTaxBreakup from "./ItemisedTaxBreakup";
 import PaymentsTable from "./PaymentsTable";
 
 export interface InvoiceFormData {
@@ -304,6 +317,8 @@ interface InvoiceFormProps {
   onSelectCustomer?: (customer: Customer) => void;
   loadingPartyDetails?: boolean;
   lineItems?: React.ReactNode;
+  itemLines?: LineItemForm[];
+  storedTaxBreakupHtml?: string;
   taxRows?: Array<{
     charge_type: string;
     account_head: string;
@@ -312,6 +327,8 @@ interface InvoiceFormProps {
     tax_amount: number;
     total: number;
     included_in_print_rate?: boolean;
+    row_id?: number;
+    category?: string;
   }>;
   editableTaxRows?: EditableTaxRow[];
   onTaxRowsChange?: (rows: EditableTaxRow[]) => void;
@@ -337,177 +354,17 @@ interface InvoiceFormProps {
   docstatus?: number;
 }
 
-const inputClass =
-  "w-full px-3 py-2.5 bg-white border border-border rounded-lg text-sm text-body placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 transition-all duration-200 disabled:bg-gray-50 disabled:text-muted disabled:cursor-not-allowed disabled:opacity-100";
-
-const labelClass =
-  "block text-xs font-semibold text-muted mb-1.5";
-
-const errCls = (error?: string) =>
-  error
-    ? "border-danger-500 focus:ring-danger-500/20 focus:border-danger-500"
-    : "";
-
-
-function LinkField({
-  doctype,
-  value,
-  onChange,
-  searchFn,
-  placeholder = "Select…",
-  readOnly = false,
-}: {
-  doctype: string;
-  value: string | undefined;
-  onChange: (value: string | undefined) => void;
-  searchFn: (query: string) => Promise<{ items: Array<{ value: string; label: string; description: string }> }>;
-  placeholder?: string;
-  readOnly?: boolean;
-}) {
-  return (
-    <LinkSearchField
-      value={value ?? ""}
-      onChange={onChange}
-      searchFn={searchFn}
-      validate={async (v) => {
-        const doc = await invoiceService.validateLink(doctype, v, []);
-        if (!doc || Object.keys(doc).length === 0) {
-          throw new Error(`Invalid ${doctype}`);
-        }
-      }}
-      placeholder={placeholder}
-      readOnly={readOnly}
-    />
-  );
-}
-
-function Combobox({
-  name,
-  value,
-  options,
-  placeholder = "Select…",
-  onChange,
-  loading = false,
-  error,
-  load,
-  disabled = false,
-}: {
-  name: string;
-  value: string | undefined;
-  options: string[] | LazyOptionsState<string[]>;
-  placeholder?: string;
-  onChange: (name: string, value: string) => void;
-  loading?: boolean;
-  error?: string;
-  load?: () => void;
-  disabled?: boolean;
-}) {
-  const list = Array.isArray(options) ? options : options.value;
-  const ensure = Array.isArray(options) ? undefined : options.ensure;
-  const busy = loading || (!Array.isArray(options) && options.loading);
-  const [query, setQuery] = useState(value ?? "");
-  const [open, setOpen] = useState(false);
-  const [highlightIndex, setHighlightIndex] = useState(0);
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    setQuery(value ?? "");
-  }, [value]);
-
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return list;
-    return list.filter((o) => o.toLowerCase().includes(q));
-  }, [query, list]);
-
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setOpen(false);
+const LinkField = (props: Parameters<typeof SharedLinkField>[0]) => (
+  <SharedLinkField
+    {...props}
+    validateValue={async (v) => {
+      const doc = await invoiceService.validateLink(props.doctype, v, []);
+      if (!doc || Object.keys(doc).length === 0) {
+        throw new Error(`Invalid ${props.doctype}`);
       }
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [open]);
-
-  const commit = (val: string) => {
-    setQuery(val);
-    setOpen(false);
-    onChange(name, val);
-  };
-
-  return (
-    <div className="relative" ref={containerRef}>
-      <input
-        type="text"
-        value={query}
-        placeholder={busy ? "Loading…" : placeholder}
-        disabled={disabled}
-        onChange={(e) => {
-          setQuery(e.target.value);
-          setOpen(true);
-          setHighlightIndex(0);
-        }}
-        onFocus={() => {
-          setOpen(true);
-          setHighlightIndex(0);
-          load?.();
-          ensure?.();
-        }}
-        onBlur={() => commit(query)}
-        onKeyDown={(e) => {
-          if (e.key === "ArrowDown") {
-            e.preventDefault();
-            setHighlightIndex((i) => Math.min(i + 1, Math.max(filtered.length - 1, 0)));
-          } else if (e.key === "ArrowUp") {
-            e.preventDefault();
-            setHighlightIndex((i) => Math.max(i - 1, 0));
-          } else if (e.key === "Enter") {
-            if (open && filtered.length > 0 && highlightIndex >= 0) {
-              e.preventDefault();
-              commit(filtered[highlightIndex]);
-            } else {
-              commit(query);
-            }
-          } else if (e.key === "Escape") {
-            setOpen(false);
-          }
-        }}
-        className={`${inputClass} ${errCls(error)}`}
-      />
-      {open && (
-        <div className="absolute z-20 top-full left-0 right-0 mt-1 max-h-60 overflow-auto rounded-md border border-border bg-white shadow-lg">
-          {busy ? (
-            <div className="px-3 py-2.5 text-sm text-muted">Loading…</div>
-          ) : filtered.length === 0 ? (
-            <div className="px-3 py-2.5 text-sm text-muted">No results</div>
-          ) : (
-            filtered.map((opt, i) => (
-              <button
-                key={opt}
-                type="button"
-                onMouseEnter={() => setHighlightIndex(i)}
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  commit(opt);
-                }}
-                className={`block w-full text-left px-3 py-2 text-sm ${
-                  i === highlightIndex
-                    ? "bg-primary-500/10 text-primary-600"
-                    : "text-body hover:bg-muted/50"
-                }`}
-              >
-                {opt}
-              </button>
-            ))
-          )}
-        </div>
-      )}
-      {error && <p className="text-xs text-danger-500 mt-1">{error}</p>}
-    </div>
-  );
-}
+    }}
+  />
+);
 
 export default function InvoiceForm({
   formData,
@@ -518,6 +375,8 @@ export default function InvoiceForm({
   onSelectCustomer,
   loadingPartyDetails,
   lineItems,
+  itemLines,
+  storedTaxBreakupHtml,
   taxRows,
   editableTaxRows,
   onTaxRowsChange,
@@ -567,6 +426,13 @@ export default function InvoiceForm({
 
   const [currencyFraction, setCurrencyFraction] = useState<number | null>(null);
   useEffect(() => {
+    // Read-only (submitted/paid/cancelled): ERPNext stores rounding on the doc
+    // (rounded_total / in_words), so no client-side fraction fetch is needed on
+    // open. The totals render uses formData.roundedTotal when present.
+    if (isReadOnly) {
+      setCurrencyFraction(null);
+      return;
+    }
     let cancelled = false;
     const currency = formData.currency ?? companyDefaults?.currency;
     if (!currency) {
@@ -579,7 +445,33 @@ export default function InvoiceForm({
     return () => {
       cancelled = true;
     };
-  }, [formData.currency, companyDefaults?.currency]);
+  }, [formData.currency, companyDefaults?.currency, isReadOnly]);
+
+  // ERPNext "Tax Breakup": live per-item breakdown, computed from the current
+  // line items + recomputed tax rows. Shown only when the doc has no stored
+  // `other_charges_calculation` HTML (ERPNext renders that stored HTML instead).
+  const breakupRows = useMemo(
+    () =>
+      getItemisedTaxBreakupData(
+        (itemLines ?? []).map((line) => ({
+          itemCode: line.productId ?? line.sku ?? "",
+          itemName: line.productName,
+          qty: line.quantity,
+          netAmount: line.netAmount ?? line.total,
+        })),
+        (taxRows ?? []).map(
+          (r): ItemisedTaxBreakupTaxRow => ({
+            charge_type: r.charge_type as ChargeType,
+            description: r.description,
+            rate: r.rate,
+            tax_amount: r.tax_amount,
+            row_id: r.row_id,
+            category: r.category,
+          }),
+        ),
+      ),
+    [itemLines, taxRows],
+  );
 
   const namingSeriesOptions = ["ACC-SINV-.YYYY.-", "ACC-SINV-RET-.YYYY.-"];
   const applyDiscountOnOptions = ["Grand Total", "Net Total"];
@@ -605,6 +497,19 @@ export default function InvoiceForm({
   const [focusCustomer, setFocusCustomer] = useState(false);
   const redemptionFactorRef = useRef<number | null>(null);
   const { showMessage } = useMessageDialog();
+  const { user } = useAuth();
+  // Desk keeps the local doc name fixed across re-fires of set_pos_data.
+  const localDocNameRef = useRef<string | null>(null);
+  // r.message from set_missing_values (print_format, skip_default_payment…),
+  // stashed like desk's frm for later print/payment defaults.
+  const posMessageRef = useRef<{
+    print_format?: string;
+    allow_edit_rate?: boolean;
+    allow_edit_discount?: boolean;
+    campaign?: string;
+    allow_print_before_pay?: boolean;
+    skip_default_payment?: boolean;
+  } | null>(null);
 
   useEffect(() => {
     if (!focusCustomer || activeTab !== "details") return;
@@ -747,6 +652,152 @@ export default function InvoiceForm({
       setLoadingAdvances(false)
     }
   }, [formData, companyDefaults, grandTotal, onChange, showMessage])
+
+  // Port of sales_invoice.js set_pos_data: checking "Include Payment (POS)"
+  // runs frm.call({doc, method:"set_missing_values"}) against the full desk
+  // doc envelope, merges the mutated doc back into the form, then pulls the
+  // template's tax rows via get_taxes_and_charges (transaction.js
+  // taxes_and_charges trigger, incl. its shipping_rule add_child branch).
+  const runPosChain = useCallback(
+    async (overrides?: { posProfile?: string }): Promise<boolean> => {
+      const company = companyDefaults?.company || formData.company;
+      if (!company) {
+        showMessage("Please set Company to enable POS");
+        return false;
+      }
+      if (!localDocNameRef.current) {
+        localDocNameRef.current = `new-sales-invoice-${deskRandomString()}`;
+      }
+      const posProfile = overrides?.posProfile ?? formData.posProfile;
+      const formForDoc: Record<string, unknown> = {
+        ...formData,
+        name: localDocNameRef.current,
+        company,
+        isPos: true,
+        allocateAdvancesAutomatically: false,
+        ...(posProfile ? { posProfile } : {}),
+      };
+      try {
+        const res = await invoiceService.setMissingValues(
+          buildDeskSetMissingValuesDoc(formForDoc, {
+            isNew: !isExisting,
+            owner: user?.id,
+            totals: { subtotal, netTotal, grandTotal, totalTaxesAndCharges, totalQuantity },
+          }),
+          !!formData.isReturn,
+        );
+        posMessageRef.current = res.message ?? null;
+        // frappe.model.sync(data.docs): merge the mutated doc back.
+        const updated = res.docs?.[0];
+        const str = (k: string): string | undefined => {
+          const v = updated?.[k];
+          return typeof v === "string" && v !== "" ? v : undefined;
+        };
+        const num = (k: string): number | undefined =>
+          typeof updated?.[k] === "number" ? (updated[k] as number) : undefined;
+        const patch: Partial<InvoiceFormData> = { isPos: true };
+        if (updated) {
+          Object.assign(patch, {
+            debitTo: str("debit_to"),
+            partyAccountCurrency: str("party_account_currency"),
+            dueDate: str("due_date"),
+            taxesAndCharges: str("taxes_and_charges"),
+            cashBankAccount: str("cash_bank_account"),
+            accountForChangeAmount: str("account_for_change_amount"),
+            customerGroup: str("customer_group"),
+            territory: str("territory"),
+            customerAddress: str("customer_address"),
+            addressDisplay: str("address_display"),
+            shippingAddressName: str("shipping_address_name"),
+            shippingAddress: str("shipping_address"),
+            contactPerson: str("contact_person"),
+            contactDisplay: str("contact_display"),
+            contactEmail: str("contact_email"),
+            contactMobile: str("contact_mobile"),
+            taxCategory: str("tax_category"),
+            paymentTermsTemplate: str("payment_terms_template"),
+            paidAmount: num("paid_amount"),
+            basePaidAmount: num("base_paid_amount"),
+            changeAmount: num("change_amount"),
+            baseChangeAmount: num("base_change_amount"),
+            writeOffAmount: num("write_off_amount"),
+            baseWriteOffAmount: num("base_write_off_amount"),
+            outstandingAmount: num("outstanding_amount"),
+          });
+          if (overrides?.posProfile !== undefined) patch.posProfile = overrides.posProfile;
+          const payRows = Array.isArray(updated.payments) ? updated.payments : [];
+          if (payRows.length > 0) {
+            patch.payments = payRows.map((p) => {
+              const row = p as Record<string, unknown>;
+              return {
+                id: crypto.randomUUID(),
+                mode_of_payment: String(row.mode_of_payment ?? ""),
+                amount: Number(row.amount ?? 0),
+                ...(typeof row.account === "string" && row.account ? { account: row.account } : {}),
+              };
+            });
+          }
+        }
+        // transaction.js taxes_and_charges trigger: fetch the template's rows
+        // and either append (shipping_rule with existing taxes) or replace.
+        const template = str("taxes_and_charges") ?? formData.taxesAndCharges;
+        if (template && onTaxRowsChange) {
+          const rows = await invoiceService.getTaxesAndCharges(template);
+          const mapped = invoiceTaxesToEditable(rows);
+          if (formData.shippingRule && (editableTaxRows ?? []).length > 0) {
+            onTaxRowsChange([...(editableTaxRows ?? []), ...mapped]);
+          } else {
+            onTaxRowsChange(mapped);
+          }
+        }
+        onChange(patch);
+        return true;
+      } catch (e) {
+        showMessage(messageFromError(e, "Failed to set POS data"));
+        return false;
+      }
+    },
+    [
+      formData,
+      companyDefaults,
+      subtotal,
+      netTotal,
+      grandTotal,
+      totalTaxesAndCharges,
+      totalQuantity,
+      editableTaxRows,
+      onTaxRowsChange,
+      onChange,
+      showMessage,
+      isExisting,
+      user?.id,
+    ],
+  );
+
+  const handleIsPosChange = useCallback(
+    async (checked: boolean) => {
+      if (!checked) {
+        // Desk's unchecked branch does no network call — just refreshes.
+        onChange({ isPos: false });
+        return;
+      }
+      await runPosChain();
+    },
+    [onChange, runPosChain],
+  );
+
+  const handlePosProfileSelect = useCallback(
+    async (value: string | undefined) => {
+      // Desk's pos_profile trigger clears taxes then reruns the whole chain.
+      if (onTaxRowsChange) onTaxRowsChange([]);
+      if (!value) {
+        onChange({ posProfile: undefined });
+        return;
+      }
+      await runPosChain({ posProfile: value });
+    },
+    [onChange, onTaxRowsChange, runPosChain],
+  );
 
   const handleAllocateAdvancesChange = useCallback((checked: boolean) => {
     onChange({ allocateAdvancesAutomatically: checked })
@@ -1273,7 +1324,7 @@ export default function InvoiceForm({
                     type="checkbox"
                     id="isPos"
                     checked={!!formData.isPos}
-                    onChange={(e) => onChange({ isPos: e.target.checked })}
+                    onChange={(e) => void handleIsPosChange(e.target.checked)}
                     disabled={fieldLocked("isPos")}
                     className="h-4 w-4 rounded border-border"
                   />
@@ -1287,15 +1338,14 @@ export default function InvoiceForm({
                 {formData.isPos && (
                   <div>
                     <label className={labelClass}>POS Profile</label>
-                    <input
-                      type="text"
-                      value={formData.posProfile ?? ""}
-                      onChange={(e) =>
-                        onChange({ posProfile: e.target.value || undefined })
+                    <LinkSearchField
+                      value={formData.posProfile || undefined}
+                      onChange={(v) => void handlePosProfileSelect(v)}
+                      searchFn={(q) =>
+                        invoiceService.searchPosProfiles(q, companyDefaults?.company || formData.company)
                       }
+                      placeholder="Search POS profile..."
                       readOnly={fieldLocked("posProfile")}
-                      className={inputClass}
-                      placeholder="POS-…"
                     />
                   </div>
                 )}
@@ -2007,6 +2057,7 @@ export default function InvoiceForm({
                 </div>
               </div>
             )}
+            {/* ERPNext "Tax Breakup" lives near the end of the Details tab (see below). */}
           </div>
 
           {/* Section 6: Totals — always visible (not collapsible, matching ERPNext) */}
@@ -2350,6 +2401,15 @@ export default function InvoiceForm({
               );
             })()}
           </CollapsibleSection>
+
+          {/* ERPNext "Tax Breakup" — last section of the Details tab. Stored
+              server HTML when present, otherwise the live computed itemised
+              breakdown rendered as a proper table. */}
+          <ItemisedTaxBreakup
+            rows={breakupRows}
+            storedHtml={storedTaxBreakupHtml}
+            isReturn={!!formData.isReturn}
+          />
 
         </div>
       )}

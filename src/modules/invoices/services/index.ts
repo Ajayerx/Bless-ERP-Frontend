@@ -600,6 +600,35 @@ export const invoiceService = {
     }
   },
 
+  // Byte-parity with ERPNext's SI "pos_profile" Link field (sales_invoice.js
+  // set_query): search_link with the pos_profile_query custom query and the
+  // {company} filter. Desk throws before searching when company is missing —
+  // callers must guard that.
+  async searchPosProfiles(
+    query: string,
+    company?: string,
+  ): Promise<{ items: Array<{ value: string; label: string; description: string }> }> {
+    const fields: Array<[string, string]> = [
+      ["txt", query],
+      ["doctype", "POS Profile"],
+      ["ignore_user_permissions", "0"],
+      ["reference_doctype", "Sales Invoice"],
+      ["page_length", "10"],
+      ["query", "erpnext.accounts.doctype.pos_profile.pos_profile.pos_profile_query"],
+      ["filters", JSON.stringify({ company: company ?? "" })],
+    ]
+    try {
+      const result = await apiFormCall<Array<{ value: string; label: string; description: string }>>(
+        "/method/frappe.desk.search.search_link",
+        fields,
+        { doctype: "POS Profile" },
+      )
+      return { items: Array.isArray(result) ? result : [] }
+    } catch {
+      return { items: [] }
+    }
+  },
+
   // Byte-parity with ERPNext's item-row warehouse selection: get_bin_details
   // with item_code + warehouse only (no company arg → response lacks
   // company_total_stock). Populates the row's read-only actual_qty.
@@ -1585,6 +1614,47 @@ export const invoiceService = {
     return body.docs?.[0]?.advances ?? []
   },
 
+  // Byte-parity with desk's frm.call({doc, method:"set_missing_values"}) via
+  // run_doc_method (sales_invoice.js set_pos_data). frappe.request leaks
+  // scalar args flat alongside the JSON args ($.extend quirk), so the body
+  // order is: for_validate=<bool>&docs=<json>&method=set_missing_values&args=<json>.
+  // No x-frappe-doctype header (args carries no doctype). Response carries the
+  // mutated doc in docs[0] plus the POS message dict in message.
+  async setMissingValues(
+    doc: Record<string, unknown>,
+    forValidate: boolean,
+  ): Promise<{
+    message?: {
+      print_format?: string
+      allow_edit_rate?: boolean
+      allow_edit_discount?: boolean
+      campaign?: string
+      allow_print_before_pay?: boolean
+      skip_default_payment?: boolean
+    } | null
+    docs?: Array<Record<string, unknown>> | null
+  }> {
+    return postMethodRaw("run_doc_method", {
+      for_validate: String(forValidate),
+      docs: JSON.stringify(doc),
+      method: "set_missing_values",
+      args: JSON.stringify({ for_validate: forValidate }),
+    })
+  },
+
+  // erpnext.controllers.accounts_controller.get_taxes_and_charges — desk's
+  // taxes_and_charges trigger. Response message is the template's tax rows.
+  async getTaxesAndCharges(masterName: string): Promise<SalesInvoiceTax[]> {
+    const result = await apiFormCall<SalesInvoiceTax[]>(
+      "/method/erpnext.controllers.accounts_controller.get_taxes_and_charges",
+      [
+        ["master_doctype", "Sales Taxes and Charges Template"],
+        ["master_name", masterName],
+      ],
+    )
+    return Array.isArray(result) ? result : []
+  },
+
   // --- Create dropdown (navigate to new doc) ---
 
   async makePaymentEntry(siName: string, referenceDate?: string): Promise<{ doctype: string; name: string }> {
@@ -1802,8 +1872,24 @@ export const invoiceService = {
 
   // ── Docinfo / activity timeline (form footer) ─────────────────────
 
+  // Byte-parity with ERPNext's form open: frappe.desk.form.load.getdoc returns
+  // the complete document (all fields + child tables + _link_titles) AND the
+  // docinfo (comments/versions/assignments/tags/permissions/user_info) in a
+  // SINGLE response. The custom form uses this instead of getById + getDocInfo
+  // so opening an invoice fires exactly one network call, like ERPNext.
+  async getDocWithInfo(
+    doctype: string,
+    name: string,
+  ): Promise<{ docs: SalesInvoice[]; docinfo?: DocInfo }> {
+    const body = await apiClientWithBody<{ docs?: SalesInvoice[]; docinfo?: DocInfo }>(
+      `/method/frappe.desk.form.load.getdoc?doctype=${encodeURIComponent(doctype)}&name=${encodeURIComponent(name)}`,
+    )
+    return { docs: Array.isArray(body.docs) ? body.docs : [], docinfo: body.docinfo }
+  },
+
   // frappe.desk.form.load.get_docinfo — the exact endpoint ERPNext's form
-  // footer uses to fetch comments + versions for the timeline.
+  // footer uses to fetch comments + versions for the timeline. Only used to
+  // refresh after mutations; the initial open reuses the getdoc-fetched docinfo.
   async getDocInfo(name: string): Promise<DocInfo> {
     const body = await apiClientWithBody<{ docinfo?: DocInfo }>(
       `/method/frappe.desk.form.load.get_docinfo?doctype=Sales%20Invoice&name=${encodeURIComponent(name)}`,
@@ -1812,9 +1898,10 @@ export const invoiceService = {
   },
 
   // ERPNext-style timeline built from get_docinfo + the doc's own timestamps.
-  async getActivity(doc: SalesInvoice, currentUserId?: string): Promise<PaymentActivityItem[]> {
-    const docinfo = await this.getDocInfo(doc.name)
-    return buildTimelineItems(doc, docinfo, currentUserId)
+  // When `docinfo` is supplied (from the getdoc bundle) no extra call is made.
+  async getActivity(doc: SalesInvoice, currentUserId?: string, docinfo?: DocInfo): Promise<PaymentActivityItem[]> {
+    const info = docinfo ?? (await this.getDocInfo(doc.name))
+    return buildTimelineItems(doc, info, currentUserId)
   },
 
   // ── Comments (frappe.desk.form.utils) ─────────────────────────────
@@ -1997,6 +2084,440 @@ export const invoiceService = {
 // Tax computation utilities
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Desk doc-envelope builder (run_doc_method / set_missing_values)
+// ---------------------------------------------------------------------------
+
+const DESK_RANDOM_CHARS = "abcdefghijklmnopqrstuvwxyz0123456789"
+
+/** frappe.utils.random_string(10) — desk local names like new-sales-invoice-tiznwagcgq. */
+export function deskRandomString(length = 10): string {
+  let out = ""
+  for (let i = 0; i < length; i++) {
+    out += DESK_RANDOM_CHARS[Math.floor(Math.random() * DESK_RANDOM_CHARS.length)]
+  }
+  return out
+}
+
+const cint = (v: unknown): number => (Number(v) ? 1 : 0)
+const dnum = (v: unknown): number => (typeof v === "number" && !Number.isNaN(v) ? v : 0)
+
+/** Computed totals from the React calc pipeline, overlaid onto the envelope. */
+export interface DeskSetMissingValuesTotals {
+  subtotal?: number
+  netTotal?: number
+  grandTotal?: number
+  totalTaxesAndCharges?: number
+  totalTaxesAndChargesBase?: number
+  totalQuantity?: number
+}
+
+export interface DeskSetMissingValuesOptions {
+  /** New unsaved doc → include __islocal/__unsaved like frappe.model.new_doc. */
+  isNew?: boolean
+  /** Session user id (desk doc.owner). Omitted when unknown. */
+  owner?: string
+  totals?: DeskSetMissingValuesTotals
+}
+
+/**
+ * Desk's set_pos_data sends doc = the full frappe doc dict via
+ * frm.call({doc, method:"set_missing_values"}): meta keys (__islocal/__unsaved/
+ * owner), every defaulted numeric on child rows and null-typed link slots.
+ * This builds that envelope from React form state: a deterministic template in
+ * the key order desk's runtime produces, overlaid with whatever the form
+ * carries.
+ */
+export function buildDeskSetMissingValuesDoc(
+  form: Record<string, unknown>,
+  opts: DeskSetMissingValuesOptions = {},
+): Record<string, unknown> {
+  const isNew = !!opts.isNew
+  const s = (k: string): string => (typeof form[k] === "string" ? (form[k] as string) : "")
+  const b = (k: string): boolean => !!form[k]
+  const rowsOf = (key: string): Array<Record<string, unknown>> =>
+    Array.isArray(form[key]) ? (form[key] as Array<Record<string, unknown>>) : []
+
+  const name = typeof form.name === "string" && form.name && !form.name.startsWith("new-sales-invoice")
+    ? form.name
+    : `new-sales-invoice-${deskRandomString()}`
+
+  const conversionRate = dnum(form.conversionRate) || 1
+  const round2 = (v: number): number => Math.round(v * 100) / 100
+  const baseOf = (v: number | undefined): number => round2((v ?? 0) * conversionRate)
+
+  const t = opts.totals ?? {}
+  const subtotal = dnum(t.subtotal)
+  const netTotal = dnum(t.netTotal ?? subtotal)
+  const grandTotal = dnum(t.grandTotal)
+  const totalTaxesAndCharges = dnum(t.totalTaxesAndCharges)
+  const totalQty = dnum(t.totalQuantity)
+  const roundedTotal = dnum(form.roundedTotal) || grandTotal
+  const roundingAdjustment = dnum(form.roundingAdjustment)
+  const discountAmount = dnum(form.discountAmount)
+  const writeOffAmount = dnum(form.writeOffAmount)
+  const paidAmount = dnum(form.paidAmount)
+  const changeAmount = dnum(form.changeAmount)
+  const totalAdvance = dnum(form.totalAdvance)
+    || rowsOf("advances").reduce((sum, a) => sum + dnum(a.allocated_amount ?? a.allocatedAmount), 0)
+
+  const itemRow = (row: Record<string, unknown>, idx: number): Record<string, unknown> => {
+    const qty = dnum(row.quantity)
+    const rate = dnum(row.price)
+    const cf = dnum(row.conversionFactor) || 1
+    const out: Record<string, unknown> = {
+      docstatus: 0,
+      doctype: "Sales Invoice Item",
+      name: `new-sales-invoice-item-${deskRandomString()}`,
+      ...(isNew ? { __islocal: 1, __unsaved: 1 } : {}),
+      ...(opts.owner !== undefined ? { owner: opts.owner } : {}),
+      has_item_scanned: 0,
+      stock_uom: row.stockUom ?? "",
+      margin_type: row.marginType ?? "",
+      is_free_item: 0,
+      grant_commission: cint(row.grantCommission),
+      delivered_by_supplier: 0,
+      is_fixed_asset: 0,
+      enable_deferred_revenue: cint(row.enableDeferredRevenue),
+      use_serial_batch_fields: 0,
+      allow_zero_valuation_rate: 0,
+      page_break: cint(row.pageBreak),
+      parent: name,
+      parentfield: "items",
+      parenttype: "Sales Invoice",
+      idx,
+      qty,
+      conversion_factor: cf,
+      stock_qty: round2(qty * cf),
+      price_list_rate: dnum(row.priceListRate),
+      base_price_list_rate: 0,
+      margin_rate_or_amount: dnum(row.marginRateOrAmount),
+      rate_with_margin: 0,
+      discount_amount: dnum(row.discountAmount),
+      distributed_discount_amount: 0,
+      base_rate_with_margin: 0,
+      rate,
+      amount: dnum(row.total),
+      base_rate: dnum(row.baseRate) || baseOf(rate),
+      base_amount: dnum(row.baseAmount) || baseOf(dnum(row.total)),
+      stock_uom_rate: 0,
+      net_rate: dnum(row.netRate),
+      net_amount: dnum(row.netAmount),
+      base_net_rate: 0,
+      base_net_amount: 0,
+      weight_per_unit: dnum(row.weightPerUnit),
+      total_weight: dnum(row.totalWeight),
+      incoming_rate: 0,
+      actual_batch_qty: 0,
+      actual_qty: dnum(row.actualQty),
+      company_total_stock: 0,
+      delivered_qty: 0,
+      uom: row.uom ?? "",
+      discount_percentage: dnum(row.discountPercentage),
+    }
+    // Keys desk materializes via set_value history — only when set.
+    const extras: Array<[string, unknown]> = [
+      ["item_code", row.sku],
+      ["item_name", row.productName],
+      ["description", row.description],
+      ["warehouse", row.warehouse],
+      ["income_account", row.incomeAccount],
+      ["cost_center", row.costCenter],
+      ["item_tax_template", row.itemTaxTemplate],
+      ["batch_no", row.batchNo],
+      ["serial_no", row.serialNo],
+      ["service_start_date", row.serviceStartDate],
+      ["service_end_date", row.serviceEndDate],
+    ]
+    for (const [k, v] of extras) {
+      if (v === undefined || v === null || v === "") continue
+      out[k] = v
+    }
+    return out
+  }
+
+  const taxRow = (row: Record<string, unknown>, idx: number): Record<string, unknown> => ({
+    docstatus: 0,
+    doctype: "Sales Taxes and Charges",
+    name: `new-sales-invoice-tax-${deskRandomString()}`,
+    ...(isNew ? { __islocal: 1, __unsaved: 1 } : {}),
+    ...(opts.owner !== undefined ? { owner: opts.owner } : {}),
+    charge_type: row.charge_type || "On Net Total",
+    included_in_print_rate: cint(row.included_in_print_rate),
+    included_in_paid_amount: 0,
+    cost_center: row.cost_center ?? "",
+    account_currency: "",
+    dont_recompute_tax: 0,
+    parent: name,
+    parentfield: "taxes",
+    parenttype: "Sales Invoice",
+    idx,
+    row_id: row.row_id ?? null,
+    account_head: row.account_head ?? "",
+    description: row.description ?? "",
+    project: null,
+    rate: dnum(row.rate),
+    tax_amount: dnum(row.tax_amount),
+    total: dnum(row.total),
+    tax_amount_after_discount_amount: dnum(row.tax_amount_after_discount_amount),
+    base_tax_amount: 0,
+    base_total: 0,
+    base_tax_amount_after_discount_amount: 0,
+    ...(row.item_wise_tax_detail !== undefined ? { item_wise_tax_detail: row.item_wise_tax_detail } : {}),
+    net_amount: dnum(row.net_amount),
+    base_net_amount: 0,
+  })
+
+  const paymentRow = (row: Record<string, unknown>, idx: number): Record<string, unknown> => ({
+    docstatus: 0,
+    doctype: "Sales Invoice Payment",
+    name: `new-sales-invoice-payment-${deskRandomString()}`,
+    ...(isNew ? { __islocal: 1, __unsaved: 1 } : {}),
+    ...(opts.owner !== undefined ? { owner: opts.owner } : {}),
+    parent: name,
+    parentfield: "payments",
+    parenttype: "Sales Invoice",
+    idx,
+    mode_of_payment: row.mode_of_payment ?? "",
+    account: row.account ?? "",
+    amount: dnum(row.amount),
+    ...(row.type !== undefined ? { type: row.type } : {}),
+  })
+
+  const advanceRow = (row: Record<string, unknown>, idx: number): Record<string, unknown> => ({
+    docstatus: 0,
+    doctype: "Sales Invoice Advance",
+    name: `new-sales-invoice-advance-${deskRandomString()}`,
+    ...(isNew ? { __islocal: 1, __unsaved: 1 } : {}),
+    ...(opts.owner !== undefined ? { owner: opts.owner } : {}),
+    parent: name,
+    parentfield: "advances",
+    parenttype: "Sales Invoice",
+    idx,
+    reference_type: row.reference_type ?? "",
+    reference_name: row.reference_name ?? "",
+    reference_row: row.reference_row ?? "",
+    remarks: row.remarks ?? "",
+    advance_amount: dnum(row.advance_amount),
+    allocated_amount: dnum(row.allocated_amount),
+    ...(row.account ? { account: row.account } : {}),
+    ...(row.ref_exchange_rate !== undefined ? { ref_exchange_rate: row.ref_exchange_rate } : {}),
+  })
+
+  const salesTeamRow = (row: Record<string, unknown>, idx: number): Record<string, unknown> => ({
+    docstatus: 0,
+    doctype: "Sales Team",
+    name: `new-sales-invoice-sales-team-${deskRandomString()}`,
+    ...(isNew ? { __islocal: 1, __unsaved: 1 } : {}),
+    ...(opts.owner !== undefined ? { owner: opts.owner } : {}),
+    parent: name,
+    parentfield: "sales_team",
+    parenttype: "Sales Invoice",
+    idx,
+    sales_person: row.sales_person ?? "",
+    contact_no: row.contact_no ?? "",
+    allocated_percentage: dnum(row.allocated_percentage),
+    allocated_amount: dnum(row.allocated_amount),
+    commission_rate: dnum(row.commission_rate),
+    incentives: dnum(row.incentives),
+  })
+
+  const scheduleRow = (row: Record<string, unknown>, idx: number): Record<string, unknown> => ({
+    docstatus: 0,
+    doctype: "Payment Schedule",
+    name: `new-payment-schedule-${deskRandomString()}`,
+    ...(isNew ? { __islocal: 1, __unsaved: 1 } : {}),
+    ...(opts.owner !== undefined ? { owner: opts.owner } : {}),
+    parent: name,
+    parentfield: "payment_schedule",
+    parenttype: "Sales Invoice",
+    idx,
+    payment_term: row.payment_term ?? "",
+    description: row.description ?? "",
+    due_date: row.due_date ?? "",
+    invoice_portion: dnum(row.invoice_portion),
+    payment_amount: dnum(row.payment_amount),
+  })
+
+  const timesheetRow = (row: Record<string, unknown>, idx: number): Record<string, unknown> => ({
+    docstatus: 0,
+    doctype: "Timesheet Detail",
+    name: `new-timesheet-detail-${deskRandomString()}`,
+    ...(isNew ? { __islocal: 1, __unsaved: 1 } : {}),
+    ...(opts.owner !== undefined ? { owner: opts.owner } : {}),
+    parent: name,
+    parentfield: "timesheets",
+    parenttype: "Sales Invoice",
+    idx,
+    activity_type: row.activity_type ?? "",
+    description: row.description ?? "",
+    billing_hours: dnum(row.billing_hours),
+    billing_amount: dnum(row.billing_amount),
+  })
+
+  const doc: Record<string, unknown> = {
+    docstatus: 0,
+    doctype: "Sales Invoice",
+    name,
+    ...(isNew ? { __islocal: 1, __unsaved: 1 } : {}),
+    ...(opts.owner !== undefined ? { owner: opts.owner } : {}),
+    naming_series: s("namingSeries") || "ACC-SINV-.YYYY.-",
+    posting_date: s("issueDate"),
+    posting_time: s("postingTime") || "00:00:00",
+    set_posting_time: cint(b("setPostingTime")),
+    is_pos: cint(b("isPos")),
+    is_consolidated: cint(b("isConsolidated")),
+    is_return: cint(b("isReturn")),
+    update_outstanding_for_self: cint(form.updateOutstandingForSelf ?? true),
+    update_billed_amount_in_sales_order: cint(b("updateBilledAmountInSalesOrder")),
+    update_billed_amount_in_delivery_note: cint(b("updateBilledAmountInDeliveryNote")),
+    is_debit_note: cint(b("isDebitNote")),
+    currency: s("currency"),
+    selling_price_list: s("sellingPriceList"),
+    price_list_currency: s("priceListCurrency"),
+    ignore_pricing_rule: cint(b("ignorePricingRule")),
+    update_stock: cint(b("updateStock")),
+    items: rowsOf("items").map(itemRow),
+    taxes: rowsOf("taxes").map(taxRow),
+    use_company_roundoff_cost_center: cint(b("useCompanyDefaultCostCenterForRoundOff")),
+    disable_rounded_total: cint(b("disableRoundedTotal")),
+    apply_discount_on: s("applyDiscountOn") || "Grand Total",
+    is_cash_or_non_trade_discount: cint(b("isCashOrNonTradeDiscount")),
+    pricing_rules: [],
+    packed_items: [],
+    timesheets: rowsOf("timeSheets").map(timesheetRow),
+    total_billing_amount: null,
+    payments: rowsOf("payments").map(paymentRow),
+    allocate_advances_automatically: cint(b("allocateAdvancesAutomatically")),
+    only_include_allocated_payments: cint(b("onlyIncludeAllocatedPayments")),
+    advances: rowsOf("advances").map(advanceRow),
+    write_off_outstanding_amount_automatically: cint(b("writeOffOutstandingAmountAutomatically")),
+    redeem_loyalty_points: cint(b("redeemLoyaltyPoints")),
+    ignore_default_payment_terms_template: cint(b("ignoreDefaultPaymentTerms")),
+    payment_schedule: rowsOf("paymentScheduleRows").map(scheduleRow),
+    party_account_currency: s("partyAccountCurrency"),
+    is_opening: s("isOpening") || "No",
+    sales_team: rowsOf("salesTeam").map(salesTeamRow),
+    group_same_items: cint(b("groupSameItems")),
+    status: s("status") || "Draft",
+    is_internal_customer: cint(b("isInternalCustomer")),
+    is_discounted: cint(b("isDiscounted")),
+    company: s("company"),
+    conversion_rate: conversionRate,
+    plc_conversion_rate: dnum(form.plcConversionRate) || "",
+    total_billing_hours: null,
+    taxes_and_charges: s("taxesAndCharges"),
+    base_net_total: dnum(form.baseNetTotal) || baseOf(netTotal),
+    net_total: netTotal,
+    base_total: dnum(form.baseTotal) || baseOf(subtotal),
+    total: subtotal,
+    total_qty: totalQty,
+    grand_total: grandTotal,
+    total_taxes_and_charges: totalTaxesAndCharges,
+    base_grand_total: dnum(form.baseGrandTotal) || baseOf(grandTotal),
+    rounded_total: roundedTotal,
+    rounding_adjustment: roundingAdjustment,
+    base_rounding_adjustment: dnum(form.baseRoundingAdjustment) || baseOf(roundingAdjustment),
+    base_rounded_total: dnum(form.baseRoundedTotal) || baseOf(roundedTotal),
+    in_words: s("inWords"),
+    base_in_words: "",
+    base_discount_amount: dnum(form.baseDiscountAmount) || baseOf(discountAmount),
+    total_advance: totalAdvance,
+    write_off_amount: writeOffAmount,
+    paid_amount: paidAmount,
+    base_paid_amount: dnum(form.basePaidAmount) || baseOf(paidAmount),
+    change_amount: changeAmount,
+    base_change_amount: dnum(form.baseChangeAmount) || baseOf(changeAmount),
+    outstanding_amount: dnum(form.outstandingAmount) || round2(grandTotal - paidAmount - totalAdvance),
+    amount_eligible_for_commission: 0,
+    total_commission: dnum(form.totalCommission),
+    customer_name: s("customerName"),
+    customer: s("customer"),
+    debit_to: s("debitTo"),
+    due_date: s("dueDate"),
+    customer_address: s("customerAddress"),
+    address_display: s("addressDisplay"),
+    shipping_address_name: s("shippingAddressName"),
+    shipping_address: s("shippingAddress"),
+    tax_category: s("taxCategory"),
+    contact_person: s("contactPerson"),
+    contact_display: s("contactDisplay"),
+    contact_email: s("contactEmail"),
+    contact_mobile: s("contactMobile"),
+    customer_group: s("customerGroup"),
+    territory: s("territory"),
+    language: s("language"),
+    idx: 0,
+    total_net_weight: dnum(form.totalNetWeight),
+    base_total_taxes_and_charges:
+      dnum(form.baseTotalTaxesAndCharges) || dnum(t.totalTaxesAndChargesBase) || baseOf(totalTaxesAndCharges),
+    additional_discount_percentage: dnum(form.additionalDiscountPercentage),
+    discount_amount: discountAmount,
+    account_for_change_amount: s("accountForChangeAmount"),
+    base_write_off_amount: dnum(form.baseWriteOffAmount) || baseOf(writeOffAmount),
+    loyalty_points: dnum(form.loyaltyPoints),
+    loyalty_amount: dnum(form.loyaltyAmount),
+    commission_rate: dnum(form.commissionRate),
+  }
+
+  // Value-carrying fields absent from the empty-doc trace — appended when set,
+  // mirroring how desk materializes them via set_value history.
+  const extras: Array<[string, unknown]> = [
+    ["pos_profile", s("posProfile")],
+    ["project", s("project")],
+    ["cost_center", s("costCenter")],
+    ["shipping_rule", s("shippingRule")],
+    ["incoterm", s("incoterm")],
+    ["named_place", s("namedPlace")],
+    ["coupon_code", s("couponCode")],
+    ["sales_partner", s("salesPartner")],
+    ["payment_terms_template", s("paymentTermsTemplate")],
+    ["return_against", s("returnAgainst")],
+    ["letter_head", s("letterHead")],
+    ["select_print_heading", s("selectPrintHeading")],
+    ["tc_name", s("tcName")],
+    ["terms", s("terms")],
+    ["company_address", s("companyAddress")],
+    ["company_address_display", s("companyAddressDisplay")],
+    ["dispatch_address_name", s("dispatchAddressName")],
+    ["dispatch_address", s("dispatchAddress")],
+    ["po_no", s("poNo")],
+    ["po_date", s("poDate")],
+    ["campaign", s("campaign")],
+    ["source", s("source")],
+    ["title", s("title")],
+    ["remarks", s("remarks")],
+    ["subscription", s("subscription")],
+    ["from_date", s("fromDate")],
+    ["to_date", s("toDate")],
+    ["auto_repeat", s("autoRepeat")],
+    ["unrealized_profit_loss_account", s("unrealizedProfitLossAccount")],
+    ["against_income_account", s("againstIncomeAccount")],
+    ["represents_company", s("representsCompany")],
+    ["inter_company_invoice_reference", s("interCompanyInvoiceReference")],
+    ["utm_source", s("utmSource")],
+    ["utm_medium", s("utmMedium")],
+    ["utm_campaign", s("utmCampaign")],
+    ["utm_content", s("utmContent")],
+    ["cash_bank_account", s("cashBankAccount")],
+    ["write_off_account", s("writeOffAccount")],
+    ["write_off_cost_center", s("writeOffCostCenter")],
+    ["additional_discount_account", s("discountAccount")],
+    ["loyalty_program", s("loyaltyProgram")],
+    ["loyalty_redemption_account", s("loyaltyRedemptionAccount")],
+    ["loyalty_redemption_cost_center", s("loyaltyRedemptionCostCenter")],
+    ["set_warehouse", s("setWarehouse")],
+    ["set_target_warehouse", s("setTargetWarehouse")],
+    ["amended_from", s("amendedFrom")],
+  ]
+  for (const [k, v] of extras) {
+    if (v === undefined || v === null || v === "") continue
+    doc[k] = v
+  }
+
+  return doc
+}
+
 /** ERPNext-style message when no Currency Exchange record exists for a date. */
 export function formatExchangeRateError(
   fromCurrency: string,
@@ -2033,6 +2554,7 @@ export function invoiceTaxesToEditable(taxes: SalesInvoiceTax[]): EditableTaxRow
     total: t.total ?? 0,
     included_in_print_rate: !!t.included_in_print_rate,
     row_id: undefined,
+    category: t.category,
   }))
 }
 
@@ -2120,6 +2642,118 @@ export function computeTaxes(
       net_amount: netAmount,
       total: runningTotal,
       tax_amount_after_discount_amount: rowAmount,
+    }
+  })
+}
+
+// ── ERPNext "Tax Breakup" (itemised) ─────────────────────────────────
+
+export interface ItemisedTaxBreakupInputItem {
+  itemCode: string
+  itemName: string
+  qty: number
+  netAmount: number
+}
+
+export interface ItemisedTaxBreakupTaxRow {
+  charge_type: ChargeType
+  description: string
+  rate: number
+  tax_amount: number
+  row_id?: number
+  /** "Total" (default) or "Valuation"; Valuation rows are excluded from the breakup. */
+  category?: string
+}
+
+export interface ItemisedTaxBreakupRow {
+  item: string
+  itemCode?: string
+  itemName?: string
+  taxableAmount: number
+  taxes: Record<string, { taxRate: number; taxAmount: number }>
+}
+
+const round2 = (value: number) => Math.round(value * 100) / 100
+
+/**
+ * ERPNext `get_itemised_tax_breakup_data` parity (taxes_and_totals.py:1103-1209):
+ * builds the per-item tax breakdown shown in the "Tax Breakup" section. Each tax
+ * row is distributed per item exactly like `set_item_wise_tax` /
+ * `get_current_tax_amount` do on the server (taxes_and_totals.py:500-560):
+ *
+ *   On Net Total         -> rate% of the item's taxable amount
+ *   On Item Quantity     -> rate x item qty
+ *   On Previous Row ...  -> rate% of the PREVIOUS row's per-item amount/total
+ *   Actual               -> item.net_amount x tax_amount / net_total (proportional)
+ *
+ * Valuation-category rows are excluded (ERPNext skips them for the breakup),
+ * per-item amounts are rounded to 2 dp like `get_rounded_tax_amount`, and each
+ * tax column is keyed by the row's `description` (deduplicated in ERPNext).
+ * Amounts are computed in transaction currency directly (ERPNext stores them in
+ * base currency and divides by conversion_rate when rendering).
+ */
+export function getItemisedTaxBreakupData(
+  items: ItemisedTaxBreakupInputItem[],
+  taxRows: ItemisedTaxBreakupTaxRow[],
+  opts?: { netTotal?: number },
+): ItemisedTaxBreakupRow[] {
+  const netTotal =
+    opts?.netTotal ?? items.reduce((sum, item) => sum + item.netAmount, 0)
+
+  // Unrounded per-tax-row, per-item amounts, indexed by the FULL tax list order
+  // (row_id references positions in the taxes child table, matching ERPNext).
+  const perItemAmounts = taxRows.map(() => items.map(() => 0))
+  // Running per-item grand total (net + all prior rows' amounts for the item).
+  const grandTotalPerItem = items.map((item) => item.netAmount)
+
+  taxRows.forEach((tax, i) => {
+    const isPreviousRow =
+      tax.charge_type === "On Previous Row Amount" ||
+      tax.charge_type === "On Previous Row Total"
+    const refRow = isPreviousRow
+      ? taxRows[(tax.row_id ?? (i > 0 ? i + 1 : 1)) - 1]
+      : null
+    if (isPreviousRow && !refRow) return
+
+    items.forEach((item, j) => {
+      let amount = 0
+      switch (tax.charge_type) {
+        case "On Net Total":
+          amount = (tax.rate / 100) * item.netAmount
+          break
+        case "On Item Quantity":
+          amount = tax.rate * item.qty
+          break
+        case "On Previous Row Amount":
+          amount = (tax.rate / 100) * (perItemAmounts[refRow ? taxRows.indexOf(refRow) : 0][j] ?? 0)
+          break
+        case "On Previous Row Total":
+          amount = (tax.rate / 100) * grandTotalPerItem[j]
+          break
+        case "Actual":
+          amount = netTotal ? (item.netAmount * tax.tax_amount) / netTotal : 0
+          break
+      }
+      perItemAmounts[i][j] = amount
+      grandTotalPerItem[j] += amount
+    })
+  })
+
+  return items.map((item, j) => {
+    const taxes: ItemisedTaxBreakupRow["taxes"] = {}
+    taxRows.forEach((tax, i) => {
+      if (tax.category === "Valuation") return
+      taxes[tax.description] = {
+        taxRate: tax.rate,
+        taxAmount: round2(perItemAmounts[i][j]),
+      }
+    })
+    return {
+      item: item.itemCode || item.itemName,
+      itemCode: item.itemCode,
+      itemName: item.itemName,
+      taxableAmount: item.netAmount,
+      taxes,
     }
   })
 }

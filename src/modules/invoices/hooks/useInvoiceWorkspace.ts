@@ -14,10 +14,12 @@ import {
   type SalesInvoice,
   templateRowsToEditable,
   erpnextTaxesToEditable,
+  invoiceTaxesToEditable,
   computeTaxes,
   computeTotalForDiscountAmount,
   formatExchangeRateError,
 } from "@/services"
+import type { DocInfo } from "@/modules/payments/types"
 import type {
   InvoiceFormData,
   InvoiceFieldErrors,
@@ -38,6 +40,23 @@ export interface InvoiceCompanyDefaults {
 }
 
 const FALLBACK_TEMPLATE_NAME = "Canada GST/QST - BE"
+
+// ERPNext ships company defaults in frappe.boot at login and never fetches them
+// when a form opens. For an existing invoice we derive the light defaults the
+// form needs directly from the document itself, so opening an invoice never
+// triggers a company-defaults call. Full defaults are still loaded lazily by
+// getCompanyDefaults() the first time a real mutation needs them (save/add-line).
+function companyDefaultsFromDoc(inv: SalesInvoice): InvoiceCompanyDefaults {
+  return {
+    company: inv.company,
+    currency: inv.currency,
+    defaultSellingPriceList: inv.selling_price_list ?? "",
+    defaultReceivableAccount: inv.debit_to ?? "",
+    defaultIncomeAccount: inv.items?.[0]?.income_account ?? "",
+    defaultCostCenter: inv.cost_center ?? inv.items?.[0]?.cost_center ?? "",
+    companyTaxId: inv.company_tax_id ?? "",
+  }
+}
 
 function calcTotal(qty: number, price: number): number {
   return Math.round(qty * price * 100) / 100
@@ -265,6 +284,7 @@ export interface InvoiceWorkspace {
   mode: InvoiceWorkspaceMode
   id?: string
   invoice: SalesInvoice | null
+  docinfo: DocInfo | null
   loading: boolean
   saving: boolean
   submitting: boolean
@@ -329,6 +349,7 @@ export function useInvoiceWorkspace({
   const { showMessage } = useMessageDialog()
 
   const [invoice, setInvoice] = useState<SalesInvoice | null>(null)
+  const [docinfo, setDocinfo] = useState<DocInfo | null>(null)
   const [loading, setLoading] = useState(true)
   const [formData, setFormData] = useState<InvoiceFormData>(() =>
     mode === "new"
@@ -536,33 +557,42 @@ export function useInvoiceWorkspace({
   useEffect(() => {
     if (mode === "existing") {
       if (!id) return
+      let cancelled = false
 
-      Promise.all([
-        invoiceService.getById(id),
-        invoiceService.getDefaultTaxTemplate(),
-        getCompanyDefaults(),
-      ])
-        .then(([inv, tmpl, defaults]) => {
+      // ERPNext-parity open: a single frappe.desk.form.load.getdoc call returns
+      // the full doclist AND docinfo (comments/versions/assignments/tags). No
+      // tax-template or company-defaults calls fire on open — taxes are read
+      // from the doc's own child table and defaults are derived from the doc.
+      invoiceService
+        .getDocWithInfo("Sales Invoice", id)
+        .then(({ docs, docinfo: rawDocinfo }) => {
+          if (cancelled) return
+          const inv = docs[0]
+          if (!inv) {
+            setError("Failed to load invoice")
+            return
+          }
           setInvoice(inv)
-          setTaxTemplate(tmpl)
-          setCompanyDefaults(defaults)
-          setFormData(invToFormData(inv))
+          setDocinfo(rawDocinfo ?? null)
+          setCompanyDefaults(companyDefaultsFromDoc(inv))
           setConversionRate(inv.conversion_rate ?? 1)
           setPlcConversionRate(inv.plc_conversion_rate ?? 1)
           setFormData((prev) => ({
-            ...prev,
+            ...invToFormData(inv),
             conversionRate: inv.conversion_rate ?? 1,
             plcConversionRate: inv.plc_conversion_rate ?? 1,
-            companyTaxId: defaults.companyTaxId || prev.companyTaxId,
+            companyTaxId: inv.company_tax_id || prev.companyTaxId,
           }))
-          if (inv.taxes_and_charges) {
-            invoiceService
-              .getTaxTemplateDetails(inv.taxes_and_charges)
-              .then((td) => {
-                if (td) setTaxTemplate(td)
-              })
-              .catch(() => {})
-          }
+          setTaxTemplate(
+            inv.taxes_and_charges
+              ? {
+                  name: inv.taxes_and_charges,
+                  doctype: "Sales Taxes and Charges Template",
+                  rows: [],
+                }
+              : null,
+          )
+          setEditableTaxRows(invoiceTaxesToEditable(inv.taxes ?? []))
           setLineItems(
             (inv.items ?? []).map((item) => ({
               id: crypto.randomUUID(),
@@ -593,8 +623,15 @@ export function useInvoiceWorkspace({
           )
           resetDirty()
         })
-        .catch(() => null)
-        .finally(() => setLoading(false))
+        .catch(() => {
+          if (!cancelled) setError("Failed to load invoice")
+        })
+        .finally(() => {
+          if (!cancelled) setLoading(false)
+        })
+      return () => {
+        cancelled = true
+      }
     } else {
       const stateCopy = location.state as { copyFrom?: SalesInvoice } | null
       const copyFrom = stateCopy?.copyFrom
@@ -748,6 +785,10 @@ export function useInvoiceWorkspace({
     try {
       const inv = await invoiceService.getById(id)
       setInvoice(inv)
+      // The getdoc-bundled docinfo predates the mutation; drop it so the
+      // timeline/meta panel refetch docinfo fresh instead of showing stale
+      // comments/versions (ERPNext also reloads docinfo after save).
+      setDocinfo(null)
       resetDirty()
     } catch {
       /* keep current invoice on error */
@@ -1503,6 +1544,7 @@ export function useInvoiceWorkspace({
     mode,
     id,
     invoice,
+    docinfo,
     loading,
     saving,
     submitting,

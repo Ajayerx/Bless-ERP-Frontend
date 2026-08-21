@@ -94,4 +94,21 @@ export const frappeSettingsHandlers = [
       })),
     })
   }),
+
+  // ── quotation_to Link options (desk ControlLink on focus/clear) ──
+  http.post("/api/method/frappe.desk.search.search_link", async ({ request }) => {
+    await delay(150)
+    const body = new URLSearchParams(await request.text())
+    if (body.get("doctype") !== "DocType") return HttpResponse.json({ message: [] })
+    const txt = (body.get("txt") ?? "").toLowerCase()
+    const options = [
+      { value: "Customer", description: "Selling" },
+      { value: "Lead", description: "CRM" },
+      { value: "Prospect", description: "CRM" },
+    ]
+    const filtered = options.filter(
+      (o) => !txt || o.value.toLowerCase().includes(txt)
+    )
+    return HttpResponse.json({ message: filtered })
+  }),
 ]

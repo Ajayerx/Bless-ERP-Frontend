@@ -20,7 +20,7 @@ export const salesInvoices = [
 ]
 
 // ── Sample child tables so Duplicate / Return (Create menu) prefill works in demo ──
-const salesInvoiceItems = [
+export const salesInvoiceItems = [
   { item_code: "PRD-001", item_name: "Organic All-Purpose Flour", qty: 40, rate: 25.00, amount: 1000.00, uom: "Nos", warehouse: "Main Warehouse", income_account: "Income - BE", cost_center: "Main - BE", discount_percentage: 0, grant_commission: 1 },
   { item_code: "PRD-005", item_name: "Maple Syrup (Grade A)", qty: 58, rate: 25.00, amount: 1450.00, uom: "Nos", warehouse: "Main Warehouse", income_account: "Income - BE", cost_center: "Main - BE", discount_percentage: 0, grant_commission: 1 },
 ]
@@ -28,6 +28,7 @@ const salesInvoiceTaxes = [
   { charge_type: "On Net Total", account_head: "GST Tax - BE", description: "GST 5%", rate: 5, included_in_print_rate: 0 },
   { charge_type: "On Net Total", account_head: "QST Tax - BE", description: "QST 9.975%", rate: 9.975, included_in_print_rate: 0 },
 ]
+export { salesInvoiceTaxes }
 
 // ── Payment Entries (10 records) ──────────────────────────────────────
 export const paymentEntries = [

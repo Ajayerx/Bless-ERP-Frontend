@@ -1,4 +1,5 @@
 import { http, HttpResponse, delay } from "msw"
+import { salesInvoices, salesInvoiceItems, salesInvoiceTaxes } from "./frappe-lookups"
 
 // ERPNext-style timeline data for Payment Entry documents in dev mode,
 // served via the exact endpoints ERPNext uses:
@@ -206,7 +207,167 @@ for (const [key, list] of Object.entries({
   tagStore[key] = list
 }
 
+// ErpNext's form.load.getdoc response: the full document (top-level fields +
+// child tables, doctype/name/parent linking) in `docs[]` plus docinfo. The
+// custom form consumes exactly this and nothing else when opening an invoice.
+type SalesInvoiceRow = Record<string, unknown>
+
+// fmt_money parity (en-US, 2 dp) used to build the stored break-up HTML.
+const money = (n: number) =>
+  n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+const round2 = (n: number) => Math.round(n * 100) / 100
+
+// Mirrors erpnext.controllers.taxes_and_totals.get_itemised_tax_breakup_html:
+// the pre-rendered "Tax Breakup" HTML that ERPNext stores on the doc at save
+// time (other_charges_calculation) and the form re-renders verbatim.
+function itemisedTaxBreakupHtml(
+  items: Array<{ item_code: string; qty: number; rate: number }>,
+  taxes: Array<{ description: string; rate: number }>,
+): string {
+  const descriptions = Array.from(new Set(taxes.map((t) => t.description)))
+  const rowsHtml = items
+    .map((item) => {
+      const taxable = round2(item.qty * item.rate)
+      const cells = descriptions
+        .map((desc) => {
+          const tax = taxes.find((t) => t.description === desc)
+          const amount = round2((taxable * (tax?.rate ?? 0)) / 100)
+          return `<td class="text-right">(${tax?.rate}%) ${money(amount)}</td>`
+        })
+        .join("")
+      return `<tr><td>${item.item_code}</td><td class="text-right">${money(taxable)}</td>${cells}</tr>`
+    })
+    .join("")
+  const headers = descriptions.map((d) => `<th class="text-right">${d}</th>`).join("")
+  return `<div class="tax-break-up" style="overflow-x: auto;">
+<table class="table table-bordered table-hover">
+<thead><tr><th class="text-left">Item</th><th class="text-right">Taxable Amount</th>${headers}</tr></thead>
+<tbody>${rowsHtml}</tbody>
+</table>
+</div>`
+}
+
+function fullSalesInvoiceDoc(row: SalesInvoiceRow): SalesInvoiceRow {
+  const itemRows = salesInvoiceItems.map((it, i) => ({
+    doctype: "Sales Invoice Item",
+    name: `SI-ROW-${row.name}-${i + 1}`,
+    parent: row.name,
+    parentfield: "items",
+    parenttype: "Sales Invoice",
+    idx: i + 1,
+    ...it,
+  }))
+  const taxRowsWithDetail: Array<Record<string, unknown>> = salesInvoiceTaxes.map((t, i) => {
+    // ERPNext stores per-item detail as base-currency JSON on each tax row.
+    const detail: Record<string, [number, number]> = {}
+    for (const it of itemRows) {
+      const base = round2(Number(it.qty) * Number(it.rate))
+      detail[String(it.item_code)] = [t.rate, round2((base * t.rate) / 100)]
+    }
+    return {
+      doctype: "Sales Taxes and Charges",
+      name: `SI-TAX-${row.name}-${i + 1}`,
+      parent: row.name,
+      parentfield: "taxes",
+      parenttype: "Sales Invoice",
+      idx: i + 1,
+      category: "Total",
+      item_wise_tax_detail: JSON.stringify(detail),
+      ...t,
+    }
+  })
+  return {
+    doctype: "Sales Invoice",
+    name: row.name,
+    customer: row.customer,
+    customer_name: row.customer_name,
+    company: "Bless Inc.",
+    currency: "CAD",
+    selling_price_list: "Standard Selling",
+    posting_date: row.posting_date,
+    due_date: row.due_date,
+    status: row.status,
+    docstatus: row.docstatus,
+    owner: row.owner,
+    creation: row.creation,
+    modified: row.modified,
+    modified_by: row.modified_by,
+    net_total: row.grand_total,
+    total: row.grand_total,
+    grand_total: row.grand_total,
+    rounded_total: row.grand_total,
+    outstanding_amount: row.outstanding_amount,
+    conversion_rate: 1,
+    plc_conversion_rate: 1,
+    company_tax_id: "BSL-2026-0001",
+    debit_to: "Debtors - BE",
+    cost_center: "Main - BE",
+    taxes_and_charges: "Canada GST/QST - BE",
+    // Stored "Tax Breakup" HTML, exactly like a real ERPNext save produces.
+    other_charges_calculation: itemisedTaxBreakupHtml(
+      itemRows as Array<{ item_code: string; qty: number; rate: number }>,
+      salesInvoiceTaxes,
+    ),
+    items: itemRows,
+    taxes: taxRowsWithDetail,
+  }
+}
+
+// Shared docinfo payload served by BOTH get_docinfo (timeline refresh) and
+// getdoc (opening the form), so the two endpoints can never drift apart.
+function buildDocInfo(doctype: string, name: string) {
+  return {
+    doctype,
+    name,
+    comments: comments
+      .filter((c) => c.reference_doctype === doctype && (!name || c.reference_name === name))
+      .map((c) => ({
+        name: c.name,
+        comment_type: "Comment",
+        comment_email: c.owner,
+        comment_by: c.owner,
+        creation: c.creation,
+        content: c.content,
+        owner: c.owner,
+      })),
+    versions: versions
+      .filter((v) => v.ref_doctype === doctype && (!name || v.docname === name))
+      .map((v) => ({ name: v.name, creation: v.creation, owner: v.owner, data: v.data })),
+    user_info: {
+      "admin@blesserp.com": { fullname: "Administrator" },
+    },
+    assignments: (assignmentStore[docKey(doctype, name)] ?? []).filter(
+      (a) => a.status !== "Closed" && a.status !== "Cancelled"
+    ),
+    tags: (tagStore[docKey(doctype, name)] ?? []).join(", "),
+    permissions: {
+      read: true,
+      write: true,
+      create: true,
+      delete: true,
+      submit: true,
+      cancel: true,
+      amend: true,
+    },
+  }
+}
+
 export const activityHandlers = [
+  // ── open doc: single request returning doclist + docinfo ──────────
+  // Byte-for-byte the endpoint ERPNext's form controller (Form.load_doc /
+  // form.load.getdoc) serves. The custom form makes exactly ONE call here.
+  http.get("/api/method/frappe.desk.form.load.getdoc", async ({ request }) => {
+    await delay(60)
+    const url = new URL(request.url)
+    const name = url.searchParams.get("name") ?? ""
+    const row = salesInvoices.find((s) => s.name === name)
+    if (!row) return HttpResponse.json({ message: `Sales Invoice ${name} not found` }, { status: 404 })
+    return HttpResponse.json({
+      docs: [fullSalesInvoiceDoc(row as SalesInvoiceRow)],
+      docinfo: buildDocInfo("Sales Invoice", name),
+    })
+  }),
+
   // ── docinfo: comments + versions + user_info ──────────────────────
   http.get("/api/method/frappe.desk.form.load.get_docinfo", async ({ request }) => {
     await delay(60)
@@ -214,40 +375,7 @@ export const activityHandlers = [
     const name = url.searchParams.get("name") ?? ""
     const doctype = url.searchParams.get("doctype") ?? "Sales Invoice"
     return HttpResponse.json({
-      docinfo: {
-        doctype,
-        name,
-        comments: comments
-          .filter((c) => c.reference_doctype === doctype && (!name || c.reference_name === name))
-          .map((c) => ({
-            name: c.name,
-            comment_type: "Comment",
-            comment_email: c.owner,
-            comment_by: c.owner,
-            creation: c.creation,
-            content: c.content,
-            owner: c.owner,
-          })),
-        versions: versions
-          .filter((v) => v.ref_doctype === doctype && (!name || v.docname === name))
-          .map((v) => ({ name: v.name, creation: v.creation, owner: v.owner, data: v.data })),
-        user_info: {
-          "admin@blesserp.com": { fullname: "Administrator" },
-        },
-        assignments: (assignmentStore[docKey(doctype, name)] ?? []).filter(
-          (a) => a.status !== "Closed" && a.status !== "Cancelled"
-        ),
-        tags: (tagStore[docKey(doctype, name)] ?? []).join(", "),
-        permissions: {
-          read: true,
-          write: true,
-          create: true,
-          delete: true,
-          submit: true,
-          cancel: true,
-          amend: true,
-        },
-      },
+      docinfo: buildDocInfo(doctype, name),
     })
   }),
 

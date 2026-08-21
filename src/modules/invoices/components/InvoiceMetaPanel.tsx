@@ -12,13 +12,19 @@ import {
   messageFromError,
 } from "@/components/ui"
 import { invoiceService } from "@/services"
-import type { DocInfoAssignment, DocInfoUserInfo } from "@/modules/payments/types"
+import type { DocInfo, DocInfoAssignment, DocInfoUserInfo } from "@/modules/payments/types"
 import { useAuth } from "@/context/AuthContext"
 
 interface InvoiceMetaPanelProps {
   name: string
   /** Collapse the panel (shown as a chevron at its top-right corner). */
   onCollapse?: () => void
+  /**
+   * Docinfo bundled into the getdoc form-open response. Initial render reuses
+   * it so opening an invoice fires no separate get_docinfo call (ERPNext
+   * returns docinfo inside getdoc). Mutations still refetch, like ERPNext.
+   */
+  initialDocInfo?: DocInfo
 }
 
 function displayName(userId: string, userInfo: DocInfoUserInfo): string {
@@ -28,7 +34,7 @@ function displayName(userId: string, userInfo: DocInfoUserInfo): string {
 // ERPNext's form sidebar (Assignments + Tags) as a compact left column, matching
 // PaymentMetaPanel. Mirrors sidebar/assign_to.js and ui/tag_editor.js. Data
 // comes from frappe.desk.form.load.get_docinfo; every mutation refetches.
-export default function InvoiceMetaPanel({ name, onCollapse }: InvoiceMetaPanelProps) {
+export default function InvoiceMetaPanel({ name, onCollapse, initialDocInfo }: InvoiceMetaPanelProps) {
   const { user } = useAuth()
   const currentUserId = user?.id ?? null
   const { showMessage } = useMessageDialog()
@@ -45,29 +51,37 @@ export default function InvoiceMetaPanel({ name, onCollapse }: InvoiceMetaPanelP
   const [tagSuggestions, setTagSuggestions] = useState<string[]>([])
   const [tagOpen, setTagOpen] = useState(false)
 
+  const applyDocInfo = useCallback((doc: DocInfo) => {
+    setAssignments(doc.assignments ?? [])
+    setTags(
+      (doc.tags ?? "")
+        .split(",")
+        .map((t) => t.trim())
+        .filter(Boolean)
+    )
+    setUserInfo(doc.user_info ?? {})
+    setCanWrite(!!doc.permissions?.write)
+    setLoading(false)
+  }, [])
+
   const reload = useCallback(async () => {
     setLoading(true)
     try {
       const doc = await invoiceService.getDocInfo(name)
-      setAssignments(doc.assignments ?? [])
-      setTags(
-        (doc.tags ?? "")
-          .split(",")
-          .map((t) => t.trim())
-          .filter(Boolean)
-      )
-      setUserInfo(doc.user_info ?? {})
-      setCanWrite(!!doc.permissions?.write)
+      applyDocInfo(doc)
     } catch (err) {
       showMessage(messageFromError(err, "Failed to load assignments and tags."))
-    } finally {
       setLoading(false)
     }
-  }, [name, showMessage])
+  }, [name, showMessage, applyDocInfo])
 
   useEffect(() => {
-    reload()
-  }, [reload])
+    if (initialDocInfo) {
+      applyDocInfo(initialDocInfo)
+    } else {
+      reload()
+    }
+  }, [initialDocInfo, reload, applyDocInfo])
 
   const run = useCallback(
     async (action: () => Promise<unknown>) => {
@@ -111,6 +125,10 @@ export default function InvoiceMetaPanel({ name, onCollapse }: InvoiceMetaPanelP
   const handleRemoveTag = (tag: string) => run(() => invoiceService.removeTagFromDoc(name, tag))
 
   useEffect(() => {
+    if (!tagQuery) {
+      setTagSuggestions([])
+      return
+    }
     let cancelled = false
     const timer = setTimeout(() => {
       invoiceService.searchTags(tagQuery).then((suggestions) => {

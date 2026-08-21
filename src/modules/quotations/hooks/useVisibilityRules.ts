@@ -60,7 +60,7 @@ export type QuotationFormDataPartial = Partial<Quotation>
 
 /** B4 `depends_on`-family rules (Quotation-Parity-Plan.md A5). */
 export const DEFAULT_RULES: QuotationFieldRule[] = [
-  { fieldname: "customer_name", hiddenWhen: "eval:true" },
+  { fieldname: "customer_name", hiddenWhen: "!party_name" },
   { fieldname: "customer_group", hiddenWhen: "quotation_to!='Customer' or !party_name" },
   { fieldname: "currency", reqd: true },
   { fieldname: "selling_price_list", reqd: true },

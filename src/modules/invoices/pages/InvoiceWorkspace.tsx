@@ -40,6 +40,7 @@ import {
   type LedgerPreviewData,
   type PaymentActivityItem,
 } from "@/services"
+import type { DocInfo } from "@/modules/payments/types"
 import { ApiError } from "@/services/api-client"
 import { useAuth } from "@/context/AuthContext"
 import { normalizeLedger } from "@/modules/payments/components/ledgerUtils"
@@ -117,10 +118,10 @@ export default function InvoiceWorkspace({
   const [commentsLoading, setCommentsLoading] = useState(false)
 
   const loadComments = useCallback(
-    async (doc: SalesInvoice, currentUser: string | null) => {
+    async (doc: SalesInvoice, currentUser: string | null, docinfo?: DocInfo) => {
       setCommentsLoading(true)
       try {
-        setComments(await invoiceService.getActivity(doc, currentUser ?? undefined))
+        setComments(await invoiceService.getActivity(doc, currentUser ?? undefined, docinfo))
       } catch (err) {
         setComments([])
         showMessage(messageFromError(err, "Failed to load activity."))
@@ -133,8 +134,8 @@ export default function InvoiceWorkspace({
 
   useEffect(() => {
     if (!ws.invoice) return
-    loadComments(ws.invoice, currentUserId)
-  }, [ws.invoice, currentUserId, loadComments])
+    loadComments(ws.invoice, currentUserId, ws.docinfo ?? undefined)
+  }, [ws.invoice, ws.docinfo, currentUserId, loadComments])
 
   const loadLedger = useCallback(
     async (company: string, name: string) => {
@@ -494,7 +495,11 @@ export default function InvoiceWorkspace({
 
         <div className="flex items-start gap-6">
           {mode === "existing" && metaOpen && ws.invoice && (
-            <InvoiceMetaPanel name={ws.invoice.name} onCollapse={toggleMeta} />
+            <InvoiceMetaPanel
+              name={ws.invoice.name}
+              onCollapse={toggleMeta}
+              initialDocInfo={ws.docinfo ?? undefined}
+            />
           )}
           <div className="flex-1 min-w-0 space-y-6">
             <div className="bg-white rounded-2xl shadow-card p-6">
@@ -527,6 +532,8 @@ export default function InvoiceWorkspace({
                 totalQuantity={ws.totalQuantity}
                 netTotal={ws.netTotal}
                 onSetWarehouse={ws.editable ? ws.handleSetWarehouse : undefined}
+                itemLines={ws.lineItems}
+                storedTaxBreakupHtml={ws.invoice?.other_charges_calculation}
                 lineItems={
                   <InvoiceLineItems
                     items={ws.lineItems}

@@ -370,7 +370,7 @@ export default function InvoiceLineItems({
 
 type SearchResultItem = { value: string; label: string; description: string }
 
-function AddMultipleModal({
+export function AddMultipleModal({
   items,
   onAddItemWithQty,
   itemDetailsContext,
