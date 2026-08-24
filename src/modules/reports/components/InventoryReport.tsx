@@ -1,7 +1,7 @@
 "use client"
 
 import { Package, AlertTriangle, DollarSign, XCircle } from "lucide-react"
-import { Card, CardContent, Badge } from "@/components/ui"
+import { Card, CardContent, Badge, FitText } from "@/components/ui"
 import { type InventoryReport } from "@/services"
 import { formatCurrency, cn } from "@/lib/utils"
 
@@ -17,9 +17,9 @@ export default function InventoryReportComponent({ report }: InventoryReportProp
           <CardContent>
             <div className="flex items-start gap-3">
               <div className="w-9 h-9 rounded-[10px] bg-primary-50 text-primary-600 flex items-center justify-center shrink-0"><Package size={16} /></div>
-              <div>
-                <p className="text-xs font-semibold text-muted uppercase tracking-wider">Total Products</p>
-                <p className="text-xl font-bold text-heading mt-1">{report.totalProducts}</p>
+              <div className="min-w-0">
+                <p className="text-xs font-semibold text-muted uppercase tracking-wider truncate">Total Products</p>
+                <FitText className="text-xl font-bold text-heading mt-1 tabular-nums">{report.totalProducts}</FitText>
               </div>
             </div>
           </CardContent>
@@ -28,9 +28,9 @@ export default function InventoryReportComponent({ report }: InventoryReportProp
           <CardContent>
             <div className="flex items-start gap-3">
               <div className="w-9 h-9 rounded-[10px] bg-success-50 text-success-600 flex items-center justify-center shrink-0"><DollarSign size={16} /></div>
-              <div>
-                <p className="text-xs font-semibold text-muted uppercase tracking-wider">Inventory Value</p>
-                <p className="text-xl font-bold text-heading mt-1 tabular-nums">{formatCurrency(report.totalValue)}</p>
+              <div className="min-w-0">
+                <p className="text-xs font-semibold text-muted uppercase tracking-wider truncate">Inventory Value</p>
+                <FitText className="text-xl font-bold text-heading mt-1 tabular-nums">{formatCurrency(report.totalValue)}</FitText>
               </div>
             </div>
           </CardContent>
@@ -39,9 +39,9 @@ export default function InventoryReportComponent({ report }: InventoryReportProp
           <CardContent>
             <div className="flex items-start gap-3">
               <div className="w-9 h-9 rounded-[10px] bg-warning-50 text-warning-600 flex items-center justify-center shrink-0"><AlertTriangle size={16} /></div>
-              <div>
-                <p className="text-xs font-semibold text-muted uppercase tracking-wider">Low Stock</p>
-                <p className="text-xl font-bold text-heading mt-1">{report.lowStockCount}</p>
+              <div className="min-w-0">
+                <p className="text-xs font-semibold text-muted uppercase tracking-wider truncate">Low Stock</p>
+                <FitText className="text-xl font-bold text-heading mt-1 tabular-nums">{report.lowStockCount}</FitText>
               </div>
             </div>
           </CardContent>
@@ -50,9 +50,9 @@ export default function InventoryReportComponent({ report }: InventoryReportProp
           <CardContent>
             <div className="flex items-start gap-3">
               <div className="w-9 h-9 rounded-[10px] bg-danger-50 text-danger-600 flex items-center justify-center shrink-0"><XCircle size={16} /></div>
-              <div>
-                <p className="text-xs font-semibold text-muted uppercase tracking-wider">Out of Stock</p>
-                <p className="text-xl font-bold text-heading mt-1">{report.outOfStockCount}</p>
+              <div className="min-w-0">
+                <p className="text-xs font-semibold text-muted uppercase tracking-wider truncate">Out of Stock</p>
+                <FitText className="text-xl font-bold text-heading mt-1 tabular-nums">{report.outOfStockCount}</FitText>
               </div>
             </div>
           </CardContent>

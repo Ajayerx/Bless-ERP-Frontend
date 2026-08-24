@@ -48,12 +48,15 @@ export default function EditSupplier() {
     <>
       <Topbar />
       <motion.div className="p-6" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.3 }}>
-        <div className="flex items-center gap-3 mb-6">
-          <Link to={`/suppliers/${id}`}><ArrowLeft size={18} /><span>Back</span></Link>
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center gap-3">
+            <Link to={`/suppliers/${id}`}><ArrowLeft size={18} /><span>Back</span></Link>
+          </div>
+          <Button type="submit" form="supplier-form" loading={saving}>Save Supplier</Button>
         </div>
         <h1 className="text-2xl font-bold text-heading mb-6">Edit Supplier</h1>
         <div className="bg-white rounded-2xl shadow-card p-6">
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+          <form id="supplier-form" onSubmit={handleSubmit(onSubmit)} className="space-y-6">
             <div className="grid grid-cols-2 gap-4">
               <div className="col-span-2">
                 <Input label="Supplier Name" {...register("name", { required: "Required" })} error={errors.name?.message} />
@@ -65,9 +68,6 @@ export default function EditSupplier() {
               <div className="col-span-2">
                 <Textarea label="Billing Address" {...register("billingAddress")} />
               </div>
-            </div>
-            <div className="flex justify-end gap-3 pt-4 border-t border-border">
-              <Button type="submit" loading={saving}>Save Supplier</Button>
             </div>
           </form>
         </div>

@@ -1,4 +1,4 @@
-import { apiClient, apiClientWithBody, serverMessagesFromBody, failedNamesFromMessages, serverDownloadTemplate, type AppMessage } from "@/services/api-client"
+import { apiClient, apiClientWithBody, serverMessagesFromBody, failedNamesFromMessages, serverDownloadTemplate, throwServerMessageError, type AppMessage } from "@/services/api-client"
 import { API_CONFIG } from "@/config/api.config"
 import { sanitizeHtml } from "@/lib/utils"
 import { postMethod, postMethodRaw, withDedup } from "@/services/frappe-client"
@@ -1392,7 +1392,7 @@ async getOutstandingReferences(args: GetOutstandingArgs): Promise<OutstandingRef
         headers: API_CONFIG.headers,
       }
     )
-    if (!res.ok) throw new Error("Failed to generate PDF")
+    if (!res.ok) await throwServerMessageError(res, "Failed to generate PDF")
     return res.blob()
   },
 

@@ -409,7 +409,7 @@ export default function DataTable<T>({
                   className={cn(
                     "w-8 h-8 rounded-[10px] text-xs font-semibold transition-colors",
                     p === currentPage
-                      ? "bg-primary-600 text-white shadow-sm"
+                      ? "bg-primary-600 text-primary-50 shadow-sm"
                       : "text-muted hover:bg-gray-100"
                   )}
                 >

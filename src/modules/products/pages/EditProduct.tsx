@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react"
 import { useParams, useNavigate } from "react-router-dom"
 import { motion } from "framer-motion"
-import { ArrowLeft } from "lucide-react"
+import { ArrowLeft, Save } from "lucide-react"
 import Topbar from "@/components/layout/Topbar"
 import { Button, Skeleton } from "@/components/ui"
 import { productService, type ProductDetail } from "@/services"
@@ -12,6 +12,7 @@ export default function EditProduct() {
   const navigate = useNavigate()
   const [product, setProduct] = useState<ProductDetail | null>(null)
   const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -37,7 +38,17 @@ export default function EditProduct() {
               <p className="text-sm text-muted mt-0.5">{product?.item_name ?? "Loading..."}</p>
             </div>
           </div>
-          <Button variant="secondary" onClick={() => navigate(`/products/${id}`)}>Cancel</Button>
+          <div className="flex items-center gap-2">
+            <Button variant="secondary" onClick={() => navigate(`/products/${id}`)}>Cancel</Button>
+            <Button
+              type="submit" form="product-form"
+              disabled={loading || !!loadError || !product || saving}
+              loading={saving}
+            >
+              <Save size={16} />
+              {saving ? "Saving..." : "Update Product"}
+            </Button>
+          </div>
         </div>
 
         {loading ? (
@@ -53,7 +64,7 @@ export default function EditProduct() {
         ) : !product ? (
           <p className="text-muted">Product not found.</p>
         ) : (
-          <ProductForm product={product} onSaved={() => navigate(`/products/${id}`)} onCancel={() => navigate(`/products/${id}`)} />
+          <ProductForm product={product} onSaved={() => navigate(`/products/${id}`)} onCancel={() => navigate(`/products/${id}`)} onSavingChange={setSaving} />
         )}
       </motion.div>
     </>

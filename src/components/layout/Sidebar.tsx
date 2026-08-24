@@ -303,7 +303,7 @@ export default function Sidebar() {
         <button
           onClick={() => setCollapsed(!collapsed)}
           className={cn(
-            "w-9 h-9 rounded-[10px] bg-primary-600 flex items-center justify-center text-white font-bold text-sm hover:bg-primary-700 active:scale-95 transition-all",
+            "w-9 h-9 rounded-[10px] bg-primary-600 flex items-center justify-center text-primary-50 font-bold text-sm hover:bg-primary-700 active:scale-95 transition-all",
             !collapsed && "mr-3",
           )}
           aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
@@ -519,7 +519,7 @@ export default function Sidebar() {
                               <>
                                 <span>{item.label}</span>
                                 {item.badge && (
-                                  <span className="ml-auto bg-primary-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">
+                                  <span className="ml-auto bg-primary-600 text-primary-50 text-[10px] font-bold px-1.5 py-0.5 rounded-full">
                                     {item.badge}
                                   </span>
                                 )}

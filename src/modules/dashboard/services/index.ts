@@ -97,8 +97,6 @@ function mapInvoiceStatus(status: string): "paid" | "partial" | "unpaid" {
   return "unpaid"
 }
 
-const CUSTOMER_COLORS = ["#2563EB", "#16A34A", "#F59E0B", "#7C3AED", "#DC2626"]
-
 async function fetchSalesInvoices(): Promise<SalesInvoiceRow[]> {
   return apiClient<SalesInvoiceRow[]>(
     buildListUrl("Sales Invoice", {
@@ -344,12 +342,10 @@ function buildTopCustomers(invoices: SalesInvoiceRow[]): TopCustomer[] {
   return Array.from(totals.entries())
     .sort((a, b) => b[1] - a[1])
     .slice(0, 5)
-    .map(([name, amount], i) => ({
+    .map(([name, amount]) => ({
       id: name,
       name,
       amount,
-      initial: name.charAt(0).toUpperCase(),
-      color: CUSTOMER_COLORS[i % CUSTOMER_COLORS.length],
     }))
 }
 

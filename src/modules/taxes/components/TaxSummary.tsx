@@ -51,7 +51,7 @@ export default function TaxSummary({ invoices }: TaxSummaryProps) {
         <Card>
           <CardContent>
             <div className="flex items-start gap-3">
-              <div className="w-10 h-10 rounded-[12px] bg-blue-50 text-blue-600 flex items-center justify-center shrink-0"><TrendingUp size={20} /></div>
+              <div className="w-10 h-10 rounded-[12px] bg-primary-50 text-primary-600 flex items-center justify-center shrink-0"><TrendingUp size={20} /></div>
               <div>
                 <p className="text-xs font-semibold text-muted uppercase tracking-wider">Total Tax Collected</p>
                 <p className="text-2xl font-bold text-heading mt-1 tabular-nums">{formatCurrency(totalTaxAndCharges)}</p>

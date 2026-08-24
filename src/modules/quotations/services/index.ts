@@ -1,4 +1,4 @@
-import { apiClient, apiFormCall, apiClientWithBody, serverMessagesFromBody, ApiError } from "@/services/api-client"
+import { apiClient, apiFormCall, apiClientWithBody, serverMessagesFromBody, throwServerMessageError, ApiError } from "@/services/api-client"
 import { postMethod, postMethodRaw } from "@/services/frappe-client"
 import { API_CONFIG } from "@/config/api.config"
 import { buildTimelineItems, toQuillHtml } from "@/modules/payments/services"
@@ -1212,7 +1212,7 @@ export const quotationService = {
       credentials: "include",
       headers: API_CONFIG.headers,
     })
-    if (!res.ok) throw new Error("Failed to generate PDF")
+    if (!res.ok) await throwServerMessageError(res, "Failed to generate PDF")
     return res.blob()
   },
 

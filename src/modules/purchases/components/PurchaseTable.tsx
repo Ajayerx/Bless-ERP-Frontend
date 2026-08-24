@@ -2,7 +2,7 @@
 
 import { ShoppingCart, CheckCircle2, Clock, XCircle } from "lucide-react"
 import DataTable, { type Column } from "@/components/ui/DataTable"
-import { Badge } from "@/components/ui"
+import { Badge, FitText , FilterPills } from "@/components/ui"
 import { type PurchaseOrder, type PurchaseOrderListResponse } from "@/services"
 import { formatCurrency, formatDate, cn } from "@/lib/utils"
 
@@ -45,8 +45,8 @@ function SummaryCard({
       </div>
       <div className="min-w-0">
         <p className="text-xs font-semibold text-muted uppercase tracking-wider truncate">{label}</p>
-        <p className="text-2xl font-bold text-heading tracking-tight mt-0.5">{value}</p>
-        <p className="text-xs text-muted mt-0.5">{sub}</p>
+        <FitText className="text-2xl font-bold text-heading tracking-tight mt-0.5 tabular-nums">{value}</FitText>
+        <p className="text-xs text-muted mt-0.5 truncate">{sub}</p>
       </div>
     </div>
   )
@@ -167,25 +167,14 @@ export default function PurchaseTable({
         />
       </div>
 
-      <div className="flex items-center gap-2 flex-wrap">
-        {STATUS_FILTERS.map((f) => (
-          <button
-            key={f}
-            onClick={() => {
-              onFilterChange(f)
-              onPageChange(1)
-            }}
-            className={cn(
-              "px-4 py-1.5 rounded-[10px] text-sm font-semibold transition-colors",
-              activeFilter === f
-                ? "bg-primary-600 text-white shadow-sm"
-                : "text-muted hover:bg-gray-100 hover:text-body",
-            )}
-          >
-            {f}
-          </button>
-        ))}
-      </div>
+      <FilterPills
+        options={STATUS_FILTERS}
+        value={activeFilter}
+        onChange={(f) => {
+          onFilterChange(f)
+          onPageChange(1)
+        }}
+      />
 
       <DataTable
         columns={columns}

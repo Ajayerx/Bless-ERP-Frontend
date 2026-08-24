@@ -10,6 +10,7 @@ import {
 } from "recharts"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui"
 import { formatCurrency } from "@/lib/utils"
+import { useChartPalette } from "@/hooks/useChartPalette"
 import type { SalesDay } from "@/services"
 
 interface Props {
@@ -18,6 +19,7 @@ interface Props {
 }
 
 export default function SalesOverviewChart({ data, periodLabel = "This Week" }: Props) {
+  const palette = useChartPalette()
   return (
     <Card>
       <CardHeader>
@@ -41,26 +43,27 @@ export default function SalesOverviewChart({ data, periodLabel = "This Week" }: 
               </defs>
               <CartesianGrid
                 strokeDasharray="3 3"
-                stroke="#f0f0f0"
+                stroke={palette.border}
                 vertical={false}
               />
               <XAxis
                 dataKey="date"
                 axisLine={false}
                 tickLine={false}
-                tick={{ fontSize: 12, fill: "#64748B" }}
+                tick={{ fontSize: 12, fill: palette.muted }}
               />
               <YAxis
                 axisLine={false}
                 tickLine={false}
-                tick={{ fontSize: 12, fill: "#64748B" }}
+                tick={{ fontSize: 12, fill: palette.muted }}
                 tickFormatter={(v: number) => `$${(v / 1000).toFixed(0)}K`}
                 domain={[0, "auto"]}
               />
               <Tooltip
                 contentStyle={{
                   borderRadius: "12px",
-                  border: "1px solid #e5e7eb",
+                  backgroundColor: palette.surface,
+                  border: `1px solid ${palette.border}`,
                   boxShadow: "0px 4px 12px rgba(0,0,0,0.08)",
                   padding: "8px 12px",
                 }}
@@ -68,7 +71,7 @@ export default function SalesOverviewChart({ data, periodLabel = "This Week" }: 
                   formatCurrency(Number(value ?? 0)),
                   "Revenue",
                 ]}
-                labelStyle={{ fontWeight: 600, color: "#0F172A" }}
+                labelStyle={{ fontWeight: 600, color: palette.heading }}
               />
               <Area
                 type="monotone"

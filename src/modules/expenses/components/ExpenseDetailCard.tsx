@@ -13,7 +13,7 @@ export default function ExpenseDetailCard({ expense }: ExpenseDetailCardProps) {
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-4">
-        <div className="w-10 h-10 rounded-[12px] bg-orange-50 text-orange-600 flex items-center justify-center shrink-0">
+        <div className="w-10 h-10 rounded-[12px] bg-warning-50 text-warning-600 flex items-center justify-center shrink-0">
           <Wallet size={20} />
         </div>
         <div>

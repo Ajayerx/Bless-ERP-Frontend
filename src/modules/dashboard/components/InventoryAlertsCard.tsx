@@ -8,13 +8,13 @@ interface Props {
 }
 
 const statusConfig: Record<string, { label: string; badge: string }> = {
-  out_of_stock: { label: "Out of Stock", badge: "bg-red-700 text-white" },
-  negative_stock: { label: "Negative Stock", badge: "bg-red-900 text-white" },
-  low_stock: { label: "Low Stock", badge: "bg-amber-500 text-white" },
-  overstock: { label: "Overstock", badge: "bg-blue-500 text-white" },
-  expiring: { label: "Expiring", badge: "bg-purple-500 text-white" },
-  pending_purchase: { label: "Pending Purchase", badge: "bg-orange-500 text-white" },
-  reorder_soon: { label: "Reorder Soon", badge: "bg-amber-500 text-white" },
+  out_of_stock: { label: "Out of Stock", badge: "bg-danger-200 text-danger-800" },
+  negative_stock: { label: "Negative Stock", badge: "bg-danger-100 text-danger-700" },
+  low_stock: { label: "Low Stock", badge: "bg-warning-100 text-warning-700" },
+  overstock: { label: "Overstock", badge: "bg-info-100 text-info-700" },
+  expiring: { label: "Expiring", badge: "bg-purple-100 text-purple-700" },
+  pending_purchase: { label: "Pending Purchase", badge: "bg-warning-200 text-warning-800" },
+  reorder_soon: { label: "Reorder Soon", badge: "bg-warning-100 text-warning-700" },
 }
 
 export default function InventoryAlertsCard({ data }: Props) {

@@ -9,10 +9,10 @@ import { timeAgo, type NotificationItem } from "@/services"
 import { sanitizeHtml } from "@/lib/utils"
 
 const dotColors: Record<string, string> = {
-  Success: "bg-green-500",
-  Info: "bg-blue-500",
-  Warning: "bg-amber-500",
-  Danger: "bg-red-500",
+  Success: "bg-success-500",
+  Info: "bg-info-500",
+  Warning: "bg-warning-500",
+  Danger: "bg-danger-500",
 }
 
 const typeFilters = [
@@ -114,10 +114,10 @@ export default function Notifications() {
                 <button
                   key={n.name}
                   onClick={() => handleClick(n)}
-                  className={`w-full flex items-start gap-3 px-5 py-3.5 hover:bg-gray-50 transition-colors text-left ${!n.read ? "bg-blue-50/50" : ""}`}
+                  className={`w-full flex items-start gap-3 px-5 py-3.5 hover:bg-gray-50 transition-colors text-left ${!n.read ? "bg-primary-50/50" : ""}`}
                 >
                   <div
-                    className={`w-2.5 h-2.5 rounded-full mt-1.5 shrink-0 ${dotColors[n.type] ?? "bg-blue-500"}`}
+                    className={`w-2.5 h-2.5 rounded-full mt-1.5 shrink-0 ${dotColors[n.type] ?? "bg-primary-500"}`}
                   />
                   <div className="flex-1 min-w-0">
                     <p className="text-sm text-body leading-snug" dangerouslySetInnerHTML={{ __html: sanitizeHtml(n.subject) }} />

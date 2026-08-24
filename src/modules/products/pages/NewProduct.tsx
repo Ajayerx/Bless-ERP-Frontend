@@ -1,12 +1,14 @@
+import { useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { motion } from "framer-motion"
-import { ArrowLeft } from "lucide-react"
+import { ArrowLeft, Save } from "lucide-react"
 import Topbar from "@/components/layout/Topbar"
 import { Button } from "@/components/ui"
 import ProductForm from "../components/ProductForm"
 
 export default function NewProduct() {
   const navigate = useNavigate()
+  const [saving, setSaving] = useState(false)
 
   return (
     <>
@@ -30,10 +32,16 @@ export default function NewProduct() {
               <p className="text-sm text-muted mt-0.5">Add a new product to your catalog.</p>
             </div>
           </div>
-          <Button variant="secondary" onClick={() => navigate("/products")}>Cancel</Button>
+          <div className="flex items-center gap-2">
+            <Button variant="secondary" onClick={() => navigate("/products")}>Cancel</Button>
+            <Button type="submit" form="product-form" disabled={saving} loading={saving}>
+              <Save size={16} />
+              {saving ? "Saving..." : "Create Product"}
+            </Button>
+          </div>
         </div>
 
-        <ProductForm onSaved={() => navigate("/products")} onCancel={() => navigate("/products")} />
+        <ProductForm onSaved={() => navigate("/products")} onCancel={() => navigate("/products")} onSavingChange={setSaving} />
       </motion.div>
     </>
   )

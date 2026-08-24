@@ -3,6 +3,7 @@ export type { ButtonProps } from "./button"
 export { Card, CardHeader, CardTitle, CardContent, CardFooter } from "./card"
 export { Badge } from "./badge"
 export { Avatar } from "./avatar"
+export { default as FitText } from "./FitText"
 export { Input } from "./input"
 export type { InputProps } from "./input"
 export {
@@ -24,6 +25,8 @@ export {
   DropdownMenuLabel,
 } from "./dropdown-menu"
 export { Tabs, TabsList, TabsTrigger, TabsContent } from "./tabs"
+export { FilterPills } from "./FilterPills"
+export type { FilterPillsOption } from "./FilterPills"
 export { Skeleton } from "./skeleton"
 export { default as DataTable } from "./DataTable"
 export { Switch } from "./switch"

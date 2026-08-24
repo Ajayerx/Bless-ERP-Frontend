@@ -2,9 +2,9 @@
 
 import { ShoppingCart } from "lucide-react"
 import DataTable, { type Column } from "@/components/ui/DataTable"
-import { Card, CardContent, Badge } from "@/components/ui"
+import { Card, CardContent, Badge , FilterPills } from "@/components/ui"
 import { type SalesOrder, type SalesOrderListResponse } from "@/services"
-import { formatCurrency, formatDate, cn } from "@/lib/utils"
+import { formatCurrency, formatDate } from "@/lib/utils"
 
 const statusVariant: Record<string, "success" | "warning" | "danger" | "info" | "default"> = {
   draft: "warning",
@@ -122,22 +122,14 @@ export default function SalesOrderTable({
         </Card>
       </div>
 
-      <div className="flex items-center gap-2 flex-wrap">
-        {FILTERS.map((f) => (
-          <button
-            key={f}
-            onClick={() => { onFilterChange(f); onPageChange(1) }}
-            className={cn(
-              "px-4 py-1.5 rounded-[10px] text-sm font-semibold transition-colors",
-              activeFilter === f
-                ? "bg-primary-600 text-white shadow-sm"
-                : "text-muted hover:bg-gray-100 hover:text-body",
-            )}
-          >
-            {f}
-          </button>
-        ))}
-      </div>
+      <FilterPills
+        options={FILTERS}
+        value={activeFilter}
+        onChange={(f) => {
+          onFilterChange(f)
+          onPageChange(1)
+        }}
+      />
 
       <DataTable
         columns={columns}

@@ -125,17 +125,17 @@ function VersionBody({
           vertical-align: top;
         }
         .version-html-diff table.diff th {
-          background-color: #f9fafb;
+          background-color: var(--color-surface-muted);
           font-weight: 500;
           padding: 6px;
         }
         .version-html-diff table.diff .diff_header {
-          background-color: #f9fafb;
+          background-color: var(--color-surface-muted);
           text-align: right;
           width: 40px;
         }
         .version-html-diff table.diff .diff_next {
-          background-color: #f9fafb;
+          background-color: var(--color-surface-muted);
           width: 10px;
         }
         .version-html-diff table.diff .diff_add { background-color: rgba(16, 185, 129, 0.15); }
@@ -449,7 +449,7 @@ function VersionFooter({
         <button
           onClick={submit}
           disabled={posting || !content.trim()}
-          className="inline-flex h-9 items-center gap-1.5 rounded-[10px] bg-primary-600 px-4 text-sm font-medium text-white transition-colors hover:bg-primary-700 disabled:opacity-50"
+          className="inline-flex h-9 items-center gap-1.5 rounded-[10px] bg-primary-600 px-4 text-sm font-medium text-primary-50 transition-colors hover:bg-primary-700 disabled:opacity-50"
           data-testid="version_comment_add"
         >
           <Send size={14} />
@@ -513,7 +513,7 @@ function VersionFooter({
                           <button
                             onClick={saveEdit}
                             disabled={savingEdit || !editDraft.trim()}
-                            className="inline-flex h-8 items-center rounded-[8px] bg-primary-600 px-3 text-xs font-medium text-white transition-colors hover:bg-primary-700 disabled:opacity-50"
+                            className="inline-flex h-8 items-center rounded-[8px] bg-primary-600 px-3 text-xs font-medium text-primary-50 transition-colors hover:bg-primary-700 disabled:opacity-50"
                             data-testid={`version_edit_comment_save_${item.commentName}`}
                           >
                             Save

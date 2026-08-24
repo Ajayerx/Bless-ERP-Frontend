@@ -199,7 +199,7 @@ export default function InvoiceLineItems({
       type: "number",
       align: "right",
       weight: 1,
-      formatter: (r) => formatFixed(r.quantity, 3),
+      formatter: (o) => formatFixed(o.quantity, 3),
     },
     {
       key: "price",
@@ -207,7 +207,7 @@ export default function InvoiceLineItems({
       type: "number",
       align: "right",
       weight: 1.2,
-      formatter: (r) => formatFixed(r.price, 2),
+      formatter: (o) => formatFixed(o.price, 2),
     },
     {
       key: "total",
@@ -215,7 +215,7 @@ export default function InvoiceLineItems({
       type: "readonly",
       align: "right",
       weight: 1.4,
-      formatter: (r) => formatFixed(r.total, 2),
+      formatter: (o) => formatFixed(o.total, 2),
     },
   ]
 
@@ -244,7 +244,7 @@ export default function InvoiceLineItems({
       type: "readonly",
       align: "right",
       weight: 1.4,
-      formatter: (r) => formatFixed(r.total, 2),
+      formatter: (o) => formatFixed(o.total, 2),
     },
   ]
 
@@ -257,9 +257,9 @@ export default function InvoiceLineItems({
         return
       }
       if (next.length < prev.length) {
-        const nextIds = new Set(next.map((r) => r.id))
-        for (const r of prev) {
-          if (!nextIds.has(r.id)) onRemove?.(r.id)
+        const nextIds = new Set(next.map((o) => o.id))
+        for (const o of prev) {
+          if (!nextIds.has(o.id)) onRemove?.(o.id)
         }
         return
       }
@@ -465,7 +465,7 @@ export function AddMultipleModal({
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="flex items-center gap-1.5 rounded-[8px] bg-[#7c7c7c] px-2 py-1 text-xs text-white hover:bg-[#696969] transition-colors"
+        className="flex items-center gap-1.5 rounded-[8px] bg-gray-500 px-2 py-1 text-xs text-gray-50 hover:bg-gray-600 transition-colors"
       >
         <Plus size={14} /> Add Multiple
       </button>
@@ -531,7 +531,7 @@ export function AddMultipleModal({
           </div>
 
           {toast && (
-            <div className="fixed top-5 right-5 z-[60] px-4 py-2.5 bg-green-600 text-white text-sm font-semibold rounded-[10px] shadow-lg">
+            <div className="fixed top-5 right-5 z-[60] px-4 py-2.5 bg-success-600 text-success-50 text-sm font-semibold rounded-[10px] shadow-lg">
               {toast}
             </div>
           )}
@@ -558,7 +558,7 @@ export function AddMultipleModal({
               <button
                 type="button"
                 onClick={handleSetQty}
-                className="px-4 py-2 text-sm font-semibold bg-primary-600 text-white rounded-[10px] hover:bg-primary-700 transition-colors"
+                className="px-4 py-2 text-sm font-semibold bg-primary-600 text-primary-50 rounded-[10px] hover:bg-primary-700 transition-colors"
               >
                 Set Quantity
               </button>

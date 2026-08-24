@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import { useNavigate } from "react-router-dom"
-import { ArrowLeft, Save, Loader2 } from "lucide-react"
+import { ArrowLeft, Save } from "lucide-react"
 import { Button } from "@/components/ui"
 import { supplierService, type SupplierFormData } from "@/services"
 
@@ -61,10 +61,16 @@ export default function SupplierForm() {
             <p className="text-sm text-muted mt-0.5">Add a new vendor to your directory.</p>
           </div>
         </div>
-        <Button variant="secondary" onClick={() => navigate("/suppliers")}>Cancel</Button>
+        <div className="flex items-center gap-2">
+          <Button variant="secondary" onClick={() => navigate("/suppliers")}>Cancel</Button>
+          <Button type="submit" form="supplier-form" disabled={saving} loading={saving}>
+            <Save size={16} />
+            {saving ? "Saving..." : "Create Supplier"}
+          </Button>
+        </div>
       </div>
 
-      <form onSubmit={handleSubmit} className="bg-surface rounded-[16px] border border-border shadow-card p-6 space-y-4">
+      <form id="supplier-form" onSubmit={handleSubmit} className="bg-surface rounded-[16px] border border-border shadow-card p-6 space-y-4">
         {error && (
           <p className="text-sm text-danger-600 bg-danger-50 border border-danger-100 px-3 py-2.5 rounded-[10px]">{error}</p>
         )}
@@ -94,18 +100,6 @@ export default function SupplierForm() {
             <label htmlFor="billingAddress" className={labelClass}>Billing Address</label>
             <textarea id="billingAddress" name="billingAddress" value={form.billingAddress} onChange={handleChange} rows={2} className={inputClass} placeholder="300 Commerce Drive, Toronto, ON" />
           </div>
-        </div>
-
-        <div className="flex items-center justify-end gap-3 pt-4 border-t border-border">
-          <button type="button" onClick={() => navigate("/suppliers")}
-            className="px-4 py-2.5 text-sm font-semibold text-muted bg-surface border border-border rounded-[12px] hover:bg-gray-50 transition-colors">
-            Cancel
-          </button>
-          <button type="submit" disabled={saving}
-            className="flex items-center gap-2 px-4 py-2.5 text-sm font-semibold text-white bg-primary-600 rounded-[12px] hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-sm">
-            {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
-            {saving ? "Saving..." : "Create Supplier"}
-          </button>
         </div>
       </form>
     </>

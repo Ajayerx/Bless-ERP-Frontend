@@ -37,7 +37,7 @@ export default function Login() {
   return (
     <div className="min-h-screen bg-app-bg flex">
       {/* Left - Branding */}
-      <div className="hidden lg:flex w-1/2 bg-gradient-to-br from-primary-600 via-primary-700 to-primary-900 p-12 flex-col justify-between relative overflow-hidden">
+      <div className="hidden lg:flex w-1/2 bg-gradient-to-br from-blue-600 via-blue-700 to-blue-900 p-12 flex-col justify-between relative overflow-hidden">
         <div className="absolute inset-0 opacity-10">
           <div className="absolute top-20 -left-10 w-72 h-72 bg-white rounded-full blur-3xl" />
           <div className="absolute bottom-20 -right-10 w-96 h-96 bg-white rounded-full blur-3xl" />
@@ -148,7 +148,7 @@ export default function Login() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-primary-600 text-white text-sm font-semibold rounded-[12px] hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-sm hover:shadow-md active:scale-[0.98]"
+              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-primary-600 text-primary-50 text-sm font-semibold rounded-[12px] hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-sm hover:shadow-md active:scale-[0.98]"
             >
               {loading ? (
                 <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />

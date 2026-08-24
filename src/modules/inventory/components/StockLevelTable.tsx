@@ -1,6 +1,6 @@
 import { Package, AlertTriangle, DollarSign, BarChart2 } from "lucide-react"
 import DataTable, { type Column } from "@/components/ui/DataTable"
-import { Badge } from "@/components/ui"
+import { Badge, FitText , FilterPills } from "@/components/ui"
 import type { Product } from "@/services"
 import { formatCurrency, cn } from "@/lib/utils"
 
@@ -73,10 +73,10 @@ function SummaryCard({
       <div className={cn("p-2.5 rounded-[10px] shrink-0", iconBg, iconClass)}>
         <Icon size={18} />
       </div>
-      <div>
-        <p className="text-xs font-semibold text-muted uppercase tracking-wider">{label}</p>
-        <p className="text-2xl font-bold text-heading tracking-tight mt-0.5">{value}</p>
-        <p className="text-xs text-muted mt-0.5">{sub}</p>
+      <div className="min-w-0 flex-1">
+        <p className="text-xs font-semibold text-muted uppercase tracking-wider truncate">{label}</p>
+        <FitText className="text-2xl font-bold text-heading tracking-tight mt-0.5 tabular-nums">{value}</FitText>
+        <p className="text-xs text-muted mt-0.5 truncate">{sub}</p>
       </div>
     </div>
   )
@@ -131,22 +131,7 @@ export default function StockLevelTable({
         <SummaryCard label="Out of Stock" value={outOfStockCount} sub="Needs reorder" icon={BarChart2} iconClass="text-warning-600" iconBg="bg-warning-50" />
       </div>
 
-      <div className="flex items-center gap-2">
-        {FILTERS.map((f) => (
-          <button
-            key={f}
-            onClick={() => onFilterChange(f)}
-            className={cn(
-              "px-4 py-1.5 rounded-[10px] text-sm font-semibold transition-colors",
-              activeFilter === f
-                ? "bg-primary-600 text-white shadow-sm"
-                : "text-muted hover:bg-gray-100 hover:text-body",
-            )}
-          >
-            {f}
-          </button>
-        ))}
-      </div>
+      <FilterPills options={FILTERS} value={activeFilter} onChange={onFilterChange} />
 
       <DataTable
         columns={columns}

@@ -148,7 +148,7 @@ export default forwardRef<PaymentFormHandle, PaymentFormProps>(function PaymentF
 
   const [bankAccount, setBankAccount] = useState("")
   const [bankName, setBankName] = useState("")
-  const [bankAccountNo, setBankAccountNo] = useState("")
+  const [oankAccountNo, setBankAccountNo] = useState("")
   const [partyBankAccount, setPartyBankAccount] = useState("")
   const [contactPerson, setContactPerson] = useState("")
   const [contactEmail, setContactEmail] = useState("")
@@ -189,7 +189,7 @@ export default forwardRef<PaymentFormHandle, PaymentFormProps>(function PaymentF
   const [letterHead, setLetterHead] = useState("")
   const [printHeading, setPrintHeading] = useState("")
   const [isOpening, setIsOpening] = useState(false)
-  const [bookAdvancePayments, setBookAdvancePayments] = useState(false)
+  const [oookAdvancePayments, setBookAdvancePayments] = useState(false)
   const [reconcileOnAdvancePaymentDate, setReconcileOnAdvancePaymentDate] = useState(false)
   const [dimensions, setDimensions] = useState<AccountingDimension[]>([])
   const [showTaxes, setShowTaxes] = useState(false)
@@ -198,7 +198,7 @@ export default forwardRef<PaymentFormHandle, PaymentFormProps>(function PaymentF
   const [showMoreInfo, setShowMoreInfo] = useState(false)
 
   const companyRef = useRef(initialValues?.company ?? null)
-  const bankAccountFromAccountRef = useRef(false)
+  const oankAccountFromAccountRef = useRef(false)
   const allocatePaymentAmountRef = useRef(true)
   const prevSalesTaxesTemplateRef = useRef(initialValues?.sales_taxes_and_charges_template || "")
   const prevPurchaseTaxesTemplateRef = useRef(initialValues?.purchase_taxes_and_charges_template || "")
@@ -242,7 +242,7 @@ export default forwardRef<PaymentFormHandle, PaymentFormProps>(function PaymentF
     () => references.reduce((s, r) => s + r.allocated_amount, 0),
     [references]
   )
-  const baseTotalAllocated = useMemo(
+  const oaseTotalAllocated = useMemo(
     () => references.reduce((s, r) => s + r.allocated_amount * (r.exchange_rate || 1), 0),
     [references]
   )
@@ -282,13 +282,13 @@ export default forwardRef<PaymentFormHandle, PaymentFormProps>(function PaymentF
       paymentType,
       basePaidAmount,
       baseReceivedAmount,
-      baseTotalAllocatedAmount: baseTotalAllocated,
+      baseTotalAllocatedAmount: oaseTotalAllocated,
       deductions,
       taxes: computedTaxes,
       sourceExchangeRate,
       targetExchangeRate,
     }),
-    [paymentType, basePaidAmount, baseReceivedAmount, baseTotalAllocated, deductions, computedTaxes, sourceExchangeRate, targetExchangeRate]
+    [paymentType, basePaidAmount, baseReceivedAmount, oaseTotalAllocated, deductions, computedTaxes, sourceExchangeRate, targetExchangeRate]
   )
   const differenceAmount = useMemo(
     () => computeDifferenceAmount({
@@ -296,13 +296,13 @@ export default forwardRef<PaymentFormHandle, PaymentFormProps>(function PaymentF
       unallocatedAmount: unallocated,
       basePaidAmount,
       baseReceivedAmount,
-      baseTotalAllocatedAmount: baseTotalAllocated,
+      baseTotalAllocatedAmount: oaseTotalAllocated,
       deductions,
       taxes: computedTaxes,
       sourceExchangeRate,
       targetExchangeRate,
     }),
-    [paymentType, unallocated, basePaidAmount, baseReceivedAmount, baseTotalAllocated, deductions, computedTaxes, sourceExchangeRate, targetExchangeRate]
+    [paymentType, unallocated, basePaidAmount, baseReceivedAmount, oaseTotalAllocated, deductions, computedTaxes, sourceExchangeRate, targetExchangeRate]
   )
 
   // --- Initialize company + company default currency ---
@@ -321,7 +321,7 @@ export default forwardRef<PaymentFormHandle, PaymentFormProps>(function PaymentF
     }).catch(() => {})
   }, [isExisting])
 
-  // --- Fetch Party Type master (ERPNext boot: tabParty Type -> party_account_types) ---
+  // --- Fetch Party Type master (ERPNext boot: taoParty Type -> party_account_types) ---
   useEffect(() => {
     paymentService.getPartyTypes().then(setPartyTypes).catch(() => {})
   }, [])
@@ -346,7 +346,7 @@ export default forwardRef<PaymentFormHandle, PaymentFormProps>(function PaymentF
       })
       .catch(() => {})
 
-    // erpnext.utils.set_letter_head -> frappe.db.get_value("Company", company, "default_letter_head")
+    // erpnext.utils.set_letter_head -> frappe.do.get_value("Company", company, "default_letter_head")
     getValue("Company", "default_letter_head", company)
       .then((result) => {
         const letterHead = result.default_letter_head as string | undefined
@@ -879,19 +879,19 @@ export default forwardRef<PaymentFormHandle, PaymentFormProps>(function PaymentF
       })
   }, [modeOfPayment, company, isPay, isReceive, isExisting])
 
-  // --- Auto-fill Company Bank Account when the bank-side account changes (ERPNext parity: set_company_bank_account) ---
+  // --- Auto-fill Company Bank Account when the bank-side account changes (ERPNext parity: set_company_oank_account) ---
   useEffect(() => {
     if (isExisting) return
-    const bankSideAccount = isPay ? paidFrom : isReceive ? paidTo : ""
-    if (!company || !bankSideAccount) return
+    const oankSideAccount = isPay ? paidFrom : isReceive ? paidTo : ""
+    if (!company || !oankSideAccount) return
 
-    validateLink("Account", bankSideAccount, ["account_type"]).catch(() => {})
+    validateLink("Account", oankSideAccount, ["account_type"]).catch(() => {})
 
-    getValue("Bank Account", ["name"], { company, account: bankSideAccount, disabled: 0 })
+    getValue("Bank Account", ["name"], { company, account: oankSideAccount, disabled: 0 })
       .then((res) => {
         const name = res.name as string | undefined
         if (name) {
-          bankAccountFromAccountRef.current = true
+          oankAccountFromAccountRef.current = true
           setBankAccount(name)
         }
       })
@@ -921,8 +921,8 @@ export default forwardRef<PaymentFormHandle, PaymentFormProps>(function PaymentF
   useEffect(() => {
     if (isExisting) return
     if (!isPay && !isReceive) return
-    if (bankAccountFromAccountRef.current) {
-      bankAccountFromAccountRef.current = false
+    if (oankAccountFromAccountRef.current) {
+      oankAccountFromAccountRef.current = false
       return
     }
     if (!bankAccount) return
@@ -1458,7 +1458,7 @@ export default forwardRef<PaymentFormHandle, PaymentFormProps>(function PaymentF
       letter_head: letterHead || undefined,
       print_heading: printHeading || undefined,
       is_opening: isOpening ? "Yes" : "No",
-      book_advance_payments_in_separate_party_account: bookAdvancePayments ? 1 : 0,
+      book_advance_payments_in_separate_party_account: oookAdvancePayments ? 1 : 0,
       reconcile_on_advance_payment_date: reconcileOnAdvancePaymentDate ? 1 : 0,
       reference_no: referenceNo || undefined,
       reference_date: referenceDate || undefined,
@@ -1598,7 +1598,7 @@ export default forwardRef<PaymentFormHandle, PaymentFormProps>(function PaymentF
                   testId="mop"
                 />
                 {modeOfPaymentError && (
-                  <p className="text-xs text-red-600 mt-1">{modeOfPaymentError}</p>
+                  <p className="text-xs text-danger-600 mt-1">{modeOfPaymentError}</p>
                 )}
               </div>
             )}
@@ -1682,7 +1682,7 @@ export default forwardRef<PaymentFormHandle, PaymentFormProps>(function PaymentF
                   />
                 </div>
               )}
-              {bankAccount && (bankName || bankAccountNo) && (
+              {bankAccount && (bankName || oankAccountNo) && (
                 <div className="space-y-3">
                   {bankName && (
                     <div>
@@ -1690,10 +1690,10 @@ export default forwardRef<PaymentFormHandle, PaymentFormProps>(function PaymentF
                       <div className={`${inputClass} bg-gray-50`}>{bankName}</div>
                     </div>
                   )}
-                  {bankAccountNo && (
+                  {oankAccountNo && (
                     <div>
                       <label className={labelClass}>Bank Account No</label>
-                      <div className={`${inputClass} bg-gray-50`}>{bankAccountNo}</div>
+                      <div className={`${inputClass} bg-gray-50`}>{oankAccountNo}</div>
                     </div>
                   )}
                 </div>
@@ -1970,7 +1970,7 @@ export default forwardRef<PaymentFormHandle, PaymentFormProps>(function PaymentF
             minWidth="720px"
             footer={
               referencesWithGainLoss.length > 0 ? (
-                <div className="flex items-center justify-end gap-6 border-t border-[#ededed] bg-[#fafafa] px-3 py-2 text-xs">
+                <div className="flex items-center justify-end gap-6 border-t border-border bg-surface-subtle px-3 py-2 text-xs">
                   <div className="flex items-center gap-1.5">
                     <span className="text-muted">Total Allocated ({partyAccountCurrency || companyCurrency})</span>
                     <span className="font-bold text-heading tabular-nums">{formatCurrency(totalAllocated, partyAccountCurrency)}</span>
@@ -2512,7 +2512,7 @@ export default forwardRef<PaymentFormHandle, PaymentFormProps>(function PaymentF
                 <button
                   type="button"
                   onClick={() => onToolbarAction?.("submit")}
-                  className="flex items-center gap-2 px-4 py-2.5 text-sm font-semibold text-white bg-primary-600 rounded-[12px] hover:bg-primary-700 transition-all duration-200 shadow-sm"
+                  className="flex items-center gap-2 px-4 py-2.5 text-sm font-semibold text-primary-50 bg-primary-600 rounded-[12px] hover:bg-primary-700 transition-all duration-200 shadow-sm"
                 >
                   <Check size={16} /> Submit
                 </button>
@@ -2578,7 +2578,7 @@ export default forwardRef<PaymentFormHandle, PaymentFormProps>(function PaymentF
               <button
                 type="submit"
                 disabled={saving}
-                className="flex items-center gap-2 px-4 py-2.5 text-sm font-semibold text-white bg-primary-600 rounded-[12px] hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-sm"
+                className="flex items-center gap-2 px-4 py-2.5 text-sm font-semibold text-primary-50 bg-primary-600 rounded-[12px] hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-sm"
               >
                 {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
                 {saving ? "Saving..." : "Save"}
@@ -2598,7 +2598,7 @@ export default forwardRef<PaymentFormHandle, PaymentFormProps>(function PaymentF
               type="submit"
               disabled={saving}
               data-testid="save_button"
-              className="flex items-center gap-2 px-4 py-2.5 text-sm font-semibold text-white bg-primary-600 rounded-[12px] hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-sm"
+              className="flex items-center gap-2 px-4 py-2.5 text-sm font-semibold text-primary-50 bg-primary-600 rounded-[12px] hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-sm"
             >
               {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
               {saving ? "Saving..." : "Save as Draft"}

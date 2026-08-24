@@ -121,7 +121,7 @@ export default function RecordPaymentDialog({
 
         {sent ? (
           <div className="py-8 text-center">
-            <p className="text-sm font-medium text-green-600">Payment recorded successfully!</p>
+            <p className="text-sm font-medium text-success-600">Payment recorded successfully!</p>
           </div>
         ) : (
           <div className="space-y-4 py-2">

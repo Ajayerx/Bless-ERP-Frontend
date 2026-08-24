@@ -1,4 +1,4 @@
-import { apiClient, apiFormCall, apiClientWithBody, serverMessagesFromBody, failedNamesFromMessages, serverDownloadTemplate, ApiError, type AppMessage } from "@/services/api-client"
+import { apiClient, apiFormCall, apiClientWithBody, serverMessagesFromBody, failedNamesFromMessages, serverDownloadTemplate, throwServerMessageError, ApiError, type AppMessage } from "@/services/api-client"
 import { postMethod, postMethodRaw } from "@/services/frappe-client"
 import { API_CONFIG } from "@/config/api.config"
 import { getCompany } from "@/services/company"
@@ -1431,10 +1431,32 @@ export const invoiceService = {
     })
 
     if (!res.ok) {
-      throw new Error("Failed to generate PDF")
+      await throwServerMessageError(res, "Failed to generate PDF")
     }
 
     return res.blob()
+  },
+
+  // Bulk print via frappe.utils.print_format.download_multi_pdf. Returns the
+  // endpoint URL for a single window.open; the server concatenates every doc
+  // into one PDF and silently skips docs it cannot render (e.g. cancelled,
+  // blocked by Print Settings). Format is optional -> default print format.
+  buildMultiPdfUrl(
+    names: string[],
+    options: {
+      printFormat?: string
+      letterhead?: string
+      pageSize?: string
+    } = {}
+  ): string {
+    const params = new URLSearchParams()
+    params.set("doctype", "Sales Invoice")
+    params.set("name", JSON.stringify(names))
+    if (options.printFormat) params.set("format", options.printFormat)
+    params.set("no_letterhead", options.letterhead ? "0" : "1")
+    if (options.letterhead) params.set("letterhead", options.letterhead)
+    params.set("options", JSON.stringify({ "page-size": options.pageSize ?? "A4" }))
+    return `${API_CONFIG.baseUrl}/method/frappe.utils.print_format.download_multi_pdf?${params.toString()}`
   },
 
   async sendEmail(name: string, data: {

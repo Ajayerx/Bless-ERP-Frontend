@@ -16,6 +16,11 @@ export default function InvoicePDFButton({ invoice }: Props) {
   const [previewOpen, setPreviewOpen] = useState(false)
   const [pdfError, setPdfError] = useState("")
   const isDraft = invoice.docstatus === 0
+  const isCancelled = invoice.docstatus === 2
+  // Frappe's printview rejects drafts and cancelled docs (403) unless the
+  // matching Print Settings flag is enabled — block up front with a reason.
+  const printBlocked = isDraft || isCancelled
+  const blockedTitle = isDraft ? "Submit invoice first" : "Cancelled invoices cannot be printed"
 
   const handlePDF = async () => {
     setDownloading(true)
@@ -48,8 +53,8 @@ export default function InvoicePDFButton({ invoice }: Props) {
           variant="outline"
           size="sm"
           onClick={() => setPreviewOpen(true)}
-          disabled={isDraft}
-          title={isDraft ? "Submit invoice first" : "Print preview"}
+          disabled={printBlocked}
+          title={printBlocked ? blockedTitle : "Print preview"}
         >
           <Printer size={14} /> Print
         </Button>
@@ -57,8 +62,8 @@ export default function InvoicePDFButton({ invoice }: Props) {
           variant="outline"
           size="sm"
           onClick={handlePDF}
-          disabled={isDraft || downloading}
-          title={isDraft ? "Submit invoice first" : "Download PDF"}
+          disabled={printBlocked || downloading}
+          title={printBlocked ? blockedTitle : "Download PDF"}
         >
           {downloading ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
           {downloading ? "Generating..." : "PDF"}
@@ -66,8 +71,8 @@ export default function InvoicePDFButton({ invoice }: Props) {
         <Button
           size="sm"
           onClick={() => setEmailOpen(true)}
-          disabled={isDraft}
-          title={isDraft ? "Submit invoice first" : "Send via email"}
+          disabled={printBlocked}
+          title={printBlocked ? blockedTitle : "Send via email"}
         >
           <Send size={14} /> Send
         </Button>

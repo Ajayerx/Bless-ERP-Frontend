@@ -253,7 +253,7 @@ export default function Quotations() {
         </div>
 
         {error && (
-          <div className="p-4 bg-red-50 border border-red-200 rounded-[14px] text-sm text-red-700 whitespace-pre-line">
+          <div className="p-4 bg-danger-50 border border-danger-200 rounded-[14px] text-sm text-danger-700 whitespace-pre-line">
             {error}
           </div>
         )}

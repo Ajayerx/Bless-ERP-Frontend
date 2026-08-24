@@ -20,7 +20,7 @@ const Checkbox = React.forwardRef<
         "peer h-5 w-5 shrink-0 rounded-md border border-border bg-surface transition-all duration-200",
         "focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500",
         "disabled:cursor-not-allowed disabled:opacity-50",
-        "data-[state=checked]:bg-primary-600 data-[state=checked]:border-primary-600 data-[state=checked]:text-white",
+        "data-[state=checked]:bg-primary-600 data-[state=checked]:border-primary-600 data-[state=checked]:text-primary-50",
         error && "border-danger-500 focus:ring-danger-500/20 focus:border-danger-500",
         className
       )}

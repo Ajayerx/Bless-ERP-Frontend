@@ -29,7 +29,7 @@ function renderSegments(segments?: ActivityMessageSegment[]) {
 function deliveryStatusTheme(status?: string): { label: string; cls: string } {
   const s = status ?? ""
   if (["Sent", "Clicked"].includes(s)) return { label: s, cls: "bg-success-50 text-success-700 border-success-200" }
-  if (["Opened", "Read"].includes(s)) return { label: s, cls: "bg-blue-50 text-blue-700 border-blue-200" }
+  if (["Opened", "Read"].includes(s)) return { label: s, cls: "bg-primary-50 text-primary-700 border-primary-200" }
   if (["Sending", "Scheduled"].includes(s)) return { label: s, cls: "bg-warning-50 text-warning-700 border-warning-200" }
   if (s === "Error") return { label: s, cls: "bg-danger-50 text-danger-700 border-danger-200" }
   return { label: status || "", cls: "bg-gray-100 text-gray-600 border-gray-200" }
@@ -239,7 +239,7 @@ export default function PaymentActivity({
         <button
           onClick={submit}
           disabled={posting || !content.trim()}
-          className="inline-flex h-9 items-center gap-1.5 rounded-[10px] bg-primary-600 px-4 text-sm font-medium text-white transition-colors hover:bg-primary-700 disabled:opacity-50"
+          className="inline-flex h-9 items-center gap-1.5 rounded-[10px] bg-primary-600 px-4 text-sm font-medium text-primary-50 transition-colors hover:bg-primary-700 disabled:opacity-50"
           data-testid="activity_add_button"
         >
           <Send size={14} />
@@ -335,7 +335,7 @@ export default function PaymentActivity({
                             <button
                               onClick={saveEdit}
                               disabled={savingEdit || !editDraft.trim()}
-                              className="inline-flex h-8 items-center rounded-[8px] bg-primary-600 px-3 text-xs font-medium text-white transition-colors hover:bg-primary-700 disabled:opacity-50"
+                              className="inline-flex h-8 items-center rounded-[8px] bg-primary-600 px-3 text-xs font-medium text-primary-50 transition-colors hover:bg-primary-700 disabled:opacity-50"
                               data-testid={`edit_comment_save_${item.commentName}`}
                             >
                               Save

@@ -131,9 +131,9 @@ export default function ChildTableGrid<T extends object>({
       </div>
 
       <div className="overflow-x-auto">
-        <div className="min-w-[560px] overflow-hidden rounded-[10px] border border-[#ededed] bg-surface" style={{ minWidth }}>
-          <div className="flex items-center border-b border-[#ededed] bg-[#f3f3f3] text-[13px] tracking-[0.02em] text-[#7c7c7c]">
-            <div className="flex h-8 w-9 items-center justify-center border-r border-[#ededed]">
+        <div className="min-w-[560px] overflow-hidden rounded-[10px] border border-border bg-surface" style={{ minWidth }}>
+          <div className="flex items-center border-b border-border bg-surface-muted text-[13px] tracking-[0.02em] text-muted">
+            <div className="flex h-8 w-9 items-center justify-center border-r border-border">
               <input
                 type="checkbox"
                 checked={allChecked}
@@ -143,7 +143,7 @@ export default function ChildTableGrid<T extends object>({
                 aria-label="Select all rows"
               />
             </div>
-            <div className="flex h-8 w-9 items-center justify-center border-r border-[#ededed]">No.</div>
+            <div className="flex h-8 w-9 items-center justify-center border-r border-border">No.</div>
             {columns.map((col, ci) => (
               <div
                 key={String(col.key)}
@@ -151,7 +151,7 @@ export default function ChildTableGrid<T extends object>({
                 className={cn(
                   "flex h-8 items-center overflow-hidden whitespace-nowrap px-2 py-1.5",
                   col.align === "right" && "justify-end",
-                  ci < columns.length - 1 && "border-r border-[#ededed]"
+                  ci < columns.length - 1 && "border-r border-border"
                 )}
                 title={String(col.label)}
               >
@@ -161,7 +161,7 @@ export default function ChildTableGrid<T extends object>({
           </div>
 
           {rows.length === 0 ? (
-            <div className="flex flex-col items-center justify-center px-2 py-4 text-[13px] text-[#7c7c7c]">
+            <div className="flex flex-col items-center justify-center px-2 py-4 text-[13px] text-muted">
               No Data
             </div>
           ) : (
@@ -179,12 +179,12 @@ export default function ChildTableGrid<T extends object>({
                   key={String((row as Record<string, unknown>).name ?? idx)}
                   onClick={activate}
                   className={cn(
-                    "flex min-h-[38px] border-b border-[#ededed] last:border-b-0",
+                    "flex min-h-[38px] border-b border-border last:border-b-0",
                     !readOnly && "cursor-pointer",
                     isActive && "bg-primary-50/40"
                   )}
                 >
-                  <div className="flex w-9 items-center justify-center border-r border-[#ededed]">
+                  <div className="flex w-9 items-center justify-center border-r border-border">
                     <input
                       type="checkbox"
                       checked={checked.has(idx)}
@@ -195,7 +195,7 @@ export default function ChildTableGrid<T extends object>({
                       aria-label={`Select row ${idx + 1}`}
                     />
                   </div>
-                  <div className="flex w-9 items-center justify-center border-r border-[#ededed] text-[13px] text-[#7c7c7c]">
+                  <div className="flex w-9 items-center justify-center border-r border-border text-[13px] text-muted">
                     {idx + 1}
                   </div>
                   {columns.map((col, ci) => {
@@ -207,7 +207,7 @@ export default function ChildTableGrid<T extends object>({
                         className={cn(
                           "flex min-w-0 items-center px-2",
                           col.align === "right" && "justify-end",
-                          ci < columns.length - 1 && "border-r border-[#ededed]"
+                          ci < columns.length - 1 && "border-r border-border"
                         )}
                         style={{ flexGrow: col.weight ?? 1, flexShrink: 1, flexBasis: 0 }}
                       >
@@ -310,7 +310,7 @@ export default function ChildTableGrid<T extends object>({
           <button
             type="button"
             onClick={removeChecked}
-            className="rounded-[8px] bg-[#e03636] px-2 py-1 text-xs text-white hover:bg-[#d02020]"
+            className="rounded-[8px] bg-danger-600 px-2 py-1 text-xs text-danger-50 hover:bg-danger-700"
           >
             Delete
           </button>
@@ -320,7 +320,7 @@ export default function ChildTableGrid<T extends object>({
             type="button"
             onClick={addRow}
             data-testid={testId ? `${testId}_add_row` : undefined}
-            className="rounded-[8px] bg-[#7c7c7c] px-2 py-1 text-xs text-white hover:bg-[#696969]"
+            className="rounded-[8px] bg-gray-500 px-2 py-1 text-xs text-gray-50 hover:bg-gray-600"
           >
             Add Row
           </button>

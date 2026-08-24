@@ -111,7 +111,7 @@ interface ReportViewParams {
 async function fetchReportView(
   params: ReportViewParams
 ): Promise<Array<Record<string, unknown>>> {
-  const body = await postMethod<{ keys: string[]; values: unknown[][] }>(
+  const body = await postMethod<{ keys?: string[]; values?: unknown }>(
     "frappe.desk.reportview.get",
     {
       doctype: params.doctype,
@@ -124,11 +124,24 @@ async function fetchReportView(
       with_comment_count: 1,
     }
   )
-  const keys = body.keys ?? []
-  return (body.values ?? []).map((row) => {
+  // frappe.desk.reportview.get normally answers {keys, values}, but when zero
+  // rows match, compress() (frappe/desk/reportview.py) returns the bare empty
+  // list instead — so the unwrapped body can be [], null or a shape without a
+  // values array. Normalize before zipping keys onto rows.
+  if (!body || Array.isArray(body)) return []
+  const keys = Array.isArray(body.keys) ? body.keys : []
+  const rawValues = body.values
+  let values: unknown[][] = []
+  if (Array.isArray(rawValues)) {
+    values = rawValues as unknown[][]
+  } else if (rawValues && typeof rawValues === "object") {
+    values = Object.values(rawValues as Record<string, unknown[][]>).flat()
+  }
+  if (keys.length === 0) return []
+  return values.map((row) => {
     const obj: Record<string, unknown> = {}
     keys.forEach((key, index) => {
-      obj[key] = row[index]
+      obj[key] = Array.isArray(row) ? row[index] : undefined
     })
     return obj
   })

@@ -94,7 +94,7 @@ export default function FetchTimesheetDialog({
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-semibold text-muted mb-1.5">
-                From <span className="text-red-500">*</span>
+                From <span className="text-danger-500">*</span>
               </label>
               <input
                 type="date"
@@ -105,7 +105,7 @@ export default function FetchTimesheetDialog({
             </div>
             <div>
               <label className="block text-xs font-semibold text-muted mb-1.5">
-                To <span className="text-red-500">*</span>
+                To <span className="text-danger-500">*</span>
               </label>
               <input
                 type="date"
@@ -143,7 +143,7 @@ export default function FetchTimesheetDialog({
           )}
 
           {error && (
-            <p className="text-sm text-red-600">{error}</p>
+            <p className="text-sm text-danger-600">{error}</p>
           )}
         </div>
 

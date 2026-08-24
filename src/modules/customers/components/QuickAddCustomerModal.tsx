@@ -155,8 +155,8 @@ export default function QuickAddCustomerModal({ open, onClose, onCreated }: Prop
           </p>
         )}
 
-        <div className="flex items-center gap-3 px-3 py-2 bg-blue-50 border border-blue-100 rounded-[10px] text-xs text-blue-700">
-          <kbd className="px-1.5 py-0.5 bg-white border border-blue-200 rounded text-[11px] font-mono">Ctrl+Enter</kbd>
+        <div className="flex items-center gap-3 px-3 py-2 bg-primary-50 border border-primary-100 rounded-[10px] text-xs text-primary-700">
+          <kbd className="px-1.5 py-0.5 bg-white border border-primary-200 rounded text-[11px] font-mono">Ctrl+Enter</kbd>
           to save
         </div>
 

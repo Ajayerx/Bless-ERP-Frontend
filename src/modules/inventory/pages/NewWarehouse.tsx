@@ -1,14 +1,16 @@
 "use client"
 
+import { useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { motion } from "framer-motion"
-import { ArrowLeft } from "lucide-react"
+import { ArrowLeft, Save } from "lucide-react"
 import Topbar from "@/components/layout/Topbar"
 import { Button } from "@/components/ui"
 import WarehouseForm from "../components/WarehouseForm"
 
 export default function NewWarehouse() {
   const navigate = useNavigate()
+  const [saving, setSaving] = useState(false)
 
   return (
     <>
@@ -32,10 +34,16 @@ export default function NewWarehouse() {
               <p className="text-sm text-muted mt-0.5">Add a new storage location.</p>
             </div>
           </div>
-          <Button variant="secondary" onClick={() => navigate("/inventory/warehouses")}>Cancel</Button>
+          <div className="flex items-center gap-2">
+            <Button variant="secondary" onClick={() => navigate("/inventory/warehouses")}>Cancel</Button>
+            <Button type="submit" form="warehouse-form" disabled={saving} loading={saving}>
+              <Save size={16} />
+              {saving ? "Saving..." : "Create Warehouse"}
+            </Button>
+          </div>
         </div>
 
-        <WarehouseForm onSaved={(name) => navigate(`/inventory/warehouses/${encodeURIComponent(name)}`)} onCancel={() => navigate("/inventory/warehouses")} />
+        <WarehouseForm onSaved={(name) => navigate(`/inventory/warehouses/${encodeURIComponent(name)}`)} onCancel={() => navigate("/inventory/warehouses")} onSavingChange={setSaving} />
       </motion.div>
     </>
   )

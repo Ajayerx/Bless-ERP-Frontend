@@ -206,7 +206,7 @@ export default function DateRangePicker({ value, onChange, className }: DateRang
                       "h-8 w-8 rounded-full text-sm flex items-center justify-center transition-colors",
                       outside && "text-muted/40",
                       inRange && !isEndpoint && "bg-primary-50 text-primary-700",
-                      isEndpoint && "bg-primary-600 text-white font-semibold shadow-sm",
+                      isEndpoint && "bg-primary-600 text-primary-50 font-semibold shadow-sm",
                       !isEndpoint && !inRange && "hover:bg-primary-100/70",
                       isToday(d) && !isEndpoint && "ring-1 ring-primary-300",
                       outside && !isEndpoint && "hover:bg-gray-50"

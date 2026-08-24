@@ -12,9 +12,7 @@ import {
   Input,
   ListBulkActions,
   BulkDeleteModal,
-  Tabs,
-  TabsList,
-  TabsTrigger,
+  FilterPills,
   LinkSearchField,
   useMessageDialog,
   messageFromError,
@@ -393,14 +391,16 @@ export default function Customers() {
           </p>
         )}
 
-        <Tabs value={statusFilter} onValueChange={(v) => setStatusFilter(v as StatusFilter)}>
-          <TabsList>
-            <TabsTrigger value="all">All</TabsTrigger>
-            <TabsTrigger value="active">Active</TabsTrigger>
-            <TabsTrigger value="disabled">Disabled</TabsTrigger>
-            <TabsTrigger value="frozen">Frozen</TabsTrigger>
-          </TabsList>
-        </Tabs>
+        <FilterPills
+          value={statusFilter}
+          onChange={(v) => setStatusFilter(v)}
+          options={[
+            { value: "all", label: "All" },
+            { value: "active", label: "Active" },
+            { value: "disabled", label: "Disabled" },
+            { value: "frozen", label: "Frozen" },
+          ]}
+        />
 
         <CustomerTable
           data={tableData}

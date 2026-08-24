@@ -1,14 +1,16 @@
 "use client"
 
+import { useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { motion } from "framer-motion"
-import { ArrowLeft } from "lucide-react"
+import { ArrowLeft, Save } from "lucide-react"
 import Topbar from "@/components/layout/Topbar"
 import { Button } from "@/components/ui"
 import StockCountForm from "../components/StockCountForm"
 
 export default function NewStockCount() {
   const navigate = useNavigate()
+  const [saving, setSaving] = useState(false)
 
   return (
     <>
@@ -32,12 +34,19 @@ export default function NewStockCount() {
               <p className="text-sm text-muted mt-0.5">Track physical inventory for a warehouse.</p>
             </div>
           </div>
-          <Button variant="secondary" onClick={() => navigate("/inventory/counts")}>Cancel</Button>
+          <div className="flex items-center gap-2">
+            <Button variant="secondary" onClick={() => navigate("/inventory/counts")}>Cancel</Button>
+            <Button type="submit" form="stock-count-form" disabled={saving} loading={saving}>
+              <Save size={16} />
+              {saving ? "Saving..." : "Create Stock Count"}
+            </Button>
+          </div>
         </div>
 
         <StockCountForm
           onSaved={(name) => navigate(`/inventory/counts/${encodeURIComponent(name)}`)}
           onCancel={() => navigate("/inventory/counts")}
+          onSavingChange={setSaving}
         />
       </motion.div>
     </>

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react"
 import { useParams, useNavigate } from "react-router-dom"
 import { motion } from "framer-motion"
-import { ArrowLeft } from "lucide-react"
+import { ArrowLeft, Save } from "lucide-react"
 import Topbar from "@/components/layout/Topbar"
 import { Button, Skeleton } from "@/components/ui"
 import { inventoryService } from "@/modules/inventory/services"
@@ -15,6 +15,7 @@ export default function EditWarehouse() {
   const navigate = useNavigate()
   const [warehouse, setWarehouse] = useState<Warehouse | null>(null)
   const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
 
   useEffect(() => {
     if (!id) return
@@ -41,7 +42,17 @@ export default function EditWarehouse() {
               <p className="text-sm text-muted mt-0.5">{warehouse?.warehouse_name ?? "Loading..."}</p>
             </div>
           </div>
-          <Button variant="secondary" onClick={() => navigate(`/inventory/warehouses/${id}`)}>Cancel</Button>
+          <div className="flex items-center gap-2">
+            <Button variant="secondary" onClick={() => navigate(`/inventory/warehouses/${id}`)}>Cancel</Button>
+            <Button
+              type="submit" form="warehouse-form"
+              disabled={loading || !warehouse || saving}
+              loading={saving}
+            >
+              <Save size={16} />
+              {saving ? "Saving..." : "Update Warehouse"}
+            </Button>
+          </div>
         </div>
 
         {loading ? (
@@ -53,7 +64,7 @@ export default function EditWarehouse() {
         ) : !warehouse ? (
           <p className="text-muted">Warehouse not found.</p>
         ) : (
-          <WarehouseForm warehouse={warehouse} onSaved={() => navigate(`/inventory/warehouses/${id}`)} onCancel={() => navigate(`/inventory/warehouses/${id}`)} />
+          <WarehouseForm warehouse={warehouse} onSaved={() => navigate(`/inventory/warehouses/${id}`)} onCancel={() => navigate(`/inventory/warehouses/${id}`)} onSavingChange={setSaving} />
         )}
       </motion.div>
     </>

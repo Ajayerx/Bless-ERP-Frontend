@@ -35,12 +35,13 @@ export default function TasksWidget() {
     })
   }
 
-  const visibleTasks = tasks.filter((t) => t.status === "Open").slice(0, 5)
-  const doneCount = tasks.length - visibleTasks.length
+  const doneCount = tasks.filter((t) => t.status === "Closed").length
 
   return (
     <DashboardListCard
       title="Tasks"
+      className="max-h-[380px]"
+      scrollable
       headerRight={
         <span className="text-xs text-muted">
           {loading ? "—" : `${doneCount}/${tasks.length} done`}

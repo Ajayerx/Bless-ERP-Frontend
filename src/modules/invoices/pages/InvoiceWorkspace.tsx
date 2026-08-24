@@ -388,7 +388,7 @@ export default function InvoiceWorkspace({
         transition={{ duration: 0.3 }}
       >
         {ws.errorMessages.length > 0 && (
-          <div className="p-4 bg-red-50 border border-red-200 rounded-[14px] text-sm text-red-700">
+          <div className="p-4 bg-danger-50 border border-danger-200 rounded-[14px] text-sm text-danger-700">
             <p className="font-semibold mb-1">Please fix the following:</p>
             <ul className="list-disc list-inside space-y-0.5">
               {ws.errorMessages.map((msg, i) => (
@@ -399,7 +399,7 @@ export default function InvoiceWorkspace({
         )}
 
         {ws.error && (
-          <div className="p-4 bg-red-50 border border-red-200 rounded-[14px] text-sm text-red-700">
+          <div className="p-4 bg-danger-50 border border-danger-200 rounded-[14px] text-sm text-danger-700">
             {ws.error}
           </div>
         )}

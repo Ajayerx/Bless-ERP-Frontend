@@ -149,8 +149,8 @@ export default function UnReconcileDialog({
           <div className="overflow-x-auto">
             <table className="w-full min-w-[560px] text-sm">
               <thead>
-                <tr className="flex items-center border-b border-[#ededed] bg-[#f3f3f3] text-[13px] tracking-[0.02em] text-[#7c7c7c]">
-                  <th className="flex h-9 w-9 items-center justify-center border-r border-[#ededed]">
+                <tr className="flex items-center border-b border-border bg-surface-muted text-[13px] tracking-[0.02em] text-muted">
+                  <th className="flex h-9 w-9 items-center justify-center border-r border-border">
                     <input
                       type="checkbox"
                       checked={allChecked}
@@ -159,11 +159,11 @@ export default function UnReconcileDialog({
                       className="h-3.5 w-3.5 rounded-[4px] border-border"
                     />
                   </th>
-                  <th className="flex h-9 w-9 items-center justify-center border-r border-[#ededed] font-medium">No.</th>
+                  <th className="flex h-9 w-9 items-center justify-center border-r border-border font-medium">No.</th>
                   <th className="flex h-9 flex-[1.2] items-center px-2 font-medium">Voucher Type</th>
-                  <th className="flex h-9 flex-[1.6] items-center border-l border-[#ededed] px-2 font-medium">Voucher No</th>
-                  <th className="flex h-9 flex-[1.2] items-center justify-end border-l border-[#ededed] px-2 font-medium">Allocated Amount</th>
-                  <th className="flex h-9 w-24 items-center border-l border-[#ededed] px-2 font-medium">Currency</th>
+                  <th className="flex h-9 flex-[1.6] items-center border-l border-border px-2 font-medium">Voucher No</th>
+                  <th className="flex h-9 flex-[1.2] items-center justify-end border-l border-border px-2 font-medium">Allocated Amount</th>
+                  <th className="flex h-9 w-24 items-center border-l border-border px-2 font-medium">Currency</th>
                 </tr>
               </thead>
               <tbody>
@@ -173,11 +173,11 @@ export default function UnReconcileDialog({
                     <tr
                       key={k}
                       className={cn(
-                        "flex items-center border-b border-[#ededed] last:border-b-0",
+                        "flex items-center border-b border-border last:border-b-0",
                         selected.has(k) && "bg-primary-50/50"
                       )}
                     >
-                      <td className="flex h-10 w-9 items-center justify-center border-r border-[#ededed]">
+                      <td className="flex h-10 w-9 items-center justify-center border-r border-border">
                         <input
                           type="checkbox"
                           checked={selected.has(k)}
@@ -186,13 +186,13 @@ export default function UnReconcileDialog({
                           className="h-3.5 w-3.5 rounded-[4px] border-border"
                         />
                       </td>
-                      <td className="flex h-10 w-9 items-center justify-center border-r border-[#ededed] text-muted">{i + 1}</td>
+                      <td className="flex h-10 w-9 items-center justify-center border-r border-border text-muted">{i + 1}</td>
                       <td className="flex h-10 flex-[1.2] items-center truncate px-2 text-body">{a.reference_doctype || "—"}</td>
-                      <td className="flex h-10 flex-[1.6] items-center truncate border-l border-[#ededed] px-2 text-body">{a.reference_name || "—"}</td>
-                      <td className="flex h-10 flex-[1.2] items-center justify-end border-l border-[#ededed] px-2 text-heading tabular-nums">
+                      <td className="flex h-10 flex-[1.6] items-center truncate border-l border-border px-2 text-body">{a.reference_name || "—"}</td>
+                      <td className="flex h-10 flex-[1.2] items-center justify-end border-l border-border px-2 text-heading tabular-nums">
                         {formatAmount(a.allocated_amount)}
                       </td>
-                      <td className="flex h-10 w-24 items-center border-l border-[#ededed] px-2 text-muted">{a.account_currency || "—"}</td>
+                      <td className="flex h-10 w-24 items-center border-l border-border px-2 text-muted">{a.account_currency || "—"}</td>
                     </tr>
                   )
                 })}

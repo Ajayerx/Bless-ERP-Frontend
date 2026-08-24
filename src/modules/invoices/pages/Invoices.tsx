@@ -226,10 +226,18 @@ export default function Invoices() {
   }
 
   const handleBulkPrint = () => {
+    // Cancelled invoices are blocked by Frappe's printview (403), and
+    // download_multi_pdf skips docs it cannot render — drop them up front so
+    // the user knows why the merged PDF may be shorter than the selection.
+    const docstatusByName = new Map(allItems.map((inv) => [inv.name, inv.docstatus]))
     const names = Array.from(selectedKeys)
-    names.forEach((name) => {
-      window.open(`/api/method/frappe.utils.print_format.download_pdf?doctype=Sales+Invoice&name=${encodeURIComponent(name)}&format=Sales+Invoice`, "_blank")
-    })
+    const printable = names.filter((name) => docstatusByName.get(name) !== 2)
+    const skipped = names.length - printable.length
+    if (skipped > 0) {
+      showMessage(`Skipped ${skipped} cancelled invoice${skipped === 1 ? "" : "s"} — cancelled documents cannot be printed.`)
+    }
+    if (printable.length === 0) return
+    window.open(invoiceService.buildMultiPdfUrl(printable), "_blank")
   }
 
   const handleBulkAssign = async (remove = false) => {
@@ -361,7 +369,7 @@ export default function Invoices() {
         </div>
 
         {error && (
-          <div className="p-4 bg-red-50 border border-red-200 rounded-[14px] text-sm text-red-700 whitespace-pre-line">
+          <div className="p-4 bg-danger-50 border border-danger-200 rounded-[14px] text-sm text-danger-700 whitespace-pre-line">
             {error}
           </div>
         )}

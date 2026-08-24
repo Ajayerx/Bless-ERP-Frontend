@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react"
 import { CheckCircle2, Clock, FileText, DollarSign, Send, XCircle, RotateCcw, Trash2, Download, Printer, UserRound, Tag } from "lucide-react"
 import DataTable, { type Column } from "@/components/ui/DataTable"
-import { Badge, ListFilterBar, Button, Avatar, ListBulkActions } from "@/components/ui"
+import { Badge, ListFilterBar, Button, Avatar, ListBulkActions, FitText , FilterPills } from "@/components/ui"
 import { type PaymentEntry, type PaymentEntryListResponse } from "@/services"
 import { paymentService } from "@/services"
 import { formatCurrency, formatDate, cn } from "@/lib/utils"
@@ -26,9 +26,9 @@ function SummaryCard({
         <Icon size={18} />
       </div>
       <div className="min-w-0">
-        <p className="text-xs font-semibold text-muted uppercase tracking-wider">{label}</p>
-        <p className="text-2xl font-bold text-heading tracking-tight mt-0.5">{value}</p>
-        <p className="text-xs text-muted mt-0.5">{sub}</p>
+        <p className="text-xs font-semibold text-muted uppercase tracking-wider truncate">{label}</p>
+        <FitText className="text-2xl font-bold text-heading tracking-tight mt-0.5 tabular-nums">{value}</FitText>
+        <p className="text-xs text-muted mt-0.5 truncate">{sub}</p>
       </div>
     </div>
   )
@@ -447,22 +447,7 @@ export default function PaymentTable({
       </div>
 
       {/* Status pill tabs */}
-      <div className="flex items-center gap-2 flex-wrap">
-        {STATUS_FILTERS.map((f) => (
-          <button
-            key={f}
-            onClick={() => onStatusFilterChange(f)}
-            className={cn(
-              "px-4 py-1.5 rounded-[10px] text-sm font-semibold transition-colors",
-              activeStatus === f
-                ? "bg-primary-600 text-white shadow-sm"
-                : "text-muted hover:bg-gray-100 hover:text-body",
-            )}
-          >
-            {f}
-          </button>
-        ))}
-      </div>
+      <FilterPills options={STATUS_FILTERS} value={activeStatus} onChange={onStatusFilterChange} />
 
       {/* Filter bar */}
       <ListFilterBar

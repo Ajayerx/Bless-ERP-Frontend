@@ -1,11 +1,11 @@
 import { useState, useEffect } from "react"
-import { Save, Loader2 } from "lucide-react"
 import { productService, type ProductDetail, type ProductFormData } from "@/services"
 
 interface ProductFormProps {
   product?: ProductDetail | null
   onSaved: () => void
   onCancel: () => void
+  onSavingChange?: (saving: boolean) => void
 }
 
 const emptyForm: ProductFormData = {
@@ -45,11 +45,15 @@ const emptyForm: ProductFormData = {
   default_price_list: "",
 }
 
-export default function ProductForm({ product, onSaved, onCancel }: ProductFormProps) {
+export default function ProductForm({ product, onSaved, onSavingChange }: ProductFormProps) {
   const isEdit = !!product
   const [form, setForm] = useState<ProductFormData>(emptyForm)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState("")
+
+  useEffect(() => {
+    onSavingChange?.(saving)
+  }, [saving, onSavingChange])
 
   const [loadingLookups, setLoadingLookups] = useState(true)
   const [itemGroups, setItemGroups] = useState<string[]>([])
@@ -211,7 +215,7 @@ export default function ProductForm({ product, onSaved, onCancel }: ProductFormP
   )
 
   return (
-    <form onSubmit={handleSubmit} className="bg-surface rounded-[16px] border border-border shadow-card p-6 space-y-4">
+    <form id="product-form" onSubmit={handleSubmit} className="bg-surface rounded-[16px] border border-border shadow-card p-6 space-y-4">
       {error && (
         <p className="text-sm text-danger-600 bg-danger-50 border border-danger-100 px-3 py-2.5 rounded-[10px]">{error}</p>
       )}
@@ -469,22 +473,6 @@ export default function ProductForm({ product, onSaved, onCancel }: ProductFormP
           />
           <label htmlFor="disabled" className="text-sm text-body">Disabled (inactive item)</label>
         </div>
-      </div>
-
-      <div className="flex items-center justify-end gap-3 pt-4 border-t border-border">
-        <button
-          type="button" onClick={onCancel}
-          className="px-4 py-2.5 text-sm font-semibold text-muted bg-surface border border-border rounded-[12px] hover:bg-gray-50 transition-colors"
-        >
-          Cancel
-        </button>
-        <button
-          type="submit" disabled={saving || loadingLookups}
-          className="flex items-center gap-2 px-4 py-2.5 text-sm font-semibold text-white bg-primary-600 rounded-[12px] hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-sm"
-        >
-          {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
-          {saving ? "Saving..." : isEdit ? "Update Product" : "Create Product"}
-        </button>
       </div>
     </form>
   )

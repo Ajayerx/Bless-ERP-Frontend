@@ -209,7 +209,7 @@ export default function GetOutstandingDialog({
 
       {/* Footer */}
       {error && (
-        <p className="mt-4 text-sm font-medium text-red-600 bg-red-50 border border-red-200 rounded-[12px] px-3 py-2">
+        <p className="mt-4 text-sm font-medium text-danger-600 bg-danger-50 border border-danger-200 rounded-[12px] px-3 py-2">
           {error}
         </p>
       )}

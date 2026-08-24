@@ -263,7 +263,7 @@ export default function GSTSummaryPage() {
             <button
               onClick={load}
               disabled={loading}
-              className="h-9 px-4 rounded-[10px] bg-primary-600 text-white text-sm font-medium hover:bg-primary-700 transition-colors disabled:opacity-60"
+              className="h-9 px-4 rounded-[10px] bg-primary-600 text-primary-50 text-sm font-medium hover:bg-primary-700 transition-colors disabled:opacity-60"
               data-testid="gst_load_button"
             >
               {loading ? "Loading..." : "Load"}

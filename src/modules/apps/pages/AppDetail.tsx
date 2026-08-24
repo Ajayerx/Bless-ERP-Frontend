@@ -78,13 +78,13 @@ export default function AppDetail() {
                   v{app.version}
                 </span>
                 {installed && (
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-semibold rounded-full bg-green-100 text-green-700">
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-semibold rounded-full bg-success-100 text-success-700">
                     <CheckCircle2 size={12} />
                     Installed
                   </span>
                 )}
                 {isComingSoon && (
-                  <span className="inline-flex px-2 py-0.5 text-xs font-semibold rounded-full bg-amber-100 text-amber-700">
+                  <span className="inline-flex px-2 py-0.5 text-xs font-semibold rounded-full bg-warning-100 text-warning-700">
                     Coming Soon
                   </span>
                 )}

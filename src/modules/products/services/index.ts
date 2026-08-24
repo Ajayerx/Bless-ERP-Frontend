@@ -1,4 +1,6 @@
-import { apiClient, ApiError } from "@/services/api-client"
+import { apiClient, ApiError, serverDownloadTemplate } from "@/services/api-client"
+import { postMethod } from "@/services/frappe-client"
+import { API_CONFIG } from "@/config/api.config"
 import type {
   Product, ProductDetail, ProductListResponse, ProductListParams,
   ProductFormData, WarehouseStock, ItemDefaultRow, ReorderLevelRow,
@@ -86,6 +88,16 @@ const ITEM_FIELDS = [
   "has_batch_no", "has_serial_no", "weight_per_unit", "weight_uom",
   "opening_stock",
 ]
+
+// Columns offered in the Products export dialog. Single group because Item has
+// no child-table rows to export (unlike Sales Invoice -> items).
+export const PRODUCT_EXPORT_FIELDS: Record<string, string[]> = {
+  Item: [
+    "name", "item_code", "item_name", "item_group", "stock_uom",
+    "standard_rate", "valuation_rate", "brand", "is_stock_item",
+    "disabled", "weight_per_unit", "weight_uom", "description",
+  ],
+}
 
 interface BinRow {
   item_code: string
@@ -378,6 +390,75 @@ export const productService = {
     return apiClient<void>(`/resource/Item/${encodeURIComponent(id)}`, { method: "DELETE" })
   },
 
+  // ── Bulk assignment / tags (list toolbar, ERPNext parity) ─────────
+
+  async searchAssignableUsers(
+    query: string,
+  ): Promise<{ value: string; label: string; description: string }[]> {
+    const results = await apiClient<{ value: string; label?: string; description?: string }[]>(
+      `/method/frappe.desk.search.search_link?` +
+        new URLSearchParams({
+          doctype: "User",
+          txt: query,
+          page_length: "10",
+          filters: JSON.stringify({ user_type: "System User", enabled: 1 }),
+        }).toString(),
+    )
+    return (results ?? []).map((u) => ({
+      value: u.value,
+      label: u.label ?? u.value,
+      description: u.description ?? "",
+    }))
+  },
+
+  async assignTo(names: string[], user: string): Promise<void> {
+    await postMethod("frappe.desk.form.assign_to.add_multiple", {
+      assign_to: JSON.stringify([user]),
+      doctype: "Item",
+      name: JSON.stringify(names),
+    })
+  },
+
+  async removeAssignment(names: string[]): Promise<void> {
+    await postMethod("frappe.desk.form.assign_to.remove_multiple", {
+      doctype: "Item",
+      names: JSON.stringify(names),
+    })
+  },
+
+  async addTags(names: string[], tags: string | string[], color = ""): Promise<void> {
+    const tagLabels = Array.isArray(tags) ? tags : [tags]
+    await postMethod("frappe.desk.doctype.tag.tag.add_tags", {
+      tags: JSON.stringify(tagLabels),
+      dt: "Item",
+      docs: JSON.stringify(names),
+      color,
+    })
+  },
+
+  // Bulk print via frappe.utils.print_format.download_multi_pdf — one URL,
+  // server concatenates all selected items into a single PDF (default format).
+  buildMultiPdfUrl(
+    names: string[],
+    options: { printFormat?: string; letterhead?: string; pageSize?: string } = {}
+  ): string {
+    const params = new URLSearchParams()
+    params.set("doctype", "Item")
+    params.set("name", JSON.stringify(names))
+    params.set("format", options.printFormat ?? "Standard")
+    params.set("no_letterhead", options.letterhead ? "0" : "1")
+    if (options.letterhead) params.set("letterhead", options.letterhead)
+    params.set("options", JSON.stringify({ "page-size": options.pageSize ?? "A4" }))
+    return `${API_CONFIG.baseUrl}/method/frappe.utils.print_format.download_multi_pdf?${params.toString()}`
+  },
+
+  async getPrintFormats(): Promise<string[]> {
+    const formats = await apiClient<{ name: string }[]>(
+      `/resource/Print%20Format?filters=${encodeURIComponent(JSON.stringify([["doc_type", "=", "Item"], ["disabled", "=", 0]]))}&fields=${encodeURIComponent(JSON.stringify(["name"]))}&limit_page_length=100`
+    )
+    return (formats ?? []).map((f) => f.name)
+  },
+
   async getItemPrices(itemCode: string): Promise<ItemPriceRow[]> {
     const prices = await apiClient<ItemPriceRow[]>(
       `/resource/Item Price?filters=${encodeURIComponent(JSON.stringify([["item_code", "=", itemCode]]))}&fields=${encodeURIComponent(JSON.stringify(["name", "item_code", "price_list", "price_list_rate", "currency", "uom", "buying", "selling", "valid_from", "valid_upto"]))}&limit_page_length=50&order_by=creation desc`
@@ -385,30 +466,21 @@ export const productService = {
     return prices ?? []
   },
 
-  async exportToCsv(params?: { search?: string }): Promise<void> {
-    const result = await productService.list({ search: params?.search, page: 1, pageSize: 9999 })
-    const headers = ["item_code", "item_name", "item_group", "stock_uom", "brand", "standard_rate", "valuation_rate", "is_stock_item", "disabled", "description", "weight_per_unit", "weight_uom"]
-    const rows = result.items.map((p) =>
-      headers.map((h) => {
-        let val: string
-        if (h === "is_stock_item" || h === "disabled") {
-          val = String((p as unknown as Record<string, unknown>)[h] ? 1 : 0)
-        } else {
-          val = String((p as unknown as Record<string, unknown>)[h] ?? "")
-        }
-        return val.includes(",") || val.includes('"') || val.includes("\n")
-          ? `"${val.replace(/"/g, '""')}"`
-          : val
-      }).join(",")
-    )
-    const csv = [headers.join(","), ...rows].join("\n")
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement("a")
-    link.href = url
-    link.download = `products_export_${new Date().toISOString().slice(0, 10)}.csv`
-    link.click()
-    URL.revokeObjectURL(url)
+  async exportRecords(options?: {
+    fileType?: "CSV" | "Excel"
+    recordMode?: "all" | "by_filter" | "5_records" | "blank_template"
+    fields?: Record<string, string[]>
+    filters?: unknown[]
+  }): Promise<Blob> {
+    return serverDownloadTemplate({
+      doctype: "Item",
+      fileType: options?.fileType ?? "CSV",
+      recordMode: options?.recordMode ?? "by_filter",
+      fields: options?.fields && Object.keys(options.fields).length > 0
+        ? options.fields
+        : PRODUCT_EXPORT_FIELDS,
+      filters: options?.filters,
+    })
   },
 
   async importFromCsv(file: File): Promise<{ success: number; failed: number; errors: string[] }> {

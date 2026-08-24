@@ -1,5 +1,6 @@
 import { TrendingUp } from "lucide-react"
 import { LineChart, Line, ResponsiveContainer } from "recharts"
+import FitText from "./FitText"
 
 interface KpiCardProps {
   title: string
@@ -28,20 +29,20 @@ export default function KpiCard({
   return (
     <div className="bg-surface rounded-[16px] border border-border shadow-card p-6 flex flex-col relative overflow-hidden">
       <div className="flex items-start justify-between mb-3">
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 min-w-0">
           <div
             className="w-12 h-12 rounded-[10px] flex items-center justify-center text-white shrink-0"
             style={{ backgroundColor: iconBgColor }}
           >
             {icon}
           </div>
-          <div>
-            <p className="text-xs font-semibold text-muted">
+          <div className="min-w-0">
+            <p className="text-xs font-semibold text-muted truncate">
               {title}
             </p>
-            <p className="text-2xl font-bold text-heading tracking-tight mt-0.5">
+            <FitText className="text-2xl font-bold text-heading tracking-tight mt-0.5 tabular-nums">
               {value}
-            </p>
+            </FitText>
           </div>
         </div>
         <button className="text-muted hover:text-body transition-colors">

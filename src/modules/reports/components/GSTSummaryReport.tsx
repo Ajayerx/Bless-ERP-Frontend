@@ -151,7 +151,7 @@ export default function GSTSummaryReport({ report }: GSTSummaryReportProps) {
         />
         <KpiCard
           icon={<TrendingUp size={16} />}
-          iconClass="bg-blue-50 text-blue-600"
+          iconClass="bg-primary-50 text-primary-600"
           label="GST Collected"
           value={fmtCurrency(report.sales.gst, currency)}
           hint={`${(GST_RATE * 100).toFixed(1)}% federal`}
@@ -175,28 +175,28 @@ export default function GSTSummaryReport({ report }: GSTSummaryReportProps) {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <KpiCard
           icon={<ShoppingCart size={16} />}
-          iconClass="bg-violet-50 text-violet-600"
+          iconClass="bg-purple-50 text-purple-600"
           label="GST ITC (Purchases)"
           value={fmtCurrency(report.purchases.gst, currency)}
           hint={`${report.purchases.count} bills`}
         />
         <KpiCard
           icon={<ShieldCheck size={16} />}
-          iconClass="bg-cyan-50 text-cyan-600"
+          iconClass="bg-info-50 text-info-600"
           label="QST ITC (Purchases)"
           value={fmtCurrency(report.purchases.qst, currency)}
           hint="Input tax credits"
         />
         <KpiCard
           icon={<Banknote size={16} />}
-          iconClass="bg-emerald-50 text-emerald-600"
+          iconClass="bg-success-50 text-success-600"
           label="Net GST Remittance"
           value={fmtCurrency(report.netRemittance.gst, currency)}
           hint="Collected − ITC"
         />
         <KpiCard
           icon={<Landmark size={16} />}
-          iconClass="bg-rose-50 text-rose-600"
+          iconClass="bg-danger-50 text-danger-600"
           label="Net QST Remittance"
           value={fmtCurrency(report.netRemittance.qst, currency)}
           hint="Collected − ITC"

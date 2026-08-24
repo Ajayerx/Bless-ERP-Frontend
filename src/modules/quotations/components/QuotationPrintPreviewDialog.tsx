@@ -47,8 +47,10 @@ export default function QuotationPrintPreviewDialog({
         const url = URL.createObjectURL(blob)
         blobRef.current = url
         setPdfUrl(url)
-      } catch {
-        if (!cancelled) setError("Failed to generate print preview. Please try again.")
+      } catch (err) {
+        if (!cancelled) {
+          setError(err instanceof Error && err.message ? err.message : "Failed to generate print preview. Please try again.")
+        }
       } finally {
         if (!cancelled) setLoading(false)
       }

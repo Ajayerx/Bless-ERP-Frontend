@@ -10,9 +10,9 @@ interface Props {
 }
 
 const actionColors: Record<string, string> = {
-  "created invoice": "bg-blue-100 text-blue-600",
-  "made payment": "bg-green-100 text-green-600",
-  "placed order": "bg-amber-100 text-amber-600",
+  "created invoice": "bg-primary-100 text-primary-600",
+  "made payment": "bg-success-100 text-success-600",
+  "placed order": "bg-warning-100 text-warning-600",
 }
 
 export default function CustomerActivitiesWidget({ data = [], loading }: Props) {

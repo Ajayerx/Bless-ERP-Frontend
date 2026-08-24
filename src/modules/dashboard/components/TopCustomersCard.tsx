@@ -1,6 +1,7 @@
 import { ArrowRight } from "lucide-react"
 import { useNavigate } from "react-router-dom"
-import { formatCurrency, cn } from "@/lib/utils"
+import { formatCurrency } from "@/lib/utils"
+import { Avatar } from "@/components/ui"
 import DashboardListCard from "./DashboardListCard"
 import type { TopCustomer } from "@/services"
 
@@ -29,14 +30,7 @@ export default function TopCustomersCard({ data }: Props) {
           key={c.id}
           className="flex items-center gap-3 px-5 py-2.5 hover:bg-gray-50 transition-colors"
         >
-          <div
-            className={cn(
-              "w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0",
-              c.color,
-            )}
-          >
-            {c.initial || c.name.charAt(0).toUpperCase()}
-          </div>
+          <Avatar name={c.name} size="sm" />
           <div className="flex-1 min-w-0">
             <p className="text-sm font-semibold text-heading">{c.name}</p>
           </div>

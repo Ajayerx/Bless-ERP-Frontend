@@ -113,6 +113,29 @@ export function stripHtml(s: string): string {
   return s.replace(/<[^>]*>/g, "").trim()
 }
 
+// Raw-fetch download endpoints (PDF generation etc.) bypass apiClient, so a
+// non-OK response arrives as Frappe's JSON error envelope. Unwrap the real
+// reason (_server_messages first, then the exception tail) and throw it so
+// callers can surface e.g. "Not allowed to print cancelled documents".
+export async function throwServerMessageError(res: Response, fallback: string): Promise<never> {
+  let message = fallback
+  let raw = ""
+  try {
+    const body: Record<string, unknown> = await res.json()
+    const msgs = extractServerMessages(body._server_messages)
+    if (msgs.length > 0) {
+      message = stripHtml(msgs[0].message)
+      raw = JSON.stringify(msgs[0])
+    } else if (typeof body.exception === "string") {
+      const match = body.exception.match(/^(?:[\w.]+\.)?\w*(?:Error|Exception): (.+)$/m)
+      if (match) message = match[1]
+    }
+  } catch {
+    // response was not JSON — keep the fallback text
+  }
+  throw new ApiError(res.status, message, raw || undefined)
+}
+
 // Server messages carried on a *successful* (200) response. ERPNext puts
 // `frappe.msgprint` output into `_server_messages` even when `message` is a
 // normal payload, and the UI should surface them (e.g. "No outstanding

@@ -617,10 +617,10 @@ export default forwardRef<CustomerFormHandle, CustomerFormProps>(function Custom
                     <div className="flex items-center gap-2 mb-1.5">
                       <span className="text-xs font-semibold uppercase tracking-wide text-muted">{addr.address_type}</span>
                       {addr.address_type === "Billing" && (
-                        <span className="text-[10px] font-medium text-orange-600 bg-orange-50 px-1.5 py-0.5 rounded">Billing</span>
+                        <span className="text-[10px] font-medium text-warning-600 bg-warning-50 px-1.5 py-0.5 rounded">Billing</span>
                       )}
                       {addr.address_type === "Shipping" && (
-                        <span className="text-[10px] font-medium text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">Shipping</span>
+                        <span className="text-[10px] font-medium text-primary-600 bg-primary-50 px-1.5 py-0.5 rounded">Shipping</span>
                       )}
                     </div>
                     <p className="text-sm text-body">

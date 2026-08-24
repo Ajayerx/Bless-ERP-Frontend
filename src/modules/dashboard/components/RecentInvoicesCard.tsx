@@ -9,9 +9,9 @@ interface Props {
 }
 
 const statusStyles: Record<string, { bg: string; text: string; label: string }> = {
-  paid: { bg: "bg-green-100", text: "text-green-700", label: "Paid" },
-  partial: { bg: "bg-amber-100", text: "text-amber-700", label: "Partial" },
-  unpaid: { bg: "bg-red-100", text: "text-red-700", label: "Unpaid" },
+  paid: { bg: "bg-success-100", text: "text-success-700", label: "Paid" },
+  partial: { bg: "bg-warning-100", text: "text-warning-700", label: "Partial" },
+  unpaid: { bg: "bg-danger-100", text: "text-danger-700", label: "Unpaid" },
 }
 
 export default function RecentInvoicesCard({ data }: Props) {

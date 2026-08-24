@@ -44,14 +44,14 @@ export default function PendingOrdersWidget() {
           className="flex items-center gap-3 px-5 py-2.5 hover:bg-gray-50 transition-colors cursor-pointer"
           onClick={() => navigate(`/sales-orders/${order.id}`)}
         >
-          <div className="w-9 h-9 rounded-[8px] bg-amber-100 flex items-center justify-center shrink-0">
-            <ShoppingBag size={16} className="text-amber-600" />
+          <div className="w-9 h-9 rounded-[8px] bg-warning-100 flex items-center justify-center shrink-0">
+            <ShoppingBag size={16} className="text-warning-600" />
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-sm font-semibold text-heading">{order.customerName}</p>
             <p className="text-xs text-muted">{order.items.length} items · {formatCurrency(order.total)}</p>
           </div>
-          <span className="inline-flex px-2 py-0.5 text-[10px] font-semibold rounded-full bg-amber-100 text-amber-700">
+          <span className="inline-flex px-2 py-0.5 text-[10px] font-semibold rounded-full bg-warning-100 text-warning-700">
             Pending
           </span>
         </div>

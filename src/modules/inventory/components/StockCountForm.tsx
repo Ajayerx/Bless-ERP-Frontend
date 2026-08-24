@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Save, Loader2, Plus, X } from "lucide-react"
+import { Plus, X } from "lucide-react"
 import { apiClient } from "@/services/api-client"
 import { inventoryService, inventoryLookups } from "@/modules/inventory/services"
 import type { StockCount } from "@/modules/inventory/types"
@@ -11,9 +11,10 @@ interface StockCountFormProps {
   count?: StockCount | null
   onSaved: (name: string) => void
   onCancel: () => void
+  onSavingChange?: (saving: boolean) => void
 }
 
-export default function StockCountForm({ count, onSaved, onCancel }: StockCountFormProps) {
+export default function StockCountForm({ count, onSaved, onSavingChange }: StockCountFormProps) {
   const [warehouses, setWarehouses] = useState<string[]>([])
   const [companies, setCompanies] = useState<string[]>([])
   const [form, setForm] = useState({
@@ -26,6 +27,10 @@ export default function StockCountForm({ count, onSaved, onCancel }: StockCountF
   const [error, setError] = useState("")
   const [systemItems, setSystemItems] = useState<Map<string, { actual_qty: number; valuation_rate: number }>>(new Map())
   const [binLoadError, setBinLoadError] = useState(false)
+
+  useEffect(() => {
+    onSavingChange?.(saving)
+  }, [saving, onSavingChange])
 
   useEffect(() => {
     let cancelled = false
@@ -143,7 +148,7 @@ export default function StockCountForm({ count, onSaved, onCancel }: StockCountF
   const labelClass = "block text-xs font-semibold text-muted mb-1.5 uppercase tracking-wider"
 
   return (
-    <form onSubmit={handleSubmit} className="bg-surface rounded-[16px] border border-border shadow-card p-6 space-y-4">
+    <form id="stock-count-form" onSubmit={handleSubmit} className="bg-surface rounded-[16px] border border-border shadow-card p-6 space-y-4">
       {error && (
         <p className="text-sm text-danger-600 bg-danger-50 border border-danger-100 px-3 py-2.5 rounded-[10px]">{error}</p>
       )}
@@ -240,18 +245,6 @@ export default function StockCountForm({ count, onSaved, onCancel }: StockCountF
             })}
           </div>
         )}
-      </div>
-
-      <div className="flex items-center justify-end gap-3 pt-4 border-t border-border">
-        <button type="button" onClick={onCancel}
-          className="px-4 py-2.5 text-sm font-semibold text-muted bg-surface border border-border rounded-[12px] hover:bg-gray-50 transition-colors">
-          Cancel
-        </button>
-        <button type="submit" disabled={saving}
-          className="flex items-center gap-2 px-4 py-2.5 text-sm font-semibold text-white bg-primary-600 rounded-[12px] hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-sm">
-          {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
-          {saving ? "Saving..." : count ? "Update Count" : "Create Stock Count"}
-        </button>
       </div>
     </form>
   )

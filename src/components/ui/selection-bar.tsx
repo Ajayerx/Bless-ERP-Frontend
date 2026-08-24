@@ -4,7 +4,7 @@ import { Button } from "./button"
 
 interface SelectionBarProps {
   count: number
-  onDelete: () => void
+  onDelete?: () => void
   onClearSelection: () => void
   label?: string
   loading?: boolean
@@ -42,15 +42,17 @@ function SelectionBar({
             <X size={16} />
           </button>
         </div>
-        <Button
-          variant="danger"
-          size="sm"
-          onClick={onDelete}
-          loading={loading}
-        >
-          <Trash2 size={14} />
-          Delete
-        </Button>
+        {onDelete && (
+          <Button
+            variant="danger"
+            size="sm"
+            onClick={onDelete}
+            loading={loading}
+          >
+            <Trash2 size={14} />
+            Delete
+          </Button>
+        )}
       </motion.div>
     </AnimatePresence>
   )

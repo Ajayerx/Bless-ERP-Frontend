@@ -50,10 +50,10 @@ export default function AppCard({ app, isInstalled, onInstall, onUninstall }: Pr
           <div className="flex items-center gap-2">
             <h3 className="text-sm font-bold text-heading">{app.label}</h3>
             {isInstalled && (
-              <CheckCircle2 size={14} className="text-green-500 shrink-0" />
+              <CheckCircle2 size={14} className="text-success-500 shrink-0" />
             )}
             {isComingSoon && (
-              <span className="inline-flex px-2 py-0.5 text-[10px] font-semibold rounded-full bg-amber-100 text-amber-700">
+              <span className="inline-flex px-2 py-0.5 text-[10px] font-semibold rounded-full bg-warning-100 text-warning-700">
                 Coming Soon
               </span>
             )}
@@ -72,7 +72,7 @@ export default function AppCard({ app, isInstalled, onInstall, onUninstall }: Pr
       <div className="mt-4 pt-3 border-t border-border flex items-center justify-between">
         <span className={cn(
           "text-xs font-medium",
-          isInstalled ? "text-green-600" : "text-muted",
+          isInstalled ? "text-success-600" : "text-muted",
         )}>
           {isInstalled ? "Installed" : "Not installed"}
         </span>

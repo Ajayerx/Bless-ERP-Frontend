@@ -179,11 +179,11 @@ export default function ReturnAgainstSearchModal({
                         <td className="px-3 py-2.5">
                           <span className={cn(
                             "inline-flex px-2 py-0.5 text-xs font-medium rounded-full",
-                            inv.status === "Paid" && "bg-green-50 text-green-700",
-                            inv.status === "Unpaid" && "bg-amber-50 text-amber-700",
-                            inv.status === "Overdue" && "bg-red-50 text-red-700",
+                            inv.status === "Paid" && "bg-success-50 text-success-700",
+                            inv.status === "Unpaid" && "bg-warning-50 text-warning-700",
+                            inv.status === "Overdue" && "bg-danger-50 text-danger-700",
                             inv.status === "Draft" && "bg-gray-100 text-gray-600",
-                            inv.status === "Submitted" && "bg-blue-50 text-blue-700",
+                            inv.status === "Submitted" && "bg-primary-50 text-primary-700",
                             !["Paid", "Unpaid", "Overdue", "Draft", "Submitted"].includes(inv.status) && "bg-gray-100 text-gray-600",
                           )}>
                             {inv.status}

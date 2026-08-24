@@ -25,8 +25,6 @@ export interface TopCustomer {
   id: string
   name: string
   amount: number
-  initial: string
-  color: string
 }
 
 export interface InventoryAlert {

@@ -120,8 +120,8 @@ export default function PaymentDetail() {
       const blob = await paymentService.generatePDF(payment.name)
       const blobUrl = URL.createObjectURL(blob)
       window.open(blobUrl, "_blank")
-    } catch {
-      showMessage("Failed to generate PDF")
+    } catch (err) {
+      showMessage(err instanceof Error && err.message ? err.message : "Failed to generate PDF")
     }
   }, [payment, showMessage])
 
