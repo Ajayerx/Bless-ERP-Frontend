@@ -15,7 +15,7 @@ import {
   LinkSearchField,
   useToast,
 } from "@/components/ui"
-import { ScanBarcode } from "lucide-react"
+import { ScanBarcode, X } from "lucide-react"
 import {
   Combobox,
   inputClass,
@@ -1177,10 +1177,6 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
       { key: "lost_reason", label: "Lost Reason", type: "readonly", weight: 2 },
     ]
 
-    const competitorColumns: GridColumn<CompetitorRow>[] = [
-      { key: "competitor", label: "Competitor", type: "readonly", weight: 2 },
-    ]
-
     const partyLabel = `Party (${form.quotation_to || "Customer"})`
     const partyVisible = rule("party_name").visible
     const partyLocked = rule("party_name").readOnly
@@ -1756,6 +1752,9 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
                   }}
                   docType="Sales Taxes and Charges Template"
                   placeholder="Select template…"
+                  validate={async (v) => {
+                    await customerService.validateLink("Sales Taxes and Charges Template", v)
+                  }}
                   clearIconMode="hover"
                 />
               </div>
@@ -2183,12 +2182,15 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
                           "Contact",
                           q,
                           "Quotation",
-                          form.company ? { link_name: form.company } : undefined,
-                        )
-                        return { items: results }
-                      }}
-                      placeholder="Select contact…"
-                      suppressExternalLabelFetch
+                      form.company ? { link_name: form.company } : undefined,
+                      )
+                      return { items: results }
+                    }}
+                    placeholder="Select contact…"
+                    validate={async (v) => {
+                      await customerService.validateLink("Contact", v)
+                    }}
+                    suppressExternalLabelFetch
                       clearIconMode="hover"
                     />
                   </div>
@@ -2221,6 +2223,9 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
                   }}
                   docType="Payment Terms Template"
                   placeholder="Select template…"
+                  validate={async (v) => {
+                    await customerService.validateLink("Payment Terms Template", v)
+                  }}
                   clearIconMode="hover"
                 />
               </div>
@@ -2255,6 +2260,9 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
                   }}
                   docType="Terms and Conditions"
                   placeholder="Select terms…"
+                  validate={async (v) => {
+                    await customerService.validateLink("Terms and Conditions", v)
+                  }}
                   clearIconMode="hover"
                 />
               </div>
@@ -2291,6 +2299,9 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
                     }}
                     docType="Letter Head"
                     placeholder="Select letter head…"
+                    validate={async (v) => {
+                      await customerService.validateLink("Letter Head", v)
+                    }}
                     clearIconMode="hover"
                   />
                 </div>
@@ -2303,12 +2314,15 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
                       const results = await customerService.searchLink("Print Heading", q, "Quotation")
                       return { items: results }
                     }}
+                    validate={async (v) => {
+                      await customerService.validateLink("Print Heading", v)
+                    }}
                     docType="Print Heading"
                     placeholder="Select print heading…"
                     clearIconMode="hover"
                   />
                 </div>
-                <div className="flex items-center gap-2 lg:mt-7">
+                <div className="flex items-start gap-2">
                   <input
                     type="checkbox"
                     id="groupSameItems"
@@ -2335,16 +2349,18 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
 
             {/* Section 2: Lost Reasons — always visible, like stock ERPNext */}
             <CollapsibleSection title="Lost Reasons">
-              <div className="max-w-sm mb-3">
-                <label className={labelClass}>Detailed Reason</label>
-                <textarea
-                  rows={3}
-                  value={form.order_lost_reason ?? ""}
-                  onChange={(e) => update({ order_lost_reason: e.target.value })}
-                  className={inputClass}
-                  placeholder="Detailed reason…"
-                />
-              </div>
+              {form.status === "Lost" && (
+                <div className="max-w-sm mb-3">
+                  <label className={labelClass}>Detailed Reason</label>
+                  <textarea
+                    rows={3}
+                    value={form.order_lost_reason ?? ""}
+                    onChange={(e) => update({ order_lost_reason: e.target.value })}
+                    className={inputClass}
+                    placeholder="Detailed reason…"
+                  />
+                </div>
+              )}
               {(form.lost_reasons ?? []).length > 0 && (
                 <ChildTableGrid<LostReasonRow>
                   title="Lost Reasons"
@@ -2356,23 +2372,67 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
                   minWidth="420px"
                 />
               )}
-              {(form.competitors ?? []).length > 0 && (
-                <ChildTableGrid<CompetitorRow>
-                  title="Competitors"
-                  rows={form.competitors ?? []}
-                  columns={competitorColumns}
-                  emptyRow={{ competitor: "" }}
-                  onChange={() => undefined}
-                  readOnly
-                  minWidth="420px"
+              <div className="max-w-sm">
+                <label className={labelClass}>Competitors</label>
+                {(form.competitors ?? []).length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 mb-2">
+                    {(form.competitors ?? []).map((c, i) => (
+                      <span
+                        key={i}
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-gray-100 text-body text-xs font-medium"
+                      >
+                        {c.competitor}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const updated = (form.competitors ?? []).filter(
+                              (_, idx) => idx !== i,
+                            )
+                            update({ competitors: updated })
+                          }}
+                          title="Remove"
+                          className="hover:text-danger-700 transition-colors"
+                        >
+                          <X size={11} />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+                <LinkSearchField
+                  value={undefined}
+                  onChange={(v) => {
+                    if (!v) return
+                    const existing = form.competitors ?? []
+                    if (
+                      !existing.some(
+                        (c) => c.competitor.toLowerCase() === v.toLowerCase(),
+                      )
+                    ) {
+                      update({ competitors: [...existing, { competitor: v }] })
+                    }
+                  }}
+                  searchFn={async (q) => {
+                    const results = await customerService.searchLink(
+                      "Competitor",
+                      q,
+                      "Quotation",
+                      {},
+                    )
+                    return { items: results }
+                  }}
+                  docType="Competitor"
+                  placeholder="Search competitor…"
+                  validate={async (v) => {
+                    await customerService.validateLink("Competitor", v)
+                  }}
+                  clearIconMode="hover"
                 />
-              )}
+              </div>
             </CollapsibleSection>
 
             {/* Section 3: Additional Info — collapsed */}
             <CollapsibleSection title="Additional Info">
-              {/* Desk additional_info_section layout: status → territory
-                  → campaign → source → supplier_quotation → opportunity. */}
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
                 <div>
                   <label className={labelClass}>Status</label>
@@ -2394,6 +2454,9 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
                     }}
                     docType="Campaign"
                     placeholder="Select campaign…"
+                    validate={async (v) => {
+                      await customerService.validateLink("Campaign", v)
+                    }}
                     clearIconMode="hover"
                   />
                 </div>
@@ -2408,6 +2471,9 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
                     }}
                     docType="Supplier Quotation"
                     placeholder="Select supplier quotation…"
+                    validate={async (v) => {
+                      await customerService.validateLink("Supplier Quotation", v)
+                    }}
                     clearIconMode="hover"
                   />
                 </div>
@@ -2428,30 +2494,6 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
                     clearIconMode="hover"
                   />
                 </div>
-                {form.quotation_to === "Customer" && !!form.party_name && (
-                  <div>
-                    <label className={labelClass}>Customer Group</label>
-                    <LinkSearchField
-                      value={form.customer_group ?? ""}
-                      onChange={(v) => update({ customer_group: v ?? "" })}
-                      searchFn={async (q) => {
-                        const results = await customerService.searchLink(
-                          "Customer Group",
-                          q,
-                          "Quotation",
-                        )
-                        return { items: results }
-                      }}
-                      validate={async (v) => {
-                        await customerService.validateLink("Customer Group", v)
-                      }}
-                      docType="Customer Group"
-                      placeholder="Select customer group…"
-                      clearIconMode="hover"
-                      readOnly={rule("customer_group").readOnly}
-                    />
-                  </div>
-                )}
                 <div>
                   <label className={labelClass}>Source</label>
                   <LinkSearchField
@@ -2463,25 +2505,10 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
                     }}
                     docType="Lead Source"
                     placeholder="Select source…"
-                    clearIconMode="hover"
-                  />
-                </div>
-                <div>
-                  <label className={labelClass}>Opportunity</label>
-                  <LinkSearchField
-                    value={form.opportunity ?? ""}
-                    onChange={(v) => update({ opportunity: v ?? "" })}
-                    searchFn={async (q) => {
-                      const results = await customerService.searchLink("Opportunity", q, "Quotation")
-                      return { items: results }
-                    }}
                     validate={async (v) => {
-                      await customerService.validateLink("Opportunity", v)
+                      await customerService.validateLink("Lead Source", v)
                     }}
-                    docType="Opportunity"
-                    placeholder="Select opportunity…"
                     clearIconMode="hover"
-                    readOnly={!!form.opportunity}
                   />
                 </div>
               </div>

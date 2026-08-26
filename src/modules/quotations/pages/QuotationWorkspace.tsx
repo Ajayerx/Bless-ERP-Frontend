@@ -43,6 +43,8 @@ import PaymentActivity from "@/modules/payments/components/PaymentActivity"
 import QuotationMetaPanel from "../components/QuotationMetaPanel"
 import QuotationForm, { type QuotationFormHandle } from "../components/QuotationForm"
 import SetLostDialog from "../components/SetLostDialog"
+import UpdateItemsDialog from "../components/UpdateItemsDialog"
+import AlternativeItemsDialog from "../components/AlternativeItemsDialog"
 import QuotationPrintPreviewDialog from "../components/QuotationPrintPreviewDialog"
 import SendQuotationEmailDialog from "../components/SendQuotationEmailDialog"
 import type { Quotation, QuotationStatus } from "../types"
@@ -80,6 +82,8 @@ export default function QuotationWorkspace({ mode, id }: QuotationWorkspaceProps
   const [previewOpen, setPreviewOpen] = useState(false)
   const [emailOpen, setEmailOpen] = useState(false)
   const [lostOpen, setLostOpen] = useState(false)
+  const [updateItemsOpen, setUpdateItemsOpen] = useState(false)
+  const [altItemsOpen, setAltItemsOpen] = useState(false)
 
   const [comments, setComments] = useState<PaymentActivityItem[]>([])
   const [commentsLoading, setCommentsLoading] = useState(false)
@@ -219,8 +223,30 @@ export default function QuotationWorkspace({ mode, id }: QuotationWorkspaceProps
 
   const handleCreateSO = async () => {
     if (!quotation) return
+    const today = new Date().toISOString().slice(0, 10)
+    if (quotation.valid_till && quotation.valid_till < today) {
+      showMessage("This quotation is expired. You cannot create a Sales Order.")
+      return
+    }
+    const hasAlternative = quotation.items.some((item) => item.is_alternative)
+    if (hasAlternative) {
+      setAltItemsOpen(true)
+      return
+    }
     try {
       const res = await quotationService.makeSalesOrder(quotation.name)
+      navigate(`/sales-orders/${res.name}`)
+    } catch (err) {
+      showMessage(messageFromError(err, "Failed to create Sales Order."))
+    }
+  }
+
+  const handleCreateSOWithSelected = async (
+    selectedItems: Array<{ name: string; item_code: string; is_alternative: number }>,
+  ) => {
+    if (!quotation) return
+    try {
+      const res = await quotationService.makeSalesOrder(quotation.name, selectedItems)
       navigate(`/sales-orders/${res.name}`)
     } catch (err) {
       showMessage(messageFromError(err, "Failed to create Sales Order."))
@@ -339,45 +365,54 @@ export default function QuotationWorkspace({ mode, id }: QuotationWorkspaceProps
           <CheckCircle2 size={14} /> Update
         </Button>
       ) : (
-        <>
+          <>
           {!isOrdered && !isLost && (
-            <div className="relative">
+            <>
               <Button
+                variant="secondary"
                 size="sm"
-                onClick={() => setCreateOpen(!createOpen)}
-                className="flex items-center gap-1"
+                onClick={() => setUpdateItemsOpen(true)}
               >
-                <Plus size={14} /> Create <ChevronDown size={12} />
+                <FileEdit size={14} /> Update Items
               </Button>
-              {createOpen && (
-                <>
-                  <div
-                    className="fixed inset-0 z-10"
-                    onClick={() => setCreateOpen(false)}
-                  />
-                  <div className="absolute right-0 mt-1 z-20 w-56 bg-white border border-border rounded-lg shadow-xl py-1">
-                    <button
-                      onClick={() => {
-                        setCreateOpen(false)
-                        void handleCreateSO()
-                      }}
-                      className="w-full text-left px-4 py-2.5 text-sm text-body hover:bg-gray-50 flex items-center gap-2"
-                    >
-                      <ShoppingCart size={14} /> Sales Order
-                    </button>
-                    <button
-                      onClick={() => {
-                        setCreateOpen(false)
-                        void handleCreateSI()
-                      }}
-                      className="w-full text-left px-4 py-2.5 text-sm text-body hover:bg-gray-50 flex items-center gap-2"
-                    >
-                      <ReceiptText size={14} /> Sales Invoice
-                    </button>
-                  </div>
-                </>
-              )}
-            </div>
+              <div className="relative">
+                <Button
+                  size="sm"
+                  onClick={() => setCreateOpen(!createOpen)}
+                  className="flex items-center gap-1"
+                >
+                  <Plus size={14} /> Create <ChevronDown size={12} />
+                </Button>
+                {createOpen && (
+                  <>
+                    <div
+                      className="fixed inset-0 z-10"
+                      onClick={() => setCreateOpen(false)}
+                    />
+                    <div className="absolute right-0 mt-1 z-20 w-56 bg-white border border-border rounded-lg shadow-xl py-1">
+                      <button
+                        onClick={() => {
+                          setCreateOpen(false)
+                          void handleCreateSO()
+                        }}
+                        className="w-full text-left px-4 py-2.5 text-sm text-body hover:bg-gray-50 flex items-center gap-2"
+                      >
+                        <ShoppingCart size={14} /> Sales Order
+                      </button>
+                      <button
+                        onClick={() => {
+                          setCreateOpen(false)
+                          void handleCreateSI()
+                        }}
+                        className="w-full text-left px-4 py-2.5 text-sm text-body hover:bg-gray-50 flex items-center gap-2"
+                      >
+                        <ReceiptText size={14} /> Sales Invoice
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            </>
           )}
           <Button variant="danger" size="sm" onClick={() => void handleCancel()} loading={acting} disabled={isOrdered}>
             <XCircle size={14} /> Cancel
@@ -493,6 +528,22 @@ export default function QuotationWorkspace({ mode, id }: QuotationWorkspaceProps
                   onDeclaredLost={() => {
                     void loadDoc(quotation.name)
                   }}
+                />
+                <UpdateItemsDialog
+                  open={updateItemsOpen}
+                  onOpenChange={setUpdateItemsOpen}
+                  items={quotation.items}
+                  quotationName={quotation.name}
+                  currency={quotation.currency}
+                  company={quotation.company}
+                  onUpdated={() => void loadDoc(quotation.name)}
+                />
+                <AlternativeItemsDialog
+                  open={altItemsOpen}
+                  onOpenChange={setAltItemsOpen}
+                  items={quotation.items}
+                  currency={quotation.currency}
+                  onContinue={handleCreateSOWithSelected}
                 />
               </>
             )}

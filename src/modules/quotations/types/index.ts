@@ -45,6 +45,9 @@ export interface QuotationItem {
   projected_qty?: number
   reserved_qty?: number
   is_free_item: number
+  is_alternative: number
+  has_alternative_item: number
+  alternative_item?: string
   delivery_date?: string
   warehouse?: string
   customer_item_code?: string

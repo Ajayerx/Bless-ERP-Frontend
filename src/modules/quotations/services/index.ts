@@ -1,4 +1,4 @@
-import { apiClient, apiFormCall, apiClientWithBody, serverMessagesFromBody, throwServerMessageError, ApiError } from "@/services/api-client"
+import { apiClient, apiFormCall, apiClientWithBody, serverMessagesFromBody, failedNamesFromMessages, serverDownloadTemplate, throwServerMessageError, ApiError, type AppMessage } from "@/services/api-client"
 import { postMethod, postMethodRaw } from "@/services/frappe-client"
 import { API_CONFIG } from "@/config/api.config"
 import { buildTimelineItems, toQuillHtml } from "@/modules/payments/services"
@@ -103,6 +103,22 @@ const LIST_FIELDS = [
   "status", "docstatus", "amended_from", "owner", "creation", "modified", "modified_by",
   "_assign", "_user_tags",
 ]
+
+export const QUOTATION_EXPORT_FIELDS: Record<string, string[]> = {
+  "Quotation": [
+    "name", "title", "quotation_to", "party_name", "customer_name",
+    "transaction_date", "valid_till", "grand_total", "status", "docstatus",
+    "company", "currency", "selling_price_list", "territory", "source",
+    "campaign",
+  ],
+  items: [
+    "item_code", "item_name", "qty", "uom", "rate", "amount",
+    "description", "warehouse",
+  ],
+  taxes: [
+    "charge_type", "account_head", "description", "rate", "tax_amount", "total",
+  ],
+}
 
 function buildListUrl(params: {
   fields: string[]
@@ -806,21 +822,48 @@ export const quotationService = {
   },
 
   // ── Conversion chain (Create menu) ─────────────────────────────────
-  async makeSalesOrder(sourceName: string, selectedItems?: Array<{ item_code: string; qty: number }>): Promise<{ doctype: string; name: string }> {
-    const promise = apiClient<{ doctype: string; name: string }>(
-      "/method/frappe.model.mapper.make_mapped_doc",
-      { method: "POST", body: JSON.stringify({ method: "erpnext.selling.doctype.quotation.quotation.make_sales_order", source_name: sourceName }) },
-    )
-    if (selectedItems && selectedItems.length > 0) {
-      return promise.then((res) => res)
+  async makeSalesOrder(sourceName: string, selectedItems?: Array<{ name: string; item_code: string; is_alternative: number }>): Promise<{ doctype: string; name: string }> {
+    const body: Record<string, unknown> = {
+      method: "erpnext.selling.doctype.quotation.quotation.make_sales_order",
+      source_name: sourceName,
     }
-    return promise
+    if (selectedItems && selectedItems.length > 0) {
+      body.args = JSON.stringify({ selected_items: selectedItems })
+    }
+    return apiClient<{ doctype: string; name: string }>(
+      "/method/frappe.model.mapper.make_mapped_doc",
+      { method: "POST", body: JSON.stringify(body) },
+    )
   },
 
   async makeSalesInvoice(sourceName: string): Promise<{ doctype: string; name: string }> {
     return apiClient<{ doctype: string; name: string }>(
       "/method/frappe.model.mapper.make_mapped_doc",
       { method: "POST", body: JSON.stringify({ method: "erpnext.selling.doctype.quotation.quotation.make_sales_invoice", source_name: sourceName }) },
+    )
+  },
+
+  // ── Update Items on submitted quotation ─────────────────────────────
+  async updateChildQtyRate(
+    parentDoctypeName: string,
+    transItems: Array<{
+      docname?: string
+      item_code: string
+      qty: number
+      rate: number
+      uom?: string
+      conversion_factor?: number
+    }>,
+    childDocname: string = "items",
+  ): Promise<void> {
+    await postMethod(
+      "erpnext.controllers.accounts_controller.update_child_qty_rate",
+      {
+        parent_doctype: DOCTYPE,
+        trans_items: JSON.stringify(transItems),
+        parent_doctype_name: parentDoctypeName,
+        child_docname: childDocname,
+      },
     )
   },
 
@@ -1241,5 +1284,104 @@ export const quotationService = {
         ...(data.attachPdf ? { attach_document_print: JSON.stringify({ doctype: DOCTYPE, name }) } : {}),
       }),
     })
+  },
+
+  // ── Single submit (PUT docstatus=1) ─────────────────────────────────
+  async submitDoc(name: string): Promise<Quotation> {
+    return apiClient<Quotation>(
+      `/resource/${DOCTYPE}/${encodeURIComponent(name)}`,
+      { method: "PUT", body: JSON.stringify({ docstatus: 1 }) },
+    )
+  },
+
+  // ── Bulk submit / cancel / delete ───────────────────────────────────
+  async bulkSubmit(names: string[]): Promise<{ failed: string[]; enqueued: boolean; messages: AppMessage[] }> {
+    const result = await postMethodRaw<{ message?: string[] | null; failed?: string[] } & Record<string, unknown>>(
+      "frappe.desk.doctype.bulk_update.bulk_update.submit_cancel_or_update_docs",
+      { doctype: DOCTYPE, action: "submit", docnames: JSON.stringify(names) },
+    )
+    const msg = Array.isArray(result.message) ? result.message : []
+    const messages = serverMessagesFromBody(result)
+    const explicit = Array.isArray(result.failed) ? result.failed : msg
+    return {
+      failed: explicit.length > 0 ? explicit : failedNamesFromMessages(names, messages),
+      enqueued: result.message == null,
+      messages,
+    }
+  },
+
+  async bulkCancel(names: string[]): Promise<{ failed: string[]; enqueued: boolean; messages: AppMessage[] }> {
+    const result = await postMethodRaw<{ message?: string[] | null; failed?: string[] } & Record<string, unknown>>(
+      "frappe.desk.doctype.bulk_update.bulk_update.submit_cancel_or_update_docs",
+      { doctype: DOCTYPE, action: "cancel", docnames: JSON.stringify(names) },
+    )
+    const msg = Array.isArray(result.message) ? result.message : []
+    const messages = serverMessagesFromBody(result)
+    const explicit = Array.isArray(result.failed) ? result.failed : msg
+    return {
+      failed: explicit.length > 0 ? explicit : failedNamesFromMessages(names, messages),
+      enqueued: result.message == null,
+      messages,
+    }
+  },
+
+  async bulkDelete(names: string[]): Promise<{ failed: string[]; messages: AppMessage[] }> {
+    const result = await postMethodRaw<{ message?: { undeleted_items?: string[] } | string[] } & Record<string, unknown>>(
+      "frappe.desk.reportview.delete_items",
+      { doctype: DOCTYPE, items: JSON.stringify(names) },
+    )
+    const msg = result.message
+    const messages = serverMessagesFromBody(result)
+    if (Array.isArray(msg)) return { failed: msg.length > 0 ? msg : failedNamesFromMessages(names, messages), messages }
+    const undeleted = Array.isArray(msg?.undeleted_items) ? msg.undeleted_items : []
+    return {
+      failed: undeleted.length > 0 ? undeleted : failedNamesFromMessages(names, messages),
+      messages,
+    }
+  },
+
+  // ── Export (server-side via data_import.download_template) ──────────
+  async exportRecords(options?: {
+    fileType?: "CSV" | "Excel"
+    recordMode?: "all" | "by_filter" | "5_records" | "blank_template"
+    fields?: Record<string, string[]>
+    filters?: unknown[]
+  }): Promise<Blob> {
+    return serverDownloadTemplate({
+      doctype: DOCTYPE,
+      fileType: options?.fileType ?? "CSV",
+      recordMode: options?.recordMode ?? "by_filter",
+      fields: options?.fields && Object.keys(options.fields).length > 0
+        ? options.fields
+        : QUOTATION_EXPORT_FIELDS,
+      filters: options?.filters,
+    })
+  },
+
+  // ── Bulk print (multi-PDF URL) ─────────────────────────────────────
+  buildMultiPdfUrl(
+    names: string[],
+    options: {
+      printFormat?: string
+      letterhead?: string
+      pageSize?: string
+      customSize?: { height: number; width: number }
+    } = {},
+  ): string {
+    const pdfOptions: Record<string, string> = {}
+    if (options.customSize && options.customSize.height > 0 && options.customSize.width > 0) {
+      pdfOptions["page-height"] = String(options.customSize.height)
+      pdfOptions["page-width"] = String(options.customSize.width)
+    } else {
+      pdfOptions["page-size"] = options.pageSize ?? "A4"
+    }
+    const params = new URLSearchParams()
+    params.set("doctype", DOCTYPE)
+    params.set("name", JSON.stringify(names))
+    params.set("format", options.printFormat ?? "Standard")
+    params.set("no_letterhead", options.letterhead ? "0" : "1")
+    if (options.letterhead) params.set("letterhead", options.letterhead)
+    params.set("options", JSON.stringify(pdfOptions))
+    return `${API_CONFIG.baseUrl}/method/frappe.utils.print_format.download_multi_pdf?${params.toString()}`
   },
 }

@@ -64,7 +64,7 @@ export type { JournalEntry, JournalEntryListResponse, JournalEntryFormData } fro
 export { salesOrderService } from "@/modules/sales-orders/services"
 export type { SalesOrder, SalesOrderItem, SalesOrderListResponse } from "@/modules/sales-orders/services"
 
-export { quotationService } from "@/modules/quotations/services"
+export { quotationService, QUOTATION_EXPORT_FIELDS } from "@/modules/quotations/services"
 export type { Quotation, QuotationItem, QuotationFormData, QuotationListResponse } from "@/modules/quotations/services"
 
 export { contactService } from "@/modules/contacts/services"

@@ -1,7 +1,7 @@
 "use client"
 
-import { FileText, CheckCircle2, Clock, XCircle, ArrowRight, Users, TrendingDown } from "lucide-react"
-import { Badge, ListFilterBar, FitText , FilterPills } from "@/components/ui"
+import { FileText, CheckCircle2, Clock, XCircle, ArrowRight, Users, TrendingDown, Send, RotateCcw, Trash2, Download, Printer, UserRound, Tag } from "lucide-react"
+import { Badge, ListFilterBar, FitText, FilterPills, ListBulkActions } from "@/components/ui"
 import DataTable, { type Column } from "@/components/ui/DataTable"
 import { type Quotation, type QuotationListResponse } from "@/services"
 import type { QuotationStatus } from "../types"
@@ -72,7 +72,12 @@ function SummaryCard({
   )
 }
 
-function buildColumns(): Column<Quotation>[] {
+function buildColumns(actions: {
+  onSubmitSingle: (name: string) => void
+  onCancelSingle: (name: string) => void
+  onDeleteSingle: (name: string) => void
+  onAmendSingle: (name: string) => void
+}): Column<Quotation>[] {
   return [
     {
       key: "name",
@@ -141,10 +146,56 @@ function buildColumns(): Column<Quotation>[] {
       key: "actions",
       header: "",
       width: "w-[12%]",
-      render: (q) =>
-        q.status === "Open" && q.docstatus === 1 ? (
-          <span className="text-xs font-semibold text-primary-600">Open</span>
-        ) : null,
+      noTruncate: true,
+      render: (q) => (
+        <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+          {q.docstatus === 0 && (
+            <>
+              <button
+                onClick={() => actions.onSubmitSingle(q.name)}
+                className="p-1.5 text-primary-600 hover:bg-primary-50 rounded-lg transition-colors"
+                title="Submit"
+              >
+                <Send size={13} />
+              </button>
+              <button
+                onClick={() => actions.onDeleteSingle(q.name)}
+                className="p-1.5 text-danger-600 hover:bg-danger-50 rounded-lg transition-colors"
+                title="Delete"
+              >
+                <Trash2 size={13} />
+              </button>
+            </>
+          )}
+          {q.docstatus === 1 && (
+            <button
+              onClick={() => actions.onCancelSingle(q.name)}
+              className="p-1.5 text-danger-600 hover:bg-danger-50 rounded-lg transition-colors"
+              title="Cancel"
+            >
+              <XCircle size={13} />
+            </button>
+          )}
+          {q.docstatus === 2 && (
+            <>
+              <button
+                onClick={() => actions.onAmendSingle(q.name)}
+                className="p-1.5 text-muted hover:bg-gray-100 rounded-lg transition-colors"
+                title="Amend"
+              >
+                <RotateCcw size={13} />
+              </button>
+              <button
+                onClick={() => actions.onDeleteSingle(q.name)}
+                className="p-1.5 text-danger-600 hover:bg-danger-50 rounded-lg transition-colors"
+                title="Delete"
+              >
+                <Trash2 size={13} />
+              </button>
+            </>
+          )}
+        </div>
+      ),
     },
   ]
 }
@@ -174,7 +225,6 @@ interface QuotationTableProps {
   onSortChange: (field: string, order: "asc" | "desc") => void
   onResetFilters: () => void
   hasActiveFilters: boolean
-  toolbarActions?: React.ReactNode
   selectable?: boolean
   selectedKeys?: Set<string>
   onSelectionChange?: (keys: Set<string>) => void
@@ -182,6 +232,21 @@ interface QuotationTableProps {
   currentPageLength?: number
   onPageLengthChange?: (size: number) => void
   onLoadMore?: () => void
+  hasDraftSelected: boolean
+  hasSubmittedSelected: boolean
+  hasCancelledSelected: boolean
+  onSubmitSingle: (name: string) => void
+  onCancelSingle: (name: string) => void
+  onDeleteSingle: (name: string) => void
+  onAmendSingle: (name: string) => void
+  onBulkSubmit: () => void
+  onBulkCancel: () => void
+  onBulkDelete: () => void
+  onBulkExport: () => void
+  onBulkPrint: () => void
+  onBulkAssign: () => void
+  onBulkClearAssign: () => void
+  onBulkAddTags: () => void
 }
 
 export default function QuotationTable({
@@ -209,7 +274,6 @@ export default function QuotationTable({
   onSortChange,
   onResetFilters,
   hasActiveFilters,
-  toolbarActions,
   selectable,
   selectedKeys,
   onSelectionChange,
@@ -217,12 +281,45 @@ export default function QuotationTable({
   currentPageLength,
   onPageLengthChange,
   onLoadMore,
+  hasDraftSelected,
+  hasSubmittedSelected,
+  hasCancelledSelected,
+  onSubmitSingle,
+  onCancelSingle,
+  onDeleteSingle,
+  onAmendSingle,
+  onBulkSubmit,
+  onBulkCancel,
+  onBulkDelete,
+  onBulkExport,
+  onBulkPrint,
+  onBulkAssign,
+  onBulkClearAssign,
+  onBulkAddTags,
 }: QuotationTableProps) {
   const allItems = data?.items ?? []
   const totalAmount = allItems.reduce((s, i) => s + (i.grand_total || 0), 0)
   const openAmount = allItems.filter((i) => i.status === "Open").reduce((s, i) => s + (i.grand_total || 0), 0)
   const draftCount = allItems.filter((i) => i.status === "Draft").length
   const lostCount = allItems.filter((i) => i.status === "Lost").length
+
+  const bulkToolbar = (
+    <ListBulkActions
+      count={selectedKeys?.size ?? 0}
+      noun="quotations"
+      fallback={null}
+      items={[
+        { label: "Submit", icon: <Send size={14} />, show: hasDraftSelected, onClick: onBulkSubmit },
+        { label: "Cancel", icon: <XCircle size={14} />, show: hasSubmittedSelected, danger: true, onClick: onBulkCancel },
+        { label: "Delete", icon: <Trash2 size={14} />, show: hasDraftSelected || hasCancelledSelected, danger: true, onClick: onBulkDelete },
+        { label: "Export", icon: <Download size={14} />, separatorBefore: true, onClick: onBulkExport },
+        { label: "Print", icon: <Printer size={14} />, onClick: onBulkPrint },
+        { label: "Assign to...", icon: <UserRound size={14} />, onClick: onBulkAssign },
+        { label: "Clear Assignment", icon: <UserRound size={14} />, onClick: onBulkClearAssign },
+        { label: "Add Tags", icon: <Tag size={14} />, onClick: onBulkAddTags },
+      ]}
+    />
+  )
 
   return (
     <div className="space-y-6">
@@ -326,7 +423,7 @@ export default function QuotationTable({
       />
 
       <DataTable
-        columns={buildColumns()}
+        columns={buildColumns({ onSubmitSingle, onCancelSingle, onDeleteSingle, onAmendSingle })}
         data={allItems}
         keyExtractor={(q) => q.name}
         loading={loading}
@@ -335,7 +432,7 @@ export default function QuotationTable({
         pageSize={10}
         onPageChange={onPageChange}
         onRowClick={onRowClick}
-        toolbarActions={toolbarActions}
+        toolbarActions={bulkToolbar}
         selectable={selectable}
         selectedKeys={selectedKeys}
         onSelectionChange={onSelectionChange}
