@@ -19,7 +19,7 @@ const STORAGE_KEY = "blesserp_dashboard_widgets"
 
 export const AVAILABLE_WIDGETS: WidgetDefinition[] = [
   { id: "kpiCards", label: "KPI Cards", defaultVisible: true, size: "full" },
-  { id: "salesChart", label: "Sales Overview Chart", defaultVisible: true, size: "wide" },
+  { id: "salesChart", label: "Sales Overview Chart", defaultVisible: true, size: "full" },
   { id: "recentInvoices", label: "Recent Invoices", defaultVisible: true, size: "normal" },
   { id: "topCustomers", label: "Top Customers", defaultVisible: true, size: "normal" },
   { id: "inventoryAlerts", label: "Inventory Alerts", defaultVisible: true, size: "normal" },
@@ -37,6 +37,8 @@ function getDefaultOrderedWidgets(): WidgetState[] {
   return AVAILABLE_WIDGETS.map((w, i) => ({ id: w.id, order: i }))
 }
 
+const KNOWN_WIDGET_IDS = new Set(AVAILABLE_WIDGETS.map((w) => w.id))
+
 function loadWidgetState(): WidgetState[] {
   try {
     const stored = localStorage.getItem(STORAGE_KEY)
@@ -45,7 +47,9 @@ function loadWidgetState(): WidgetState[] {
 
       // Backward compatible: if stored as string[], migrate to ordered list
       if (Array.isArray(parsed) && parsed.length > 0 && typeof parsed[0] === "string") {
-        const migrated: WidgetState[] = parsed.map((id: string, i: number) => ({ id, order: i }))
+        const migrated: WidgetState[] = parsed
+          .filter((id: string) => KNOWN_WIDGET_IDS.has(id))
+          .map((id: string, i: number) => ({ id, order: i }))
         // Add any new widgets that weren't in the old list
         const existing = new Set(migrated.map((w) => w.id))
         AVAILABLE_WIDGETS.forEach((w, i) => {
@@ -57,7 +61,18 @@ function loadWidgetState(): WidgetState[] {
       }
 
       if (Array.isArray(parsed) && parsed.length > 0 && typeof parsed[0] === "object" && "id" in parsed[0]) {
-        return parsed as WidgetState[]
+        const migrated = (parsed as WidgetState[])
+          .filter((w) => KNOWN_WIDGET_IDS.has(w.id))
+          .sort((a, b) => a.order - b.order)
+          .map((w, i) => ({ id: w.id, order: i }))
+        // Add any new widgets that weren't in the old list
+        const existing = new Set(migrated.map((w) => w.id))
+        AVAILABLE_WIDGETS.forEach((w, i) => {
+          if (!existing.has(w.id)) {
+            migrated.push({ id: w.id, order: migrated.length + i })
+          }
+        })
+        return migrated
       }
     }
   } catch {
@@ -112,7 +127,9 @@ export function useDashboardWidgets() {
     setWidgets(getDefaultOrderedWidgets())
   }, [])
 
-  const orderedWidgets = [...widgets].sort((a, b) => a.order - b.order)
+  const orderedWidgets = [...widgets]
+    .filter((w) => KNOWN_WIDGET_IDS.has(w.id))
+    .sort((a, b) => a.order - b.order)
 
   return {
     orderedWidgets,

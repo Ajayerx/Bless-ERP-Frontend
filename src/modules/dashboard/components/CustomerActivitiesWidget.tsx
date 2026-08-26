@@ -21,6 +21,8 @@ export default function CustomerActivitiesWidget({ data = [], loading }: Props) 
   return (
     <DashboardListCard
       title="Customer Activities"
+      className="h-[380px]"
+      scrollable
       headerRight={
         <button
           onClick={() => navigate("/customers")}

@@ -9,6 +9,7 @@ export interface KpiMetric {
 
 export interface SalesDay {
   date: string
+  label?: string
   value: number
 }
 

@@ -449,15 +449,29 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
 
     // ── Party fetch: party_name select → get_party_details ─────────────
     const handlePartySelect = async (party: string) => {
-      const company = formRef.current.company || defaultCompany
-      if (!party || !company || !formRef.current.transaction_date) return
+      if (!party) return
+      // Selection must never be a silent no-op: set party_name first, then
+      // enrich best-effort. Missing company/date only skip the details fetch.
       update({ party_name: party, customer_name: "" })
+      const company = formRef.current.company || defaultCompany
+      const transactionDate = formRef.current.transaction_date
+      if (!company || !transactionDate) {
+        if (import.meta.env.DEV) {
+          console.warn("[quotations] party details skipped: company or date not ready", {
+            party,
+            company,
+            transactionDate,
+          })
+        }
+        return
+      }
+      let patch: QuotationFormData = {}
       try {
         const details = await quotationService.getPartyDetails(
           formRef.current.quotation_to || "Customer",
           party,
           company,
-          formRef.current.transaction_date,
+          transactionDate,
           {
             priceList: formRef.current.selling_price_list,
             currency: formRef.current.currency,
@@ -477,18 +491,38 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
           "conversion_rate", "selling_price_list", "price_list_currency",
           "plc_conversion_rate", "company_address", "company_address_display",
         ])
-        const patch: QuotationFormData = { party_name: party }
+        patch = { party_name: party }
         for (const [key, value] of Object.entries(details)) {
           if (!known.has(key)) continue
           if (value === null || value === undefined) continue
           ;(patch as Record<string, unknown>)[key] = value
         }
-        setForm((prev) => ({ ...prev, ...patch }))
-        // Desk customer()/party_name(): get_party_details callback → apply_price_list().
-        runApplyPriceList({ ...formRef.current, ...patch })
-      } catch {
-        // party details are a best-effort fill
+      } catch (err) {
+        if (import.meta.env.DEV) {
+          console.warn("[quotations] get_party_details failed:", err)
+        }
       }
+      // Fallback: when the details response carried no display name (or the
+      // call failed outright), resolve it straight from the Customer doc so
+      // the read-only name field is never blank.
+      if (!(patch.customer_name ?? "").toString().trim()) {
+        try {
+          const res = await quotationService.getValue("Customer", "customer_name", {
+            name: party,
+          })
+          if (typeof res.customer_name === "string" && res.customer_name.trim()) {
+            patch = { ...patch, party_name: party, customer_name: res.customer_name }
+          } else {
+            patch = { ...patch, party_name: party }
+          }
+        } catch {
+          patch = { ...patch, party_name: party }
+        }
+      }
+      if (formRef.current.party_name !== party) return // stale response guard
+      setForm((prev) => ({ ...prev, ...patch }))
+      // Desk customer()/party_name(): get_party_details callback → apply_price_list().
+      runApplyPriceList({ ...formRef.current, ...patch })
     }
 
     // ── Currency change → get_exchange_rate ────────────────────────────
@@ -1119,10 +1153,10 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
       { key: "payment_term", label: "Payment Term", type: "text", weight: 2 },
       { key: "description", label: "Description", type: "text", weight: 3 },
       { key: "due_date", label: "Due Date", type: "date" },
-      { key: "invoice_portion", label: "Portion %", type: "number", align: "right" },
+      { key: "invoice_portion", label: "Invoice Portion", type: "number", align: "right" },
       {
         key: "payment_amount",
-        label: "Amount",
+        label: "Payment Amount",
         type: "number",
         align: "right",
       },
@@ -1349,12 +1383,11 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
                     />
                   </div>
                   {form.party_name && (
-                    <Field label="Customer Name" fieldname="customer_name">
-                      <Input
-                        value={form.customer_name ?? ""}
-                        onChange={(e) => update({ customer_name: e.target.value })}
-                        readOnly
-                      />
+                    <Field
+                      label={`${form.quotation_to || "Customer"} Name`}
+                      fieldname="customer_name"
+                    >
+                      <Input value={form.customer_name ?? ""} readOnly />
                     </Field>
                   )}
                 </div>
@@ -1587,27 +1620,33 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
                       readOnly
                     />
                   </div>
-                  <div>
-                    <label className={labelClass}>
-                      Net Total ({form.currency || companyCurrency})
-                    </label>
-                    <input
-                      type="text"
-                      value={formatCurrency(net_total)}
-                      className={`${inputClass} bg-gray-50`}
-                      readOnly
-                    />
-                  </div>
-                  {isForeignCurrency && (
-                    <div>
-                      <label className={labelClass}>Net Total ({companyCurrency})</label>
-                      <input
-                        type="text"
-                        value={formatCurrency(base_net_total)}
-                        className={`${inputClass} bg-gray-50`}
-                        readOnly
-                      />
-                    </div>
+                  {/* ERPNext parity: Net Total row only appears once an
+                      additional discount (percentage or amount) is set. */}
+                  {!!(form.additional_discount_percentage || form.discount_amount) && (
+                    <>
+                      <div>
+                        <label className={labelClass}>
+                          Net Total ({form.currency || companyCurrency})
+                        </label>
+                        <input
+                          type="text"
+                          value={formatCurrency(net_total)}
+                          className={`${inputClass} bg-gray-50`}
+                          readOnly
+                        />
+                      </div>
+                      {isForeignCurrency && (
+                        <div>
+                          <label className={labelClass}>Net Total ({companyCurrency})</label>
+                          <input
+                            type="text"
+                            value={formatCurrency(base_net_total)}
+                            className={`${inputClass} bg-gray-50`}
+                            readOnly
+                          />
+                        </div>
+                      )}
+                    </>
                   )}
                   {(form.total_net_weight ?? 0) > 0 && (
                     <div>
@@ -2042,6 +2081,15 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
                         </div>
                       </div>
                     )}
+                    <div>
+                      <label className={labelClass}>Mobile No</label>
+                      <input
+                        type="text"
+                        value={form.contact_mobile ?? ""}
+                        className={`${inputClass} bg-gray-50`}
+                        readOnly
+                      />
+                    </div>
                   </div>
                 </div>
               </div>
@@ -2054,7 +2102,7 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                   <div className="space-y-3">
                     <div>
-                      <label className={labelClass}>Shipping Address Name</label>
+                      <label className={labelClass}>Shipping Address</label>
                       <LinkSearchField
                         value={form.shipping_address_name ?? ""}
                         onChange={(v) => handleShippingAddressSelect(v)}
@@ -2072,6 +2120,8 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
                         clearIconMode="hover"
                       />
                     </div>
+                  </div>
+                  <div className="space-y-3">
                     {form.shipping_address && (
                       <div>
                         <label className={labelClass}>Shipping Address</label>
@@ -2082,26 +2132,6 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
                         </div>
                       </div>
                     )}
-                  </div>
-                  <div className="space-y-3">
-                    <div>
-                      <label className={labelClass}>Contact Mobile</label>
-                      <input
-                        type="text"
-                        value={form.contact_mobile ?? ""}
-                        className={`${inputClass} bg-gray-50`}
-                        readOnly
-                      />
-                    </div>
-                    <div>
-                      <label className={labelClass}>Contact Email</label>
-                      <input
-                        type="text"
-                        value={form.contact_email ?? ""}
-                        className={`${inputClass} bg-gray-50`}
-                        readOnly
-                      />
-                    </div>
                   </div>
                 </div>
               </div>
@@ -2178,11 +2208,14 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
                   value={form.payment_terms_template ?? ""}
                   onChange={(v) => void handlePaymentTermsSelect(v ?? "")}
                   searchFn={async (q) => {
+                    // ERPNext desk sends no filters for this Link field
+                    // (quotation.js); the backend's Payment Terms Template
+                    // table has no `disabled` column, so filtering on it
+                    // 500s (Unknown column).
                     const results = await customerService.searchLink(
                       "Payment Terms Template",
                       q,
                       "Quotation",
-                      { disabled: 0 },
                     )
                     return { items: results }
                   }}
@@ -2243,16 +2276,10 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
           {activeTab === "more_info" && (
           <div className="space-y-4">
             {/* Section 1: Print Settings — collapsed */}
-            <CollapsibleSection
-              title="Print Settings"
-              defaultOpen={!!(
-                form.letter_head ||
-                form.select_print_heading ||
-                form.group_same_items ||
-                form.language
-              )}
-            >
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <CollapsibleSection title="Print Settings">
+              {/* Desk print_settings layout: letter_head | select_print_heading
+                  then group_same_items | language */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 <div>
                   <label className={labelClass}>Letter Head</label>
                   <LinkSearchField
@@ -2281,6 +2308,19 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
                     clearIconMode="hover"
                   />
                 </div>
+                <div className="flex items-center gap-2 lg:mt-7">
+                  <input
+                    type="checkbox"
+                    id="groupSameItems"
+                    checked={!!form.group_same_items}
+                    onChange={(e) => update({ group_same_items: e.target.checked ? 1 : 0 })}
+                    disabled={(initialData?.docstatus ?? 0) === 1}
+                    className="h-4 w-4 rounded border-border"
+                  />
+                  <label htmlFor="groupSameItems" className="text-sm text-body">
+                    Group Same Items
+                  </label>
+                </div>
                 <div>
                   <label className={labelClass}>Print Language</label>
                   <input
@@ -2291,26 +2331,48 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
                   />
                 </div>
               </div>
-              <div className="flex items-center gap-2 mt-3">
-                <input
-                  type="checkbox"
-                  id="groupSameItems"
-                  checked={!!form.group_same_items}
-                  onChange={(e) => update({ group_same_items: e.target.checked ? 1 : 0 })}
-                  disabled={(initialData?.docstatus ?? 0) === 1}
-                  className="h-4 w-4 rounded border-border"
-                />
-                <label htmlFor="groupSameItems" className="text-sm text-body">
-                  Group Same Items
-                </label>
-              </div>
             </CollapsibleSection>
 
-            {/* Section 2: Additional Info — collapsed */}
-            <CollapsibleSection
-              title="Additional Info"
-              defaultOpen={!!(form.campaign || form.source || form.opportunity || form.status)}
-            >
+            {/* Section 2: Lost Reasons — always visible, like stock ERPNext */}
+            <CollapsibleSection title="Lost Reasons">
+              <div className="max-w-sm mb-3">
+                <label className={labelClass}>Detailed Reason</label>
+                <textarea
+                  rows={3}
+                  value={form.order_lost_reason ?? ""}
+                  onChange={(e) => update({ order_lost_reason: e.target.value })}
+                  className={inputClass}
+                  placeholder="Detailed reason…"
+                />
+              </div>
+              {(form.lost_reasons ?? []).length > 0 && (
+                <ChildTableGrid<LostReasonRow>
+                  title="Lost Reasons"
+                  rows={form.lost_reasons ?? []}
+                  columns={lostReasonColumns}
+                  emptyRow={{ lost_reason: "" }}
+                  onChange={() => undefined}
+                  readOnly
+                  minWidth="420px"
+                />
+              )}
+              {(form.competitors ?? []).length > 0 && (
+                <ChildTableGrid<CompetitorRow>
+                  title="Competitors"
+                  rows={form.competitors ?? []}
+                  columns={competitorColumns}
+                  emptyRow={{ competitor: "" }}
+                  onChange={() => undefined}
+                  readOnly
+                  minWidth="420px"
+                />
+              )}
+            </CollapsibleSection>
+
+            {/* Section 3: Additional Info — collapsed */}
+            <CollapsibleSection title="Additional Info">
+              {/* Desk additional_info_section layout: status → territory
+                  → campaign → source → supplier_quotation → opportunity. */}
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
                 <div>
                   <label className={labelClass}>Status</label>
@@ -2321,8 +2383,51 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
                     readOnly
                   />
                 </div>
-                {/* Desk additional_info_section order: status → customer_group
-                    → territory → campaign → source → opportunity. */}
+                <div>
+                  <label className={labelClass}>Campaign</label>
+                  <LinkSearchField
+                    value={form.campaign ?? ""}
+                    onChange={(v) => update({ campaign: v ?? "" })}
+                    searchFn={async (q) => {
+                      const results = await customerService.searchLink("Campaign", q, "Quotation")
+                      return { items: results }
+                    }}
+                    docType="Campaign"
+                    placeholder="Select campaign…"
+                    clearIconMode="hover"
+                  />
+                </div>
+                <div>
+                  <label className={labelClass}>Supplier Quotation</label>
+                  <LinkSearchField
+                    value={form.supplier_quotation ?? ""}
+                    onChange={(v) => update({ supplier_quotation: v ?? "" })}
+                    searchFn={async (q) => {
+                      const results = await customerService.searchLink("Supplier Quotation", q, "Quotation")
+                      return { items: results }
+                    }}
+                    docType="Supplier Quotation"
+                    placeholder="Select supplier quotation…"
+                    clearIconMode="hover"
+                  />
+                </div>
+                <div>
+                  <label className={labelClass}>Territory</label>
+                  <LinkSearchField
+                    value={form.territory ?? ""}
+                    onChange={(v) => update({ territory: v ?? "" })}
+                    searchFn={async (q) => {
+                      const results = await customerService.searchLink("Territory", q, "Quotation")
+                      return { items: results }
+                    }}
+                    validate={async (v) => {
+                      await customerService.validateLink("Territory", v)
+                    }}
+                    docType="Territory"
+                    placeholder="Select territory…"
+                    clearIconMode="hover"
+                  />
+                </div>
                 {form.quotation_to === "Customer" && !!form.party_name && (
                   <div>
                     <label className={labelClass}>Customer Group</label>
@@ -2347,37 +2452,6 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
                     />
                   </div>
                 )}
-                <div>
-                  <label className={labelClass}>Territory</label>
-                  <LinkSearchField
-                    value={form.territory ?? ""}
-                    onChange={(v) => update({ territory: v ?? "" })}
-                    searchFn={async (q) => {
-                      const results = await customerService.searchLink("Territory", q, "Quotation")
-                      return { items: results }
-                    }}
-                    validate={async (v) => {
-                      await customerService.validateLink("Territory", v)
-                    }}
-                    docType="Territory"
-                    placeholder="Select territory…"
-                    clearIconMode="hover"
-                  />
-                </div>
-                <div>
-                  <label className={labelClass}>Campaign</label>
-                  <LinkSearchField
-                    value={form.campaign ?? ""}
-                    onChange={(v) => update({ campaign: v ?? "" })}
-                    searchFn={async (q) => {
-                      const results = await customerService.searchLink("Campaign", q, "Quotation")
-                      return { items: results }
-                    }}
-                    docType="Campaign"
-                    placeholder="Select campaign…"
-                    clearIconMode="hover"
-                  />
-                </div>
                 <div>
                   <label className={labelClass}>Source</label>
                   <LinkSearchField
@@ -2412,46 +2486,6 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
                 </div>
               </div>
             </CollapsibleSection>
-
-            {/* Section 3: Lost Reasons — collapsed, shown once lost */}
-            {(form.status === "Lost" ||
-              (form.lost_reasons ?? []).length > 0 ||
-              (form.competitors ?? []).length > 0) && (
-              <CollapsibleSection title="Lost Reasons" defaultOpen>
-                <div className="max-w-sm mb-3">
-                  <label className={labelClass}>Detailed Reason</label>
-                  <textarea
-                    rows={3}
-                    value={form.order_lost_reason ?? ""}
-                    onChange={(e) => update({ order_lost_reason: e.target.value })}
-                    className={inputClass}
-                    placeholder="Detailed reason…"
-                  />
-                </div>
-                {(form.lost_reasons ?? []).length > 0 && (
-                  <ChildTableGrid<LostReasonRow>
-                    title="Lost Reasons"
-                    rows={form.lost_reasons ?? []}
-                    columns={lostReasonColumns}
-                    emptyRow={{ lost_reason: "" }}
-                    onChange={() => undefined}
-                    readOnly
-                    minWidth="420px"
-                  />
-                )}
-                {(form.competitors ?? []).length > 0 && (
-                  <ChildTableGrid<CompetitorRow>
-                    title="Competitors"
-                    rows={form.competitors ?? []}
-                    columns={competitorColumns}
-                    emptyRow={{ competitor: "" }}
-                    onChange={() => undefined}
-                    readOnly
-                    minWidth="420px"
-                  />
-                )}
-              </CollapsibleSection>
-            )}
           </div>
           )}
       </div>

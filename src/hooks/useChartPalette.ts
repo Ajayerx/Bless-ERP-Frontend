@@ -27,9 +27,12 @@ function readPalette(): ChartPalette {
   }
 }
 
+const initialPalette = (): ChartPalette =>
+  typeof document === "undefined" ? LIGHT_PALETTE : readPalette()
+
 export function useChartPalette(): ChartPalette {
   const { resolvedTheme } = useTheme()
-  const [palette, setPalette] = useState<ChartPalette>(LIGHT_PALETTE)
+  const [palette, setPalette] = useState<ChartPalette>(initialPalette)
 
   useEffect(() => {
     setPalette(readPalette())

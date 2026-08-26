@@ -41,6 +41,7 @@ import CustomerActivitiesWidget from "../components/CustomerActivitiesWidget"
 import SortableWidget from "../components/SortableWidget"
 import { useDashboard } from "../hooks/useDashboard"
 import DateRangeSelector, { type DatePreset, presetLabels } from "../components/DateRangeSelector"
+import { presetRange } from "../utils/dateRange"
 import WidgetSettingsPanel from "../components/WidgetSettingsPanel"
 import { useDashboardWidgets } from "../hooks/useDashboardWidgets"
 import { useKpiVisibility } from "../hooks/useKpiVisibility"
@@ -109,8 +110,8 @@ const kpiConfig = [
 
 export default function Dashboard() {
   const [datePreset, setDatePreset] = useState<DatePreset>("this_week")
-  const [startDate, setStartDate] = useState("")
-  const [endDate, setEndDate] = useState("")
+  const [startDate, setStartDate] = useState(() => presetRange("this_week").startDate)
+  const [endDate, setEndDate] = useState(() => presetRange("this_week").endDate)
   const [widgetSettingsOpen, setWidgetSettingsOpen] = useState(false)
   const [activeDragId, setActiveDragId] = useState<string | null>(null)
   const { data, loading } = useDashboard(startDate, endDate)

@@ -18,6 +18,19 @@ interface Props {
   periodLabel?: string
 }
 
+function compactMoney(v: number): string {
+  const abs = Math.abs(v)
+  if (abs >= 1_000_000) {
+    const m = v / 1_000_000
+    return `$${m % 1 === 0 ? m.toFixed(0) : m.toFixed(1)}M`
+  }
+  if (abs >= 1_000) {
+    const k = v / 1_000
+    return `$${k % 1 === 0 ? k.toFixed(0) : k.toFixed(1)}K`
+  }
+  return `$${v.toFixed(0)}`
+}
+
 export default function SalesOverviewChart({ data, periodLabel = "This Week" }: Props) {
   const palette = useChartPalette()
   return (
@@ -29,7 +42,7 @@ export default function SalesOverviewChart({ data, periodLabel = "This Week" }: 
         </span>
       </CardHeader>
       <CardContent>
-        <div className="h-[300px]">
+        <div className="h-[340px]">
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart
               data={data}
@@ -47,17 +60,20 @@ export default function SalesOverviewChart({ data, periodLabel = "This Week" }: 
                 vertical={false}
               />
               <XAxis
-                dataKey="date"
+                dataKey="label"
                 axisLine={false}
                 tickLine={false}
                 tick={{ fontSize: 12, fill: palette.muted }}
+                interval="preserveStartEnd"
+                minTickGap={16}
               />
               <YAxis
                 axisLine={false}
                 tickLine={false}
                 tick={{ fontSize: 12, fill: palette.muted }}
-                tickFormatter={(v: number) => `$${(v / 1000).toFixed(0)}K`}
+                tickFormatter={compactMoney}
                 domain={[0, "auto"]}
+                width={56}
               />
               <Tooltip
                 contentStyle={{

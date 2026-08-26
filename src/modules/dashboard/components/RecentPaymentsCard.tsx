@@ -27,13 +27,14 @@ export default function RecentPaymentsCard({ data }: Props) {
       {data.map((pay) => (
         <div
           key={pay.id}
-          className="flex items-center gap-3 px-5 py-2.5 hover:bg-gray-50 transition-colors"
+          onClick={() => navigate(`/payments/${pay.id}`)}
+          className="flex items-center gap-3 px-5 py-2.5 hover:bg-gray-50 transition-colors cursor-pointer"
         >
           <div className="w-8 h-8 rounded-[8px] bg-gray-50 text-gray-400 flex items-center justify-center shrink-0">
             <FileText size={14} />
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-semibold text-heading">
+            <p className="text-sm font-semibold text-heading whitespace-nowrap truncate">
               {pay.number}
             </p>
             <p className="text-xs text-muted">{pay.customerName} · {pay.date}</p>

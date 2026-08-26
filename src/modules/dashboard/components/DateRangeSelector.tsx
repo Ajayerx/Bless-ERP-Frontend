@@ -1,18 +1,6 @@
 "use client"
 
-import {
-  startOfDay,
-  endOfDay,
-  startOfWeek,
-  endOfWeek,
-  startOfMonth,
-  endOfMonth,
-  startOfQuarter,
-  endOfQuarter,
-  startOfYear,
-  endOfYear,
-  format,
-} from "date-fns"
+import { format } from "date-fns"
 import { CalendarDays, ChevronDown } from "lucide-react"
 import {
   DropdownMenu,
@@ -20,8 +8,9 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
 } from "@/components/ui"
+import { getRange, type DatePreset } from "../utils/dateRange"
 
-export type DatePreset = "today" | "this_week" | "this_month" | "this_quarter" | "this_year"
+export type { DatePreset }
 
 interface Props {
   value: DatePreset
@@ -43,22 +32,6 @@ const presetOptions: { value: DatePreset; label: string }[] = [
   { value: "this_quarter", label: "This Quarter" },
   { value: "this_year", label: "This Year" },
 ]
-
-function getRange(preset: DatePreset): { start: Date; end: Date } {
-  const now = new Date()
-  switch (preset) {
-    case "today":
-      return { start: startOfDay(now), end: endOfDay(now) }
-    case "this_week":
-      return { start: startOfWeek(now, { weekStartsOn: 0 }), end: endOfWeek(now, { weekStartsOn: 0 }) }
-    case "this_month":
-      return { start: startOfMonth(now), end: endOfMonth(now) }
-    case "this_quarter":
-      return { start: startOfQuarter(now), end: endOfQuarter(now) }
-    case "this_year":
-      return { start: startOfYear(now), end: endOfYear(now) }
-  }
-}
 
 function formatRange(start: Date, end: Date): string {
   const fmt = "MMM d, yyyy"

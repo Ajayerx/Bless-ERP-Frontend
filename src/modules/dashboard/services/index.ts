@@ -302,24 +302,96 @@ function buildKpis(
   }
 }
 
-function buildSalesChart(invoices: SalesInvoiceRow[], startDate?: string, endDate?: string): SalesDay[] {
-  let filtered = invoices
-  if (startDate) {
-    filtered = filtered.filter((inv) => inv.posting_date >= startDate)
+const MONTH_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+
+function localIso(d: Date): string {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, "0")
+  const day = String(d.getDate()).padStart(2, "0")
+  return `${y}-${m}-${day}`
+}
+
+function shortDate(d: Date): string {
+  return `${d.getDate()} ${MONTH_SHORT[d.getMonth()]}`
+}
+
+function sumRange(totals: Map<string, number>, fromKey: string, toKey: string): number {
+  let sum = 0
+  for (const [k, v] of totals) {
+    if (k >= fromKey && k <= toKey) sum += v
   }
-  if (endDate) {
-    filtered = filtered.filter((inv) => inv.posting_date <= endDate)
+  return sum
+}
+
+function buildSalesChart(invoices: SalesInvoiceRow[], startDate?: string, endDate?: string): SalesDay[] {
+  const totalsByDay = new Map<string, number>()
+  for (const inv of invoices) {
+    if (!inv.posting_date) continue
+    totalsByDay.set(inv.posting_date.slice(0, 10), (totalsByDay.get(inv.posting_date.slice(0, 10)) ?? 0) + inv.grand_total)
   }
 
-  const days: SalesDay[] = []
-  for (let i = 13; i >= 0; i--) {
-    const day = isoDate(daysAgo(i))
-    const value = filtered
-      .filter((inv) => inv.posting_date === day)
-      .reduce((sum, inv) => sum + inv.grand_total, 0)
-    days.push({ date: day, value })
+  // No explicit range: fall back to the last 14 days.
+  if (!startDate || !endDate) {
+    const days: SalesDay[] = []
+    for (let i = 13; i >= 0; i--) {
+      const d = daysAgo(i)
+      const key = localIso(d)
+      days.push({ date: key, label: shortDate(d), value: totalsByDay.get(key) ?? 0 })
+    }
+    return days
   }
-  return days
+
+  const start = new Date(`${startDate}T00:00:00`)
+  const end = new Date(`${endDate}T00:00:00`)
+  if (isNaN(start.getTime()) || isNaN(end.getTime()) || end < start) return []
+
+  const spanDays = Math.round((end.getTime() - start.getTime()) / 86400000) + 1
+
+  // Daily buckets across exactly the selected range.
+  if (spanDays <= 31) {
+    const days: SalesDay[] = []
+    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+      const key = localIso(d)
+      days.push({ date: key, label: shortDate(d), value: totalsByDay.get(key) ?? 0 })
+    }
+    return days
+  }
+
+  // Weekly buckets for medium ranges.
+  if (spanDays <= 210) {
+    const weeks: SalesDay[] = []
+    let s = new Date(start)
+    while (s <= end) {
+      const e = new Date(Math.min(s.getTime() + 6 * 86400000, end.getTime()))
+      weeks.push({
+        date: localIso(s),
+        label: `${MONTH_SHORT[s.getMonth()]} ${s.getDate()}`,
+        value: sumRange(totalsByDay, localIso(s), localIso(e)),
+      })
+      s = new Date(e.getTime() + 86400000)
+      s.setHours(0, 0, 0, 0)
+    }
+    return weeks
+  }
+
+  // Monthly buckets for long ranges.
+  const months: SalesDay[] = []
+  let y = start.getFullYear()
+  let m = start.getMonth()
+  const endY = end.getFullYear()
+  const endM = end.getMonth()
+  while (y < endY || (y === endY && m <= endM)) {
+    const last = new Date(y, m + 1, 0)
+    const fromKey = `${y}-${String(m + 1).padStart(2, "0")}-01`
+    months.push({
+      date: fromKey,
+      label: `${MONTH_SHORT[m]} ${String(y).slice(2)}`,
+      value: sumRange(totalsByDay, fromKey, localIso(last)),
+    })
+    m++
+    if (m > 11) { m = 0; y++ }
+  }
+  return months
 }
 
 function buildRecentInvoices(invoices: SalesInvoiceRow[]): RecentInvoice[] {

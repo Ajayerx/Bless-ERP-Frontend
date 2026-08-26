@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import LinkSearchField from "./LinkSearchField";
-import { cn } from "@/lib/utils";
+import { cn, formatDateUser } from "@/lib/utils";
 
 const checkedCache = new Map<string, Set<number>>();
 
@@ -273,13 +273,36 @@ export default function ChildTableGrid<T extends object>({
                             className={cn(cellInputClass, col.align === "right" && "text-right")}
                           />
                         ) : col.type === "date" && interactive ? (
-                          <input
-                            type="date"
-                            value={(row[col.key] as string) ?? ""}
-                            onChange={(e) => updateCell(idx, col.key, e.target.value)}
-                            disabled={col.disabled?.(row) || readOnly}
-                            className={cellInputClass}
-                          />
+                          <div
+                            className="relative w-full"
+                            onClick={(e) => {
+                              // ERPNext-style: one tap opens the calendar.
+                              e.stopPropagation();
+                              const input = e.currentTarget.querySelector("input");
+                              try {
+                                input?.showPicker();
+                              } catch {
+                                // showPicker requires a user gesture or can be
+                                // unsupported — the field stays clickable.
+                              }
+                            }}
+                          >
+                            {/* The native input is fully invisible so the browser's
+                                mm/dd/yyyy mask can never paint over the display
+                                layer (Chrome paints focused segments opaquely). */}
+                            <input
+                              type="date"
+                              value={(row[col.key] as string) ?? ""}
+                              onChange={(e) => updateCell(idx, col.key, e.target.value)}
+                              disabled={col.disabled?.(row) || readOnly}
+                              className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+                            />
+                            <span className="pointer-events-none flex h-[38px] items-center px-1 text-[13px] text-body">
+                              {(row[col.key] as string)
+                                ? formatDateUser(row[col.key] as string)
+                                : <span className="text-muted">{col.label}</span>}
+                            </span>
+                          </div>
                         ) : col.render ? (
                           col.render(row)
                         ) : col.type === "number" ? (
