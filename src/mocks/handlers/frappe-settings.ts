@@ -67,32 +67,77 @@ export const frappeSettingsHandlers = [
     return HttpResponse.json({ data: userDoc })
   }),
 
-  // ── Link options for assignments (frappe.desk.search.search_link) ──
+  // ── Link options (frappe.desk.search.search_link) ─────────────────
+  // GET form is used by the desktop "Get Items From > Opportunity" picker
+  // (searchLink with filters) and assignment User lookups.
   http.get("/api/method/frappe.desk.search.search_link", async ({ request }) => {
     await delay(150)
     const url = new URL(request.url)
-    if (url.searchParams.get("doctype") !== "User") return HttpResponse.json({ message: [] })
+    const doctype = url.searchParams.get("doctype") ?? ""
     const txt = (url.searchParams.get("txt") ?? "").toLowerCase()
-    const users = [
-      { name: "admin@blesserp.com", full_name: "BlessERP Admin" },
-      { name: "aarav@blesserp.com", full_name: "Aarav Mehta" },
-      { name: "priya@blesserp.com", full_name: "Priya Sharma" },
-      { name: "neha@blesserp.com", full_name: "Neha Gupta" },
-      { name: "vivek@blesserp.com", full_name: "Vivek Nair" },
-    ]
-    const filtered = users.filter(
-      (u) =>
-        !txt ||
-        u.name.toLowerCase().includes(txt) ||
-        u.full_name.toLowerCase().includes(txt)
-    )
-    return HttpResponse.json({
-      message: filtered.slice(0, 10).map((u) => ({
-        value: u.name,
-        label: u.full_name,
-        description: u.name,
-      })),
-    })
+
+    if (doctype === "User") {
+      const users = [
+        { name: "admin@blesserp.com", full_name: "BlessERP Admin" },
+        { name: "aarav@blesserp.com", full_name: "Aarav Mehta" },
+        { name: "priya@blesserp.com", full_name: "Priya Sharma" },
+        { name: "neha@blesserp.com", full_name: "Neha Gupta" },
+        { name: "vivek@blesserp.com", full_name: "Vivek Nair" },
+      ]
+      const filtered = users.filter(
+        (u) =>
+          !txt ||
+          u.name.toLowerCase().includes(txt) ||
+          u.full_name.toLowerCase().includes(txt)
+      )
+      return HttpResponse.json({
+        message: filtered.slice(0, 10).map((u) => ({
+          value: u.name,
+          label: u.full_name,
+          description: u.name,
+        })),
+      })
+    }
+
+    if (doctype === "Opportunity") {
+      const opportunities = [
+        { name: "OPP-0001", title: "Annual Supply Contract", status: "Open", customer_name: "Acme Corporation" },
+        { name: "OPP-0002", title: "Software License Renewal", status: "Replied", customer_name: "Globex Inc." },
+        { name: "OPP-0003", title: "Maintenance Service Agreement", status: "Open", customer_name: "Umbrella Corp" },
+        { name: "OPP-0004", title: "Consulting Services Package", status: "Quotation", customer_name: "Initech Solutions" },
+      ]
+      // Honor ERPNext opportunity_query filter:
+      // filters → status not in (Lost, Closed, Converted).
+      let filterStatus: string[] | null = null
+      try {
+        const filters = JSON.parse(url.searchParams.get("filters") ?? "[]") as unknown[]
+        for (const f of filters) {
+          if (Array.isArray(f) && f.length >= 3 && f[0] === "status" && String(f[1]) === "in") {
+            filterStatus = (f[2] as string[]).map((s) => s.toLowerCase())
+          }
+        }
+      } catch {
+        // ignore malformed filters — fall through to unfiltered list
+      }
+      const filtered = opportunities.filter((o) => {
+        if (filterStatus && filterStatus.includes(o.status.toLowerCase())) return false
+        if (!txt) return true
+        return (
+          o.name.toLowerCase().includes(txt) ||
+          o.title.toLowerCase().includes(txt) ||
+          o.customer_name.toLowerCase().includes(txt)
+        )
+      })
+      return HttpResponse.json({
+        message: filtered.slice(0, 10).map((o) => ({
+          value: o.name,
+          label: o.title,
+          description: o.customer_name,
+        })),
+      })
+    }
+
+    return HttpResponse.json({ message: [] })
   }),
 
   // ── quotation_to Link options (desk ControlLink on focus/clear) ──

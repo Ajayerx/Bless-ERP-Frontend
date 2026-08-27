@@ -843,6 +843,24 @@ export const quotationService = {
     )
   },
 
+  // ── Get Items From > Opportunity (map_current_doc / make_mapped_doc) ──
+  async makeQuotationFromOpportunity(
+    sourceName: string,
+    assignToMe: boolean = false,
+  ): Promise<{ doctype: string; name: string }> {
+    return apiClient<{ doctype: string; name: string }>(
+      "/method/frappe.model.mapper.make_mapped_doc",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          method: "erpnext.crm.doctype.opportunity.opportunity.make_quotation",
+          source_name: sourceName,
+          args: JSON.stringify({ _assign: assignToMe }),
+        }),
+      },
+    )
+  },
+
   // ── Update Items on submitted quotation ─────────────────────────────
   async updateChildQtyRate(
     parentDoctypeName: string,

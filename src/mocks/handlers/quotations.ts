@@ -11,6 +11,35 @@ import { quotations, quotationItems, quotationTaxes, paymentScheduleRows } from 
 
 let store: Record<string, unknown>[] = quotations.map((q) => ({ ...q }))
 
+// Seeding hook for mapped-doc flows (e.g. Get Items From > Opportunity via
+// make_mapped_doc) that create brand-new quotations server-side. Returns the
+// seam-ready document row so the caller can resolve its detail route.
+export function addQuotationRow(row: Record<string, unknown>): Record<string, unknown> {
+  const merged: Record<string, unknown> = {
+    name: String(row.name ?? ""),
+    title: String(row.customer_name ?? row.party_name ?? ""),
+    quotation_to: String(row.quotation_to ?? "Customer"),
+    party_name: String(row.party_name ?? ""),
+    customer_name: String(row.customer_name ?? ""),
+    transaction_date: String(row.transaction_date ?? ""),
+    valid_till: String(row.valid_till ?? ""),
+    order_type: String(row.order_type ?? "Sales"),
+    company: String(row.company ?? "BlessERP Inc."),
+    currency: String(row.currency ?? "CAD"),
+    grand_total: Number(row.grand_total ?? 0),
+    rounded_total: Number(row.rounded_total ?? 0),
+    status: String(row.status ?? "Draft"),
+    docstatus: Number(row.docstatus ?? 0),
+    owner: String(row.owner ?? "admin@blesserp.com"),
+    creation: String(row.creation ?? ""),
+    modified: String(row.modified ?? row.creation ?? ""),
+    modified_by: String(row.modified_by ?? row.owner ?? "admin@blesserp.com"),
+    ...row,
+  }
+  store = [merged, ...store.filter((q) => String(q.name) !== String(merged.name))]
+  return fullDoc(merged)
+}
+
 function fullDoc(row: (typeof store)[number]): Record<string, unknown> {
   return {
     doctype: "Quotation",

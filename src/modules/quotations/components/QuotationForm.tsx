@@ -9,6 +9,7 @@ import {
   useState,
   type ReactNode,
 } from "react"
+import { useNavigate } from "react-router-dom"
 import {
   CollapsibleSection,
   Input,
@@ -36,9 +37,9 @@ import {
   type EditableTaxRow,
 } from "@/modules/invoices/services"
 import { AddMultipleModal, type LineItemForm } from "@/modules/invoices/components/InvoiceLineItems"
+import { moneyInWords } from "@/modules/payments/utils/moneyInWords"
 import type { Product } from "@/services"
 import type {
-  CompetitorRow,
   LostReasonRow,
   PricingRuleRow,
   Quotation,
@@ -46,7 +47,13 @@ import type {
   QuotationItem,
   QuotationTax,
 } from "@/modules/quotations/types"
-import { useVisibilityRules, DEFAULT_RULES } from "@/modules/quotations/hooks/useVisibilityRules"
+import {
+  useVisibilityRules,
+  DEFAULT_RULES,
+  DEFAULT_FIELD_STATE,
+  EMPTY_HIDE_EXEMPT,
+  resolveDocstatusAware,
+} from "@/modules/quotations/hooks/useVisibilityRules"
 import { formatCurrency, formatFixed } from "@/lib/utils"
 
 const ORDER_TYPE_OPTIONS = ["Sales", "Maintenance", "Shopping Cart"] as const
@@ -440,12 +447,42 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
     }, [form])
 
     const rules = useVisibilityRules(form, DEFAULT_RULES)
-    const rule = (fieldname: string) =>
-      rules[fieldname] ?? { visible: true, readOnly: false, reqd: false }
+    const navigate = useNavigate()
+    const docstatus = initialData?.docstatus ?? 0
+
+    /**
+     * ERPNext docstatus-driven rendering parity (whole form).
+     * - Draft (0): all fields visible and editable.
+     * - Submitted (1): read-only unless allow_on_submit; empty read-only
+     *   fields are hidden entirely — only fields carrying data show.
+     * - Cancelled (2): everything read-only (incl. allow_on_submit).
+     * Section placeholders / computed rows (in_words…) have their own
+     * hiddenWhen rules and are exempt from the hide-when-empty rule.
+     */
+    const rule = (fieldname: string) => {
+      const base = rules[fieldname] ?? DEFAULT_FIELD_STATE
+      return resolveDocstatusAware(
+        base,
+        (form as unknown as Record<string, unknown>)[fieldname],
+        docstatus,
+        EMPTY_HIDE_EXEMPT.has(fieldname),
+      )
+    }
+
+    /**
+     * ERPNext field-editability parity.
+     * - docstatus 0 (Draft) → all fields editable
+     * - docstatus 1 (Submitted) → read-only unless allow_on_submit
+     * - docstatus 2 (Cancelled) → everything read-only
+     */
+    const isFieldEditable = (fieldname: string): boolean => {
+      if (docstatus === 0) return true
+      if (docstatus === 2) return false
+      // docstatus 1 — editable only when allow_on_submit
+      return rule(fieldname).allowOnSubmit
+    }
 
     const update = (patch: QuotationFormData) => setForm((prev) => ({ ...prev, ...patch }))
-
-    const isForeignCurrency = (form.currency || companyCurrency) !== companyCurrency
 
     // ── Party fetch: party_name select → get_party_details ─────────────
     const handlePartySelect = async (party: string) => {
@@ -1177,9 +1214,13 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
       { key: "lost_reason", label: "Lost Reason", type: "readonly", weight: 2 },
     ]
 
-    const partyLabel = `Party (${form.quotation_to || "Customer"})`
+    const formatDateDisplay = (value?: string) =>
+      value ? new Date(`${value}T00:00:00`).toLocaleDateString("en-GB") : ""
+    // ERPNext set_dynamic_labels outs the party label to quotation_to ("Customer").
+    const partyLabel = form.quotation_to || "Customer"
     const partyVisible = rule("party_name").visible
     const partyLocked = rule("party_name").readOnly
+    const headerLocked = docstatus !== 0
 
     const handleSave = async (action?: "Save" | "Update" | "Submit"): Promise<string | undefined> => {
       if (saving) return undefined
@@ -1286,10 +1327,18 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
 
         {activeTab === "details" && (
           <div className="space-y-4">
-            {/* Section 1: Header — ERPNext 3-column layout */}
+            {/* Section 1: Header — ERPNext 3-column layout (docstatus-driven). */}
             <div className="pb-4 border-b border-border">
+              {mode !== "create" && (
+                <div className="mb-3">
+                  <label className={labelClass}>Series</label>
+                  <div className="font-medium text-sm py-1.5">
+                    {form.naming_series || "SAL-QTN-.YYYY.-"}
+                  </div>
+                </div>
+              )}
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-                {/* Col 1: Series / Quotation To / Customer / CRM Deal */}
+                {/* Col 1: Series / Quotation To / Customer / Customer Name / CRM Deal (draft only) */}
                 <div className="space-y-3">
                   {mode === "create" && (
                     <div>
@@ -1304,122 +1353,163 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
                     </div>
                   )}
                   <Field label="Quotation To *" fieldname="quotation_to">
-                    <LinkSearchField
-                      value={form.quotation_to}
-                      onChange={(v) =>
-                        update({
-                          quotation_to: (v ?? "") as Quotation["quotation_to"],
-                          party_name: "",
-                        })
-                      }
-                      searchFn={async (q) => {
-                        const results = await quotationService.searchQuotationTo(q)
-                        return {
-                          items: results.map((r) => ({
-                            value: r.value,
-                            label: r.value,
-                            description: r.description ?? "",
-                          })),
-                        }
-                      }}
-                      docType="DocType"
-                      placeholder="Select party type…"
-                      disabled={rule("party_name").readOnly}
-                    />
-                  </Field>
-                  {partyVisible && (
-                    <div>
-                      <label className={labelClass}>
-                        {partyLabel} {rule("party_name").reqd ? "*" : ""}
-                      </label>
+                    {headerLocked ? (
+                      <div className="font-semibold text-sm py-1.5">{form.quotation_to}</div>
+                    ) : (
                       <LinkSearchField
-                        value={form.party_name}
-                        onChange={(v) => {
-                          if (v !== form.party_name) void handlePartySelect(v ?? "")
-                        }}
+                        value={form.quotation_to}
+                        onChange={(v) =>
+                          update({
+                            quotation_to: (v ?? "") as Quotation["quotation_to"],
+                            party_name: "",
+                            customer_name: "",
+                          })
+                        }
                         searchFn={async (q) => {
-                          const results = await customerService.searchLink(
-                            form.quotation_to || "Customer",
-                            q,
-                            "Quotation",
-                          )
-                          return { items: results }
-                        }}
-                        validate={async (v) => {
-                          // Desk link.js validate_link_and_fetch → POST
-                          // frappe.client.validate_link with x-frappe-doctype.
-                          try {
-                            const doc = await quotationService.validateLink(
-                              form.quotation_to || "Customer",
-                              v,
-                              [],
-                            )
-                            if (!doc || Object.keys(doc).length === 0) {
-                              throw new Error(`Invalid ${form.quotation_to || "Customer"}`)
-                            }
-                          } catch (err) {
-                            // A dedup-skipped re-check is not an invalid link.
-                            if (err instanceof SuppressedDuplicateError) return
-                            throw err
+                          const results = await quotationService.searchQuotationTo(q)
+                          return {
+                            items: results.map((r) => ({
+                              value: r.value,
+                              label: r.value,
+                              description: r.description ?? "",
+                            })),
                           }
                         }}
-                        docType={form.quotation_to || "Customer"}
-                        placeholder="Select party…"
-                        readOnly={partyLocked}
-                        required={rule("party_name").reqd}
+                        docType="DocType"
+                        placeholder="Select party type…"
+                        disabled={partyLocked}
+                      />
+                    )}
+                  </Field>
+                  {partyVisible &&
+                    (headerLocked ? (
+                      <div>
+                        <label className={labelClass}>{partyLabel}</label>
+                        {form.quotation_to === "Customer" && form.party_name ? (
+                          <a
+                            href={`/customers/${encodeURIComponent(form.party_name)}`}
+                            onClick={(e) => {
+                              e.preventDefault()
+                              navigate(`/customers/${encodeURIComponent(form.party_name)}`)
+                            }}
+                            className="block font-bold text-sm text-primary hover:underline py-1 break-all"
+                          >
+                            {form.customer_name || form.party_name}
+                          </a>
+                        ) : (
+                          <div className="font-bold text-sm py-1.5 break-all">
+                            {form.customer_name || form.party_name}
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div>
+                        <label className={labelClass}>
+                          {partyLabel} {rule("party_name").reqd ? "*" : ""}
+                        </label>
+                        <LinkSearchField
+                          value={form.party_name}
+                          onChange={(v) => {
+                            if (v !== form.party_name) void handlePartySelect(v ?? "")
+                          }}
+                          searchFn={async (q) => {
+                            const results = await customerService.searchLink(
+                              form.quotation_to || "Customer",
+                              q,
+                              "Quotation",
+                            )
+                            return { items: results }
+                          }}
+                          validate={async (v) => {
+                            // Desk link.js validate_link_and_fetch → POST
+                            // frappe.client.validate_link with x-frappe-doctype.
+                            try {
+                              const doc = await quotationService.validateLink(
+                                form.quotation_to || "Customer",
+                                v,
+                                [],
+                              )
+                              if (!doc || Object.keys(doc).length === 0) {
+                                throw new Error(`Invalid ${form.quotation_to || "Customer"}`)
+                              }
+                            } catch (err) {
+                              // A dedup-skipped re-check is not an invalid link.
+                              if (err instanceof SuppressedDuplicateError) return
+                              throw err
+                            }
+                          }}
+                          docType={form.quotation_to || "Customer"}
+                          placeholder="Select party…"
+                          readOnly={partyLocked}
+                          required={rule("party_name").reqd}
+                        />
+                      </div>
+                    ))}
+                  <Field label="Customer Name" fieldname="customer_name">
+                    <div className="font-medium text-sm py-1.5 break-all">
+                      {form.customer_name}
+                    </div>
+                  </Field>
+                  {docstatus === 0 && (
+                    <div>
+                      <label className={labelClass}>Frappe CRM Deal</label>
+                      <Input
+                        value={form.crm_deal ?? ""}
+                        onChange={(e) => update({ crm_deal: e.target.value || "" })}
+                        placeholder="CRM deal reference"
                       />
                     </div>
                   )}
-                  <div>
-                    <label className={labelClass}>Frappe CRM Deal</label>
-                    <Input
-                      value={form.crm_deal ?? ""}
-                      onChange={(e) => update({ crm_deal: e.target.value || "" })}
-                      placeholder="CRM deal reference"
-                    />
-                  </div>
-                  {form.party_name && (
-                    <Field
-                      label={`${form.quotation_to || "Customer"} Name`}
-                      fieldname="customer_name"
-                    >
-                      <Input value={form.customer_name ?? ""} readOnly />
-                    </Field>
-                  )}
                 </div>
-                {/* Col 2: Date / Valid Till / Company */}
+                {/* Col 2: Date / Valid Till */}
                 <div className="space-y-3">
                   <Field label="Date *" fieldname="transaction_date">
-                    <Input
-                      type="date"
-                      value={form.transaction_date}
-                      onChange={(e) => update({ transaction_date: e.target.value })}
-                      readOnly={rule("transaction_date").readOnly}
-                    />
+                    {headerLocked ? (
+                      <div className="font-medium text-sm py-1.5">
+                        {formatDateDisplay(form.transaction_date)}
+                      </div>
+                    ) : (
+                      <Input
+                        type="date"
+                        value={form.transaction_date}
+                        onChange={(e) => update({ transaction_date: e.target.value })}
+                        readOnly={rule("transaction_date").readOnly}
+                      />
+                    )}
                   </Field>
                   <Field label="Valid Till" fieldname="valid_till">
-                    <Input
-                      type="date"
-                      value={form.valid_till}
-                      onChange={(e) => update({ valid_till: e.target.value })}
-                      readOnly={rule("valid_till").readOnly}
-                    />
+                    {headerLocked ? (
+                      <div className="font-medium text-sm py-1.5">
+                        {formatDateDisplay(form.valid_till)}
+                      </div>
+                    ) : (
+                      <Input
+                        type="date"
+                        value={form.valid_till}
+                        onChange={(e) => update({ valid_till: e.target.value })}
+                        readOnly={rule("valid_till").readOnly}
+                      />
+                    )}
                   </Field>
                 </div>
                 {/* Col 3: Order Type */}
                 <div className="space-y-3">
                   <Field label="Order Type *" fieldname="order_type">
-                    <select
-                      value={form.order_type}
-                      onChange={(e) => update({ order_type: e.target.value })}
-                      className={inputClass}
-                    >
-                      {ORDER_TYPE_OPTIONS.map((opt) => (
-                        <option key={opt} value={opt}>
-                          {opt}
-                        </option>
-                      ))}
-                    </select>
+                    {headerLocked ? (
+                      <div className="font-medium text-sm py-1.5">{form.order_type}</div>
+                    ) : (
+                      <select
+                        value={form.order_type}
+                        onChange={(e) => update({ order_type: e.target.value })}
+                        className={inputClass}
+                      >
+                        {ORDER_TYPE_OPTIONS.map((opt) => (
+                          <option key={opt} value={opt}>
+                            {opt}
+                          </option>
+                        ))}
+                      </select>
+                    )}
                   </Field>
                 </div>
               </div>
@@ -1525,7 +1615,7 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
                           id="ignorePricingRule"
                           checked={!!form.ignore_pricing_rule}
                           onChange={(e) => update({ ignore_pricing_rule: e.target.checked ? 1 : 0 })}
-                          disabled={(initialData?.docstatus ?? 0) === 1}
+                          disabled={!isFieldEditable("ignore_pricing_rule")}
                           className="h-4 w-4 rounded border-border"
                         />
                         <label htmlFor="ignorePricingRule" className="text-sm text-body">
@@ -1540,7 +1630,7 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
 
             {/* ===== Items ===== */}
             <div className="space-y-3 pb-4 border-b border-border">
-              {(initialData?.docstatus ?? 0) !== 1 && (
+              {isFieldEditable("scan_barcode") && (
                 <div className="mb-3">
                   <div className="relative max-w-sm">
                     <ScanBarcode size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
@@ -1561,18 +1651,18 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
               )}
               <ChildTableGrid<QuotationItem>
                 title="Items"
-                description={(initialData?.docstatus ?? 0) === 1 ? undefined : "Click a row to edit its fields."}
+                description={!isFieldEditable("items") ? undefined : "Click a row to edit its fields."}
                 rows={form.items ?? []}
-                columns={(initialData?.docstatus ?? 0) === 1 ? readOnlyItemColumns : itemColumns}
+                columns={!isFieldEditable("items") ? readOnlyItemColumns : itemColumns}
                 emptyRow={createEmptyItem()}
                 onChange={handleItemsChange}
-                readOnly={(initialData?.docstatus ?? 0) === 1}
-                canAdd={mode === "create" || (initialData?.docstatus ?? 0) !== 1}
+                readOnly={!isFieldEditable("items")}
+                canAdd={mode === "create" || isFieldEditable("items")}
                 minWidth="760px"
                 noTopBorder
                 testId="quotation-items"
                 footer={
-                  (initialData?.docstatus ?? 0) !== 1 ? (
+                  isFieldEditable("items") ? (
                     <AddMultipleModal
                       items={lineItemsForModal}
                       itemDetailsContext={{ customer: form.party_name || undefined }}
@@ -1594,17 +1684,15 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
                       readOnly
                     />
                   </div>
-                  {isForeignCurrency && (
-                    <div>
-                      <label className={labelClass}>Total ({companyCurrency})</label>
-                      <input
-                        type="text"
-                        value={formatCurrency(base_total)}
-                        className={`${inputClass} bg-gray-50`}
-                        readOnly
-                      />
-                    </div>
-                  )}
+                  <div>
+                    <label className={labelClass}>Total ({companyCurrency})</label>
+                    <input
+                      type="text"
+                      value={formatCurrency(base_total)}
+                      className={`${inputClass} bg-gray-50`}
+                      readOnly
+                    />
+                  </div>
                 </div>
                 <div className="space-y-3">
                   <div>
@@ -1631,17 +1719,15 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
                           readOnly
                         />
                       </div>
-                      {isForeignCurrency && (
-                        <div>
-                          <label className={labelClass}>Net Total ({companyCurrency})</label>
-                          <input
-                            type="text"
-                            value={formatCurrency(base_net_total)}
-                            className={`${inputClass} bg-gray-50`}
-                            readOnly
-                          />
-                        </div>
-                      )}
+                      <div>
+                        <label className={labelClass}>Net Total ({companyCurrency})</label>
+                        <input
+                          type="text"
+                          value={formatCurrency(base_net_total)}
+                          className={`${inputClass} bg-gray-50`}
+                          readOnly
+                        />
+                      </div>
                     </>
                   )}
                   {(form.total_net_weight ?? 0) > 0 && (
@@ -1682,6 +1768,7 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
                     docType="Tax Category"
                     placeholder="Select tax category…"
                     clearIconMode="hover"
+                    disabled={!isFieldEditable("tax_category")}
                   />
                 </Field>
                 <Field label="Shipping Rule" fieldname="shipping_rule">
@@ -1703,6 +1790,7 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
                     docType="Shipping Rule"
                     placeholder="Select shipping rule…"
                     clearIconMode="hover"
+                    disabled={!isFieldEditable("shipping_rule")}
                   />
                 </Field>
                 <Field label="Incoterm" fieldname="incoterm">
@@ -1723,6 +1811,7 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
                     docType="Incoterm"
                     placeholder="Select incoterm…"
                     clearIconMode="hover"
+                    disabled={!isFieldEditable("incoterm")}
                   />
                 </Field>
               </div>
@@ -1733,6 +1822,7 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
                     value={form.named_place ?? ""}
                     onChange={(e) => update({ named_place: e.target.value })}
                     className={inputClass}
+                    readOnly={!isFieldEditable("named_place")}
                   />
                 </div>
               )}
@@ -1756,6 +1846,7 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
                     await customerService.validateLink("Sales Taxes and Charges Template", v)
                   }}
                   clearIconMode="hover"
+                  disabled={!isFieldEditable("taxes_and_charges")}
                 />
               </div>
               <ChildTableGrid<EditableTaxRow>
@@ -1765,7 +1856,7 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
                 columns={taxColumns}
                 emptyRow={createEmptyTaxRow()}
                 onChange={handleTaxChange}
-                readOnly={(initialData?.docstatus ?? 0) === 1}
+                readOnly={!isFieldEditable("taxes")}
                 minWidth="720px"
               />
               {(form.taxes ?? []).length > 0 && (
@@ -1788,57 +1879,69 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
               <h3 className="text-base font-bold text-heading">Totals</h3>
               {(() => {
                 const showRounding = !form.disable_rounded_total
+                const quoteCurrency = form.currency || companyCurrency
+                // in_words: use the stored server value when present (exact
+                // ERPNext display on saved docs), else compute live on drafts.
+                const inWordsDisplay =
+                  form.in_words || moneyInWords(rounded_total, quoteCurrency)
+                const baseInWordsDisplay =
+                  form.base_in_words || moneyInWords(base_rounded_total, companyCurrency)
                 return (
-                  <div
-                    className={`mt-3 ${
-                      isForeignCurrency
-                        ? "grid grid-cols-1 lg:grid-cols-2 gap-6"
-                        : "sm:w-1/2 ml-auto space-y-3"
-                    }`}
-                  >
-                    {isForeignCurrency && (
-                      <div className="space-y-3">
+                  <div className="mt-3 grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    {/* Company-currency column */}
+                    <div className="space-y-3">
+                      <div>
+                        <label className={labelClass}>Grand Total ({companyCurrency})</label>
+                        <input
+                          type="text"
+                          value={formatCurrency(base_grand_total)}
+                          className={`${inputClass} bg-gray-50`}
+                          readOnly
+                        />
+                      </div>
+                      {showRounding && (
                         <div>
-                          <label className={labelClass}>Grand Total ({companyCurrency})</label>
+                          <label className={labelClass}>
+                            Rounding Adjustment ({companyCurrency})
+                          </label>
                           <input
                             type="text"
-                            value={formatCurrency(base_grand_total)}
+                            value={formatCurrency(base_rounding_adjustment)}
                             className={`${inputClass} bg-gray-50`}
                             readOnly
                           />
                         </div>
-                        {showRounding && (
-                          <div>
-                            <label className={labelClass}>
-                              Rounding Adjustment ({companyCurrency})
-                            </label>
-                            <input
-                              type="text"
-                              value={formatCurrency(base_rounding_adjustment)}
-                              className={`${inputClass} bg-gray-50`}
-                              readOnly
-                            />
-                          </div>
-                        )}
-                        {showRounding && (
-                          <div>
-                            <label className={labelClass}>
-                              Rounded Total ({companyCurrency})
-                            </label>
-                            <input
-                              type="text"
-                              value={formatCurrency(base_rounded_total)}
-                              className={`${inputClass} bg-gray-50`}
-                              readOnly
-                            />
-                          </div>
-                        )}
-                      </div>
-                    )}
+                      )}
+                      {showRounding && (
+                        <div>
+                          <label className={labelClass}>
+                            Rounded Total ({companyCurrency})
+                          </label>
+                          <input
+                            type="text"
+                            value={formatCurrency(base_rounded_total)}
+                            className={`${inputClass} bg-gray-50`}
+                            readOnly
+                          />
+                        </div>
+                      )}
+                      {rule("base_in_words").visible && (
+                        <div>
+                          <label className={labelClass}>In Words ({companyCurrency})</label>
+                          <input
+                            type="text"
+                            value={baseInWordsDisplay}
+                            className={`${inputClass} bg-gray-50 font-bold`}
+                            readOnly
+                          />
+                        </div>
+                      )}
+                    </div>
+                    {/* Transaction-currency column */}
                     <div className="space-y-3">
                       <div>
                         <label className={labelClass}>
-                          Grand Total ({form.currency || companyCurrency})
+                          Grand Total ({quoteCurrency})
                         </label>
                         <input
                           type="text"
@@ -1850,7 +1953,7 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
                       {showRounding && (
                         <div>
                           <label className={labelClass}>
-                            Rounding Adjustment ({form.currency || companyCurrency})
+                            Rounding Adjustment ({quoteCurrency})
                           </label>
                           <input
                             type="text"
@@ -1863,11 +1966,22 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
                       {showRounding && (
                         <div>
                           <label className={labelClass}>
-                            Rounded Total ({form.currency || companyCurrency})
+                            Rounded Total ({quoteCurrency})
                           </label>
                           <input
                             type="text"
                             value={formatCurrency(rounded_total)}
+                            className={`${inputClass} bg-gray-50 font-bold`}
+                            readOnly
+                          />
+                        </div>
+                      )}
+                      {rule("in_words").visible && (
+                        <div>
+                          <label className={labelClass}>In Words</label>
+                          <input
+                            type="text"
+                            value={inWordsDisplay}
                             className={`${inputClass} bg-gray-50 font-bold`}
                             readOnly
                           />
@@ -1881,7 +1995,7 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
                           onChange={(e) =>
                             update({ disable_rounded_total: e.target.checked ? 1 : 0 })
                           }
-                          disabled={(initialData?.docstatus ?? 0) === 1}
+                          disabled={!isFieldEditable("disable_rounded_total")}
                           className="h-4 w-4 rounded border-border"
                         />
                         <label htmlFor="disableRoundedTotal" className="text-sm text-body">
@@ -1910,7 +2024,7 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
                           (e.target.value || "Grand Total") as "Grand Total" | "Net Total",
                         )
                       }
-                      disabled={(initialData?.docstatus ?? 0) === 1}
+                      disabled={!isFieldEditable("apply_discount_on")}
                       className={inputClass}
                     >
                       <option value="Grand Total">Grand Total</option>
@@ -1931,6 +2045,7 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
                       docType="Coupon Code"
                       placeholder="Select coupon…"
                       clearIconMode="hover"
+                      disabled={!isFieldEditable("coupon_code")}
                     />
                   </Field>
                 </div>
@@ -1947,7 +2062,7 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
                           e.target.value ? parseFloat(e.target.value) : undefined,
                         )
                       }
-                      readOnly={(initialData?.docstatus ?? 0) === 1}
+                      readOnly={!isFieldEditable("additional_discount_percentage")}
                     />
                   </Field>
                   <Field
@@ -1965,7 +2080,7 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
                         )
                       }
                       readOnly={
-                        (initialData?.docstatus ?? 0) === 1 || rule("discount_amount").readOnly
+                        !isFieldEditable("discount_amount") || rule("discount_amount").readOnly
                       }
                     />
                   </Field>
@@ -1988,6 +2103,7 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
                       docType="Sales Partner"
                       placeholder="Select sales partner…"
                       clearIconMode="hover"
+                      disabled={!isFieldEditable("referral_sales_partner")}
                     />
                   </Field>
                 </div>
@@ -2036,6 +2152,7 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
                         placeholder="Select address…"
                         suppressExternalLabelFetch
                         clearIconMode="hover"
+                        disabled={!isFieldEditable("customer_address")}
                       />
                     </div>
                     {form.address_display && (
@@ -2068,6 +2185,7 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
                         suppressExternalLabelFetch
                         displayLabel={form.contact_display}
                         clearIconMode="hover"
+                        disabled={!isFieldEditable("contact_person")}
                       />
                     </div>
                     {form.contact_display && (
@@ -2117,6 +2235,7 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
                         placeholder="Select address…"
                         suppressExternalLabelFetch
                         clearIconMode="hover"
+                        disabled={!isFieldEditable("shipping_address_name")}
                       />
                     </div>
                   </div>
@@ -2159,6 +2278,7 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
                         placeholder="Select address…"
                         suppressExternalLabelFetch
                         clearIconMode="hover"
+                        disabled={!isFieldEditable("company_address")}
                       />
                     </div>
                     {form.company_address_display && (
@@ -2192,6 +2312,7 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
                     }}
                     suppressExternalLabelFetch
                       clearIconMode="hover"
+                      disabled={!isFieldEditable("company_contact_person")}
                     />
                   </div>
                 </div>
@@ -2227,6 +2348,7 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
                     await customerService.validateLink("Payment Terms Template", v)
                   }}
                   clearIconMode="hover"
+                  disabled={!isFieldEditable("payment_terms_template")}
                 />
               </div>
               <ChildTableGrid<Quotation["payment_schedule"][number]>
@@ -2237,7 +2359,7 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
                 columns={paymentScheduleColumns}
                 emptyRow={{ payment_term: "", description: "", due_date: "", invoice_portion: 0, payment_amount: 0 }}
                 onChange={(rows) => update({ payment_schedule: rows })}
-                readOnly={(initialData?.docstatus ?? 0) === 1}
+                readOnly={!isFieldEditable("payment_schedule")}
                 minWidth="720px"
               />
             </div>
@@ -2264,6 +2386,7 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
                     await customerService.validateLink("Terms and Conditions", v)
                   }}
                   clearIconMode="hover"
+                  disabled={!isFieldEditable("tc_name")}
                 />
               </div>
               <div>
@@ -2272,7 +2395,7 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
                   rows={4}
                   value={form.terms ?? ""}
                   onChange={(e) => update({ terms: e.target.value })}
-                  readOnly={(initialData?.docstatus ?? 0) === 1}
+                  readOnly={!isFieldEditable("terms")}
                   className={inputClass}
                   placeholder="Enter terms, conditions, or other notes…"
                 />
@@ -2303,6 +2426,7 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
                       await customerService.validateLink("Letter Head", v)
                     }}
                     clearIconMode="hover"
+                    disabled={!isFieldEditable("letter_head")}
                   />
                 </div>
                 <div>
@@ -2320,6 +2444,7 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
                     docType="Print Heading"
                     placeholder="Select print heading…"
                     clearIconMode="hover"
+                    disabled={!isFieldEditable("select_print_heading")}
                   />
                 </div>
                 <div className="flex items-start gap-2">
@@ -2328,7 +2453,7 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
                     id="groupSameItems"
                     checked={!!form.group_same_items}
                     onChange={(e) => update({ group_same_items: e.target.checked ? 1 : 0 })}
-                    disabled={(initialData?.docstatus ?? 0) === 1}
+                    disabled={!isFieldEditable("group_same_items")}
                     className="h-4 w-4 rounded border-border"
                   />
                   <label htmlFor="groupSameItems" className="text-sm text-body">
@@ -2347,89 +2472,94 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
               </div>
             </CollapsibleSection>
 
-            {/* Section 2: Lost Reasons — always visible, like stock ERPNext */}
-            <CollapsibleSection title="Lost Reasons">
-              {form.status === "Lost" && (
-                <div className="max-w-sm mb-3">
-                  <label className={labelClass}>Detailed Reason</label>
-                  <textarea
-                    rows={3}
-                    value={form.order_lost_reason ?? ""}
-                    onChange={(e) => update({ order_lost_reason: e.target.value })}
-                    className={inputClass}
-                    placeholder="Detailed reason…"
-                  />
-                </div>
-              )}
-              {(form.lost_reasons ?? []).length > 0 && (
-                <ChildTableGrid<LostReasonRow>
-                  title="Lost Reasons"
-                  rows={form.lost_reasons ?? []}
-                  columns={lostReasonColumns}
-                  emptyRow={{ lost_reason: "" }}
-                  onChange={() => undefined}
-                  readOnly
-                  minWidth="420px"
-                />
-              )}
-              <div className="max-w-sm">
-                <label className={labelClass}>Competitors</label>
-                {(form.competitors ?? []).length > 0 && (
-                  <div className="flex flex-wrap gap-1.5 mb-2">
-                    {(form.competitors ?? []).map((c, i) => (
-                      <span
-                        key={i}
-                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-gray-100 text-body text-xs font-medium"
-                      >
-                        {c.competitor}
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const updated = (form.competitors ?? []).filter(
-                              (_, idx) => idx !== i,
-                            )
-                            update({ competitors: updated })
-                          }}
-                          title="Remove"
-                          className="hover:text-danger-700 transition-colors"
-                        >
-                          <X size={11} />
-                        </button>
-                      </span>
-                    ))}
+            {/* Section 2: Lost Reasons — hidden unless reasons exist (ERPNext parity) */}
+            {rule("lost_reasons_section").visible && (
+              <CollapsibleSection title="Lost Reasons">
+                {form.status === "Lost" && (
+                  <div className="max-w-sm mb-3">
+                    <label className={labelClass}>Detailed Reason</label>
+                    <textarea
+                      rows={3}
+                      value={form.order_lost_reason ?? ""}
+                      onChange={(e) => update({ order_lost_reason: e.target.value })}
+                      className={inputClass}
+                      readOnly={!isFieldEditable("order_lost_reason")}
+                      placeholder="Detailed reason…"
+                    />
                   </div>
                 )}
-                <LinkSearchField
-                  value={undefined}
-                  onChange={(v) => {
-                    if (!v) return
-                    const existing = form.competitors ?? []
-                    if (
-                      !existing.some(
-                        (c) => c.competitor.toLowerCase() === v.toLowerCase(),
+                {(form.lost_reasons ?? []).length > 0 && (
+                  <ChildTableGrid<LostReasonRow>
+                    title="Lost Reasons"
+                    rows={form.lost_reasons ?? []}
+                    columns={lostReasonColumns}
+                    emptyRow={{ lost_reason: "" }}
+                    onChange={() => undefined}
+                    readOnly
+                    minWidth="420px"
+                  />
+                )}
+                <div className="max-w-sm">
+                  <label className={labelClass}>Competitors</label>
+                  {(form.competitors ?? []).length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 mb-2">
+                      {(form.competitors ?? []).map((c, i) => (
+                        <span
+                          key={i}
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-gray-100 text-body text-xs font-medium"
+                        >
+                          {c.competitor}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const updated = (form.competitors ?? []).filter(
+                                (_, idx) => idx !== i,
+                              )
+                              update({ competitors: updated })
+                            }}
+                            title="Remove"
+                            disabled={!isFieldEditable("competitors")}
+                            className="hover:text-danger-700 transition-colors"
+                          >
+                            <X size={11} />
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  <LinkSearchField
+                    value={undefined}
+                    onChange={(v) => {
+                      if (!v) return
+                      const existing = form.competitors ?? []
+                      if (
+                        !existing.some(
+                          (c) => c.competitor.toLowerCase() === v.toLowerCase(),
+                        )
+                      ) {
+                        update({ competitors: [...existing, { competitor: v }] })
+                      }
+                    }}
+                    readOnly={!isFieldEditable("competitors")}
+                    searchFn={async (q) => {
+                      const results = await customerService.searchLink(
+                        "Competitor",
+                        q,
+                        "Quotation",
+                        {},
                       )
-                    ) {
-                      update({ competitors: [...existing, { competitor: v }] })
-                    }
-                  }}
-                  searchFn={async (q) => {
-                    const results = await customerService.searchLink(
-                      "Competitor",
-                      q,
-                      "Quotation",
-                      {},
-                    )
-                    return { items: results }
-                  }}
-                  docType="Competitor"
-                  placeholder="Search competitor…"
-                  validate={async (v) => {
-                    await customerService.validateLink("Competitor", v)
-                  }}
-                  clearIconMode="hover"
-                />
-              </div>
-            </CollapsibleSection>
+                      return { items: results }
+                    }}
+                    docType="Competitor"
+                    placeholder="Search competitor…"
+                    validate={async (v) => {
+                      await customerService.validateLink("Competitor", v)
+                    }}
+                    clearIconMode="hover"
+                  />
+                </div>
+              </CollapsibleSection>
+            )}
 
             {/* Section 3: Additional Info — collapsed */}
             <CollapsibleSection title="Additional Info">
@@ -2441,6 +2571,24 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
                     value={form.status ?? "Draft"}
                     className={`${inputClass} bg-gray-50`}
                     readOnly
+                  />
+                </div>
+                <div>
+                  <label className={labelClass}>Territory</label>
+                  <LinkSearchField
+                    value={form.territory ?? ""}
+                    onChange={(v) => update({ territory: v ?? "" })}
+                    searchFn={async (q) => {
+                      const results = await customerService.searchLink("Territory", q, "Quotation")
+                      return { items: results }
+                    }}
+                    validate={async (v) => {
+                      await customerService.validateLink("Territory", v)
+                    }}
+                    docType="Territory"
+                    placeholder="Select territory…"
+                    clearIconMode="hover"
+                    disabled={!isFieldEditable("territory")}
                   />
                 </div>
                 <div>
@@ -2457,6 +2605,40 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
                     validate={async (v) => {
                       await customerService.validateLink("Campaign", v)
                     }}
+                    clearIconMode="hover"
+                    disabled={!isFieldEditable("campaign")}
+                  />
+                </div>
+                <div>
+                  <label className={labelClass}>Source</label>
+                  <LinkSearchField
+                    value={form.source ?? ""}
+                    onChange={(v) => update({ source: v ?? "" })}
+                    searchFn={async (q) => {
+                      const results = await customerService.searchLink("Lead Source", q, "Quotation")
+                      return { items: results }
+                    }}
+                    docType="Lead Source"
+                    placeholder="Select source…"
+                    validate={async (v) => {
+                      await customerService.validateLink("Lead Source", v)
+                    }}
+                    clearIconMode="hover"
+                    disabled={!isFieldEditable("source")}
+                  />
+                </div>
+                <div>
+                  <label className={labelClass}>Opportunity</label>
+                  <LinkSearchField
+                    value={form.opportunity ?? ""}
+                    onChange={(v) => update({ opportunity: v ?? "" })}
+                    searchFn={async (q) => {
+                      const results = await customerService.searchLink("Opportunity", q, "Quotation")
+                      return { items: results }
+                    }}
+                    docType="Opportunity"
+                    placeholder="Select opportunity…"
+                    readOnly
                     clearIconMode="hover"
                   />
                 </div>
@@ -2475,40 +2657,7 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
                       await customerService.validateLink("Supplier Quotation", v)
                     }}
                     clearIconMode="hover"
-                  />
-                </div>
-                <div>
-                  <label className={labelClass}>Territory</label>
-                  <LinkSearchField
-                    value={form.territory ?? ""}
-                    onChange={(v) => update({ territory: v ?? "" })}
-                    searchFn={async (q) => {
-                      const results = await customerService.searchLink("Territory", q, "Quotation")
-                      return { items: results }
-                    }}
-                    validate={async (v) => {
-                      await customerService.validateLink("Territory", v)
-                    }}
-                    docType="Territory"
-                    placeholder="Select territory…"
-                    clearIconMode="hover"
-                  />
-                </div>
-                <div>
-                  <label className={labelClass}>Source</label>
-                  <LinkSearchField
-                    value={form.source ?? ""}
-                    onChange={(v) => update({ source: v ?? "" })}
-                    searchFn={async (q) => {
-                      const results = await customerService.searchLink("Lead Source", q, "Quotation")
-                      return { items: results }
-                    }}
-                    docType="Lead Source"
-                    placeholder="Select source…"
-                    validate={async (v) => {
-                      await customerService.validateLink("Lead Source", v)
-                    }}
-                    clearIconMode="hover"
+                    disabled={!isFieldEditable("supplier_quotation")}
                   />
                 </div>
               </div>

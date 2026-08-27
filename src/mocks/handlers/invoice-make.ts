@@ -1,5 +1,6 @@
 import { http, HttpResponse, delay } from "msw"
 import { salesInvoices, salesOrders } from "./frappe-lookups"
+import { addQuotationRow } from "./quotations"
 
 // ERPNext "Create" actions from the Sales Invoice toolbar (sales_invoice.js
 // + frappe.model.mapper.make_mapped_doc). Each returns the fresh target doc
@@ -46,6 +47,10 @@ const MAPPED_TARGETS: Record<string, { doctype: string; prefix: string }> = {
   "erpnext.selling.doctype.quotation.quotation.make_sales_invoice": {
     doctype: "Sales Invoice",
     prefix: "SINV",
+  },
+  "erpnext.crm.doctype.opportunity.opportunity.make_quotation": {
+    doctype: "Quotation",
+    prefix: "SAL-QTN",
   },
 }
 
@@ -117,6 +122,24 @@ export const invoiceMakeHandlers = [
         status: "Draft",
         docstatus: 0,
         owner: "admin@blesserp.com",
+        modified: stamp,
+        modified_by: "admin@blesserp.com",
+      })
+    }
+    if (target.doctype === "Quotation") {
+      addQuotationRow({
+        name: result.name,
+        customer_name: "Maple Leaf Bakery",
+        party_name: "CUST-0001",
+        transaction_date: today,
+        valid_till: "",
+        currency: "CAD",
+        grand_total: 0,
+        rounded_total: 0,
+        status: "Draft",
+        docstatus: 0,
+        owner: "admin@blesserp.com",
+        creation: stamp,
         modified: stamp,
         modified_by: "admin@blesserp.com",
       })

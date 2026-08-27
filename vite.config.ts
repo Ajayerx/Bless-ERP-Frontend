@@ -13,8 +13,8 @@ export default defineConfig({
   server: {
     proxy: {
       "/api": {
-        target: "https://blesserp.com",
-        // target: "http://blesserp.local:8000",
+        //target: "https://blesserp.com",
+        target: "http://blesserp.local:8000",
         changeOrigin: true,
       },
     },

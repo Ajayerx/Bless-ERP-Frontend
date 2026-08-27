@@ -21,7 +21,8 @@ import {
   Mail,
   Frown,
   ShoppingCart,
-  ReceiptText,
+  Target,
+  PackageOpen,
 } from "lucide-react"
 import Topbar from "@/components/layout/Topbar"
 import {
@@ -45,6 +46,7 @@ import QuotationForm, { type QuotationFormHandle } from "../components/Quotation
 import SetLostDialog from "../components/SetLostDialog"
 import UpdateItemsDialog from "../components/UpdateItemsDialog"
 import AlternativeItemsDialog from "../components/AlternativeItemsDialog"
+import GetItemsFromOpportunityDialog from "../components/GetItemsFromOpportunityDialog"
 import QuotationPrintPreviewDialog from "../components/QuotationPrintPreviewDialog"
 import SendQuotationEmailDialog from "../components/SendQuotationEmailDialog"
 import type { Quotation, QuotationStatus } from "../types"
@@ -79,6 +81,8 @@ export default function QuotationWorkspace({ mode, id }: QuotationWorkspaceProps
   const [acting, setActing] = useState(false)
 
   const [createOpen, setCreateOpen] = useState(false)
+  const [getItemsOpen, setGetItemsOpen] = useState(false)
+  const [getItemsPickerOpen, setGetItemsPickerOpen] = useState(false)
   const [previewOpen, setPreviewOpen] = useState(false)
   const [emailOpen, setEmailOpen] = useState(false)
   const [lostOpen, setLostOpen] = useState(false)
@@ -241,6 +245,15 @@ export default function QuotationWorkspace({ mode, id }: QuotationWorkspaceProps
     }
   }
 
+  const handleGetItemsFromOpportunity = async (sourceName: string) => {
+    try {
+      const res = await quotationService.makeQuotationFromOpportunity(sourceName)
+      navigate(`/quotations/${res.name}`)
+    } catch (err) {
+      showMessage(messageFromError(err, "Failed to get items from Opportunity."))
+    }
+  }
+
   const handleCreateSOWithSelected = async (
     selectedItems: Array<{ name: string; item_code: string; is_alternative: number }>,
   ) => {
@@ -250,16 +263,6 @@ export default function QuotationWorkspace({ mode, id }: QuotationWorkspaceProps
       navigate(`/sales-orders/${res.name}`)
     } catch (err) {
       showMessage(messageFromError(err, "Failed to create Sales Order."))
-    }
-  }
-
-  const handleCreateSI = async () => {
-    if (!quotation) return
-    try {
-      const res = await quotationService.makeSalesInvoice(quotation.name)
-      navigate(`/invoices/${res.name}`)
-    } catch (err) {
-      showMessage(messageFromError(err, "Failed to create Sales Invoice."))
     }
   }
 
@@ -329,43 +332,66 @@ export default function QuotationWorkspace({ mode, id }: QuotationWorkspaceProps
     }
 
     if (isDraft) {
-      return dirty ? (
-        <Button
-          variant="primary"
-          size="sm"
-          onClick={() => void handleSave("Save")}
-          loading={acting}
-          data-testid="save_button"
-        >
-          <Save size={14} /> Save
-        </Button>
-      ) : (
-        <Button
-          variant="primary"
-          size="sm"
-          onClick={() => void handleSave("Submit")}
-          loading={acting}
-          disabled={isLost || isOrdered}
-          data-testid="submit_button"
-        >
-          <CheckCircle2 size={14} /> Submit
-        </Button>
+      return (
+        <>
+          <div className="relative">
+            <Button
+              size="sm"
+              onClick={() => setGetItemsOpen((v) => !v)}
+              className="flex items-center gap-1"
+              title="Get Items From"
+            >
+              <PackageOpen size={14} /> Get Items From <ChevronDown size={12} />
+            </Button>
+            {getItemsOpen && (
+              <>
+                <div
+                  className="fixed inset-0 z-10"
+                  onClick={() => setGetItemsOpen(false)}
+                />
+                <div className="absolute right-0 mt-1 z-20 w-56 bg-white border border-border rounded-lg shadow-xl py-1">
+                  <button
+                    onClick={() => {
+                      setGetItemsOpen(false)
+                      setGetItemsPickerOpen(true)
+                    }}
+                    className="w-full text-left px-4 py-2.5 text-sm text-body hover:bg-gray-50 flex items-center gap-2"
+                  >
+                    <Target size={14} /> Opportunity
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+          {dirty ? (
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => void handleSave("Save")}
+              loading={acting}
+              data-testid="save_button"
+            >
+              <Save size={14} /> Save
+            </Button>
+          ) : (
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => void handleSave("Submit")}
+              loading={acting}
+              disabled={isLost || isOrdered}
+              data-testid="submit_button"
+            >
+              <CheckCircle2 size={14} /> Submit
+            </Button>
+          )}
+        </>
       )
     }
 
     if (isSubmitted) {
-      return dirty ? (
-        <Button
-          variant="primary"
-          size="sm"
-          onClick={() => void handleSave("Update")}
-          loading={acting}
-          data-testid="save_button"
-        >
-          <CheckCircle2 size={14} /> Update
-        </Button>
-      ) : (
-          <>
+      return (
+        <>
           {!isOrdered && !isLost && (
             <>
               <Button
@@ -399,20 +425,22 @@ export default function QuotationWorkspace({ mode, id }: QuotationWorkspaceProps
                       >
                         <ShoppingCart size={14} /> Sales Order
                       </button>
-                      <button
-                        onClick={() => {
-                          setCreateOpen(false)
-                          void handleCreateSI()
-                        }}
-                        className="w-full text-left px-4 py-2.5 text-sm text-body hover:bg-gray-50 flex items-center gap-2"
-                      >
-                        <ReceiptText size={14} /> Sales Invoice
-                      </button>
                     </div>
                   </>
                 )}
               </div>
             </>
+          )}
+          {dirty && (
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => void handleSave("Update")}
+              loading={acting}
+              data-testid="save_button"
+            >
+              <CheckCircle2 size={14} /> Update
+            </Button>
           )}
           <Button variant="danger" size="sm" onClick={() => void handleCancel()} loading={acting} disabled={isOrdered}>
             <XCircle size={14} /> Cancel
@@ -544,6 +572,11 @@ export default function QuotationWorkspace({ mode, id }: QuotationWorkspaceProps
                   items={quotation.items}
                   currency={quotation.currency}
                   onContinue={handleCreateSOWithSelected}
+                />
+                <GetItemsFromOpportunityDialog
+                  open={getItemsPickerOpen}
+                  onOpenChange={setGetItemsPickerOpen}
+                  onSelect={(sourceName) => void handleGetItemsFromOpportunity(sourceName)}
                 />
               </>
             )}
