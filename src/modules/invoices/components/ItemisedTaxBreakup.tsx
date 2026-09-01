@@ -5,10 +5,12 @@ import type { ItemisedTaxBreakupRow } from "../services";
 interface ItemisedTaxBreakupProps {
   rows: ItemisedTaxBreakupRow[];
   /**
-   * ERPNext stores the pre-rendered Itemised Tax Breakup HTML on the doc
-   * (`other_charges_calculation`, generated server-side on every save). It is
-   * shown only as a fallback when the live-computed table has no rows (no line
-   * items / no usable taxes); otherwise the styled computed table is used.
+   * ERPNext stores a pre-rendered per-item Tax Breakup HTML on the doc
+   * (`other_charges_calculation`). We do NOT render that HTML verbatim because
+   * it uses Bootstrap classes that are unstyled here; instead the caller builds
+   * `rows` from the authoritative server data (`item_wise_tax_detail`). This
+   * prop is retained only as a last-resort fallback for drafts that have no
+   * computable rows.
    */
   storedHtml?: string;
   isReturn?: boolean;
@@ -28,6 +30,9 @@ export default function ItemisedTaxBreakup({
   storedHtml,
   isReturn = false,
 }: ItemisedTaxBreakupProps) {
+  // Primary path is the styled table driven by server/derived data. The stored
+  // ERPNext HTML (Bootstrap classes) is only a last-resort for drafts with no
+  // computable rows, wrapped so the surrounding styled card keeps it tidy.
   if (!rows.length) {
     if (!storedHtml || !storedHtml.trim()) return null;
     return (

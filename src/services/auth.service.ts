@@ -14,9 +14,18 @@ export interface AuthService {
   getCurrentUser(): Promise<User | null>
 }
 
-function getCookie(name: string): string | undefined {
-  const match = document.cookie.match(new RegExp(`(?:^|; )${name}=([^;]*)`))
-  return match ? decodeURIComponent(match[1]) : undefined
+async function fetchLoggedUser(): Promise<string | null> {
+  const res = await fetch(`${API_CONFIG.baseUrl}/method/frappe.auth.get_logged_user`, {
+    credentials: "include",
+  })
+  if (!res.ok) return null
+  const body = (await res.json().catch(() => null)) as { message?: string } | null
+  const userId = body?.message
+  return userId && userId !== "Guest" ? userId : null
+}
+
+export async function getLoggedInUserId(): Promise<string | null> {
+  return fetchLoggedUser()
 }
 
 export const authService: AuthService = {
@@ -43,8 +52,8 @@ export const authService: AuthService = {
   },
 
   async getCurrentUser(): Promise<User | null> {
-    const userId = getCookie("user_id")
-    if (!userId || userId === "Guest") return null
+    const userId = await fetchLoggedUser()
+    if (!userId) return null
     try {
       const doc = await apiClient<any>(`/resource/User/${encodeURIComponent(userId)}`)
       return {

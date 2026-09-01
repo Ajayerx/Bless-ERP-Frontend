@@ -1,11 +1,7 @@
 import { apiClient } from "@/services/api-client"
+import { getLoggedInUserId } from "@/services/auth.service"
 import type { CompanyInfo, TaxConfig, AppDefaults, AppUser, UserProfile, UserRole, NotificationPreferences, SecuritySettings, AppearanceSettings, Settings } from "../types"
 export type { CompanyInfo, TaxConfig, AppDefaults, AppUser, UserProfile, UserRole, NotificationPreferences, SecuritySettings, AppearanceSettings, Settings }
-
-function getCookie(name: string): string | undefined {
-  const match = document.cookie.match(new RegExp(`(?:^|; )${name}=([^;]*)`))
-  return match ? decodeURIComponent(match[1]) : undefined
-}
 
 interface FrappeSystemSettings {
   session_expiry: string
@@ -103,8 +99,8 @@ function parseGstRates(): { gstRate: number; qstRate: number; gstEnabled: boolea
 
 export const settingsService = {
   async get(): Promise<Settings | null> {
-    const userId = getCookie("user_id")
-    if (!userId || userId === "Guest") return null
+    const userId = await getLoggedInUserId()
+    if (!userId) return null
 
     try {
       const [userDoc, globalDefaults, systemSettings] = await Promise.all([
@@ -233,8 +229,8 @@ export const settingsService = {
   },
 
   async update(data: Partial<Settings>): Promise<void> {
-    const userId = getCookie("user_id")
-    if (!userId || userId === "Guest") return
+    const userId = await getLoggedInUserId()
+    if (!userId) return
 
     const updates: Record<string, unknown> = {}
 

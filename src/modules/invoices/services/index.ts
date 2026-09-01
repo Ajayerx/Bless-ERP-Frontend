@@ -2675,11 +2675,19 @@ export interface ItemisedTaxBreakupInputItem {
   itemName: string
   qty: number
   netAmount: number
+  /**
+   * Per-item tax rate map keyed by account_head, parsed from the item's
+   * `item_tax_rate` JSON (item-level tax template). Mirrors ERPNext's
+   * `item_tax_map` used in `_get_tax_rate` (taxes_and_totals.py:366-370).
+   */
+  itemTaxRate?: Record<string, number>
 }
 
 export interface ItemisedTaxBreakupTaxRow {
   charge_type: ChargeType
   description: string
+  /** Used to resolve per-item rates from an item's itemTaxRate map (item tax template). */
+  account_head?: string
   rate: number
   tax_amount: number
   row_id?: number
@@ -2698,86 +2706,262 @@ export interface ItemisedTaxBreakupRow {
 const round2 = (value: number) => Math.round(value * 100) / 100
 
 /**
- * ERPNext `get_itemised_tax_breakup_data` parity (taxes_and_totals.py:1103-1209):
- * builds the per-item tax breakdown shown in the "Tax Breakup" section. Each tax
- * row is distributed per item exactly like `set_item_wise_tax` /
- * `get_current_tax_amount` do on the server (taxes_and_totals.py:500-560):
+ * ERPNext `get_itemised_tax_breakup_data` parity (taxes_and_totals.py:1103-1209).
+ * Builds the per-item tax breakdown shown in the "Tax Breakup" section, mirroring
+ * the exact server algorithm from `calculate_taxes` / `get_current_tax_amount` /
+ * `set_item_wise_tax` (taxes_and_totals.py:397-560):
  *
- *   On Net Total         -> rate% of the item's taxable amount
- *   On Item Quantity     -> rate x item qty
- *   On Previous Row ...  -> rate% of the PREVIOUS row's per-item amount/total
- *   Actual               -> item.net_amount x tax_amount / net_total (proportional)
+ *   On Net Total         -> (perItemRate/100) x item.net_amount
+ *   On Item Quantity     -> perItemRate x item.qty
+ *   On Previous Row Amount -> (perItemRate/100) x PREVIOUS row's per-item tax
+ *   On Previous Row Total  -> (perItemRate/100) x PREVIOUS row's per-item grand total
+ *   Actual               -> item.net_amount x tax_amount / net_total (proportional),
+ *                           with the divisional-loss adjusted into the LAST item
  *
- * Valuation-category rows are excluded (ERPNext skips them for the breakup),
- * per-item amounts are rounded to 2 dp like `get_rounded_tax_amount`, and each
- * tax column is keyed by the row's `description` (deduplicated in ERPNext).
- * Amounts are computed in transaction currency directly (ERPNext stores them in
- * base currency and divides by conversion_rate when rendering).
+ * `perItemRate` is the per-item tax rate resolved from the item's item_tax_map
+ * (item-level tax template) when present, otherwise the header row rate
+ * (`_get_tax_rate`, taxes_and_totals.py:366-370). Per-item amounts are rounded
+ * to 2dp in BASE currency (`current_tax_amount x conversion_rate`) and then
+ * divided back by conversion_rate to match ERPNext's stored `item_wise_tax_detail`
+ * plus the template's `tax_amount / conversion_rate` rendering. Items with the
+ * same key (`item_code || item_name`) are aggregated into a single row, exactly
+ * like `set_item_wise_tax` accumulates per key. Valuation rows are excluded.
  */
 export function getItemisedTaxBreakupData(
   items: ItemisedTaxBreakupInputItem[],
   taxRows: ItemisedTaxBreakupTaxRow[],
-  opts?: { netTotal?: number },
+  opts?: { netTotal?: number; conversionRate?: number },
 ): ItemisedTaxBreakupRow[] {
   const netTotal =
     opts?.netTotal ?? items.reduce((sum, item) => sum + item.netAmount, 0)
+  const conversionRate = opts?.conversionRate ?? 1
 
-  // Unrounded per-tax-row, per-item amounts, indexed by the FULL tax list order
-  // (row_id references positions in the taxes child table, matching ERPNext).
-  const perItemAmounts = taxRows.map(() => items.map(() => 0))
-  // Running per-item grand total (net + all prior rows' amounts for the item).
-  const grandTotalPerItem = items.map((item) => item.netAmount)
+  const rowCount = taxRows.length
+  // Per-tax-row, per-line-item amounts (in transaction currency, base then
+  // divided back), indexed by raw line order matching ERPNext's `self._items`.
+  const perLineAmounts = Array.from({ length: rowCount }, () =>
+    items.map(() => 0),
+  )
+  // Running per-line grand total (net + all prior rows' amounts for that line),
+  // mirroring `grand_total_for_current_item` (taxes_and_totals.py:445-452).
+  const grandTotalPerLine = items.map((item) => item.netAmount)
+  // Previous-row per-line tax for "On Previous Row Amount"
+  // (`tax_amount_for_current_item`, taxes_and_totals.py:436).
+  const prevLineTax = Array.from({ length: rowCount }, () =>
+    items.map(() => 0),
+  )
 
-  taxRows.forEach((tax, i) => {
-    const isPreviousRow =
-      tax.charge_type === "On Previous Row Amount" ||
-      tax.charge_type === "On Previous Row Total"
-    const refRow = isPreviousRow
-      ? taxRows[(tax.row_id ?? (i > 0 ? i + 1 : 1)) - 1]
-      : null
-    if (isPreviousRow && !refRow) return
-
-    items.forEach((item, j) => {
-      let amount = 0
-      switch (tax.charge_type) {
-        case "On Net Total":
-          amount = (tax.rate / 100) * item.netAmount
-          break
-        case "On Item Quantity":
-          amount = tax.rate * item.qty
-          break
-        case "On Previous Row Amount":
-          amount = (tax.rate / 100) * (perItemAmounts[refRow ? taxRows.indexOf(refRow) : 0][j] ?? 0)
-          break
-        case "On Previous Row Total":
-          amount = (tax.rate / 100) * grandTotalPerItem[j]
-          break
-        case "Actual":
-          amount = netTotal ? (item.netAmount * tax.tax_amount) / netTotal : 0
-          break
+  // Divisibility loss for Actual rows: distribute proportionally then nudge the
+  // LAST raw line so the per-item amounts sum exactly to tax.tax_amount
+  // (calculate_taxes, taxes_and_totals.py:422-426).
+  for (let i = 0; i < rowCount; i++) {
+    const tax = taxRows[i]
+    if (tax.charge_type !== "Actual") continue
+    const totalTax = tax.tax_amount
+    let remaining = totalTax
+    for (let j = 0; j < items.length; j++) {
+      const raw = netTotal ? (items[j].netAmount * totalTax) / netTotal : 0
+      const base = raw * conversionRate
+      const isLast = j === items.length - 1
+      let roundedBase: number
+      if (isLast) {
+        // Assign the remainder so the row sums to totalTax.
+        let summed = 0
+        for (let k = 0; k < j; k++) {
+          const b = perLineAmounts[i][k] * conversionRate
+          summed += b
+        }
+        roundedBase = Math.round((totalTax * conversionRate - summed) * 100) / 100
+      } else {
+        roundedBase = Math.round(base * 100) / 100
       }
-      perItemAmounts[i][j] = amount
-      grandTotalPerItem[j] += amount
-    })
-  })
+      perLineAmounts[i][j] = roundedBase / conversionRate
+      grandTotalPerLine[j] += perLineAmounts[i][j]
+      prevLineTax[i][j] = perLineAmounts[i][j]
+      remaining = totalTax - perLineAmounts[i][j]
+      void remaining
+    }
+  }
 
-  return items.map((item, j) => {
-    const taxes: ItemisedTaxBreakupRow["taxes"] = {}
+  // Non-Actual rows: exact per-line computation with per-item rates.
+  for (let i = 0; i < rowCount; i++) {
+    const tax = taxRows[i]
+    if (tax.charge_type === "Actual") continue
+
+    const isPrevAmount = tax.charge_type === "On Previous Row Amount"
+    const isPrevTotal = tax.charge_type === "On Previous Row Total"
+    const isPreviousRow = isPrevAmount || isPrevTotal
+    const refIdx = isPreviousRow ? rowIdIndex(tax, i, rowCount) : -1
+
+    for (let j = 0; j < items.length; j++) {
+      const perItemRate = getTaxRate(tax, items[j])
+      let amount = 0
+      if (tax.charge_type === "On Net Total") {
+        amount = (perItemRate / 100) * items[j].netAmount
+      } else if (tax.charge_type === "On Item Quantity") {
+        amount = perItemRate * items[j].qty
+      } else if (isPrevAmount && refIdx !== -1) {
+        amount = (perItemRate / 100) * prevLineTax[refIdx][j]
+      } else if (isPrevTotal && refIdx !== -1) {
+        amount = (perItemRate / 100) * grandTotalPerLine[j]
+      }
+
+      // Store base-rounded then divided back (set_item_wise_tax parity).
+      const base = amount * conversionRate
+      const baseRounded = Math.round(base * 100) / 100
+      const docAmount = baseRounded / conversionRate
+      perLineAmounts[i][j] = docAmount
+      grandTotalPerLine[j] += docAmount
+      prevLineTax[i][j] = docAmount
+    }
+  }
+
+  // Aggregate by item key (item_code || item_name) — set_item_wise_tax parity.
+  const agg = new Map<string, ItemisedTaxBreakupRow>()
+  for (let j = 0; j < items.length; j++) {
+    const item = items[j]
+    const key = item.itemCode || item.itemName
+    let row = agg.get(key)
+    if (!row) {
+      row = {
+        item: item.itemCode || item.itemName,
+        itemCode: item.itemCode,
+        itemName: item.itemName,
+        taxableAmount: 0,
+        taxes: {},
+      }
+      agg.set(key, row)
+    }
+    row.taxableAmount = round2(row.taxableAmount + item.netAmount)
     taxRows.forEach((tax, i) => {
       if (tax.category === "Valuation") return
-      taxes[tax.description] = {
-        taxRate: tax.rate,
-        taxAmount: round2(perItemAmounts[i][j]),
-      }
+      const cur = row!.taxes[tax.description] ?? { taxRate: tax.rate, taxAmount: 0 }
+      cur.taxAmount = round2(cur.taxAmount + perLineAmounts[i][j])
+      row!.taxes[tax.description] = cur
     })
-    return {
-      item: item.itemCode || item.itemName,
-      itemCode: item.itemCode,
-      itemName: item.itemName,
-      taxableAmount: item.netAmount,
-      taxes,
+  }
+
+  return Array.from(agg.values())
+}
+
+/**
+ * Builds the Tax Breakup rows from ERPNext's STORED per-item detail
+ * (`taxes[].item_wise_tax_detail`, a JSON string `{ item_key: [rate, amount] }`
+ * in base currency) — an exact mirror of `get_itemised_tax_breakup_data` +
+ * `get_itemised_tax` + `get_itemised_taxable_amount` (taxes_and_totals.py:
+ * 1156-1209) plus the template's `tax_amount / conversion_rate` render.
+ *
+ * Valuations are excluded and duplicate item keys are aggregated, exactly like
+ * the server. This is preferred over `getItemisedTaxBreakupData` because it uses
+ * the authoritative per-item amounts ERPNext computed and stored at save time.
+ */
+export function getItemisedTaxBreakupRowsFromDetail(
+  taxRows: Array<{
+    description: string
+    category?: string
+    /** ERPNext `item_wise_tax_detail` JSON: `{ key: [rate, baseAmount] }`. */
+    item_wise_tax_detail?: string
+  }>,
+  items: Array<{ itemCode: string; itemName: string; netAmount: number }>,
+  conversionRate = 1,
+): ItemisedTaxBreakupRow[] {
+  // Skip Valuation rows (ERPNext does for both headers and data).
+  const usable = taxRows.filter((t) => t.category !== "Valuation")
+  const descriptionOrder: string[] = []
+  for (const t of usable) {
+    if (t.description && !descriptionOrder.includes(t.description)) {
+      descriptionOrder.push(t.description)
     }
-  })
+  }
+
+  // Aggregate taxable amounts by item key (get_itemised_taxable_amount parity).
+  const taxableByKey = new Map<string, ItemisedTaxBreakupRow>()
+  for (const item of items) {
+    const key = item.itemCode || item.itemName
+    let entry = taxableByKey.get(key)
+    if (!entry) {
+      entry = {
+        item: key,
+        itemCode: item.itemCode,
+        itemName: item.itemName,
+        taxableAmount: 0,
+        taxes: {},
+      }
+      taxableByKey.set(key, entry)
+    }
+    entry.taxableAmount = round2(entry.taxableAmount + item.netAmount)
+  }
+
+  for (const tax of usable) {
+    if (!tax.item_wise_tax_detail) continue
+    let map: Record<string, unknown>
+    try {
+      map = JSON.parse(tax.item_wise_tax_detail) as Record<string, unknown>
+    } catch {
+      continue
+    }
+    for (const [key, data] of Object.entries(map)) {
+      let entry = taxableByKey.get(key)
+      if (!entry) {
+        entry = {
+          item: key,
+          itemCode: key,
+          itemName: key,
+          taxableAmount: 0,
+          taxes: {},
+        }
+        taxableByKey.set(key, entry)
+      }
+      let taxRate = 0
+      let baseAmount = 0
+      if (Array.isArray(data)) {
+        taxRate = typeof data[0] === "number" ? data[0] : parseFloat(String(data[0])) || 0
+        baseAmount =
+          typeof data[1] === "number" ? data[1] : parseFloat(String(data[1])) || 0
+      } else if (typeof data === "number") {
+        taxRate = data
+      }
+      const amount = round2(baseAmount / (conversionRate || 1))
+      const cur =
+        entry.taxes[tax.description] ?? { taxRate, taxAmount: 0 }
+      entry.taxes[tax.description] = {
+        taxRate,
+        taxAmount: round2(cur.taxAmount + amount),
+      }
+    }
+  }
+
+  // Ensure every row carries each tax column (ERPNext renders headers from all
+  // descriptions; empty cells are shown for items without that tax).
+  for (const entry of taxableByKey.values()) {
+    for (const desc of descriptionOrder) {
+      if (!entry.taxes[desc]) {
+        entry.taxes[desc] = { taxRate: 0, taxAmount: 0 }
+      }
+    }
+  }
+
+  return Array.from(taxableByKey.values())
+}
+
+/** `_get_tax_rate` parity (taxes_and_totals.py:366-370): item-level rate wins. */
+function getTaxRate(
+  tax: ItemisedTaxBreakupTaxRow,
+  item: ItemisedTaxBreakupInputItem,
+): number {
+  const mapRate = tax.account_head ? item.itemTaxRate?.[tax.account_head] : undefined
+  return typeof mapRate === "number" ? mapRate : tax.rate
+}
+
+/** Resolve the referenced previous-row index (1-based row_id). */
+function rowIdIndex(
+  tax: ItemisedTaxBreakupTaxRow,
+  i: number,
+  rowCount: number,
+): number {
+  const idx = tax.row_id ?? (i > 0 ? i + 1 : 1)
+  const refIdx = idx - 1
+  return refIdx >= 0 && refIdx < rowCount ? refIdx : -1
 }
 
 /**
@@ -2813,6 +2997,90 @@ export function computeTotalForDiscountAmount(
     }
   })
   return subtotal + totalTaxesAndChargesBase - actualTax
+}
+
+/**
+ * ERPNext `apply_discount_amount` parity (taxes_and_totals.py:746-799). When an
+ * additional discount is applied, ERPNext apportions it across the items and
+ * REDUCES each `item.net_amount` (and records `item.distributed_discount_amount`).
+ * That discounted `net_amount` is what the Tax Breakup's Taxable Amount and
+ * per-item tax columns are computed from, so the breakup must use it too.
+ *
+ * `total_for_discount_amount` follows `get_total_for_discount_amount`
+ * (taxes_and_totals.py:803-844): `apply_discount_on == "Net Total"` uses the
+ * discounted net_total directly; "Grand Total" uses the pre-discount
+ * net + non-Actual tax base (`computeTotalForDiscountAmount`). The rounding
+ * remainder is pushed into the LAST item so the discounted net_amounts sum
+ * exactly to the target net_total (taxes_and_totals.py:779-790).
+ */
+export function applyDiscountToItemNetAmounts(
+  netAmounts: number[],
+  opts: {
+    discountAmount: number
+    applyDiscountOn: "Grand Total" | "Net Total"
+    /** Pre-discount net_total (sum of gross net_amounts) for the Net Total base. */
+    netTotal: number
+    /** (Grand Total only) pre-discount tax rows used to compute the discount base. */
+    taxRows?: EditableTaxRow[]
+    /** (Grand Total only) pre-discount sum of all tax_amounts. */
+    totalTaxesAndChargesBase?: number
+    /** Optional target discounted net_total the discounted amounts must sum to. */
+    discountedNetTotal?: number
+  },
+): { netAmounts: number[]; distributed: number[] } {
+  const { discountAmount, applyDiscountOn, netTotal, taxRows, totalTaxesAndChargesBase, discountedNetTotal } =
+    opts
+  if (!(discountAmount > 0)) {
+    return { netAmounts: [...netAmounts], distributed: netAmounts.map(() => 0) }
+  }
+
+  const totalForDiscount =
+    applyDiscountOn === "Net Total"
+      ? netTotal
+      : computeTotalForDiscountAmount(taxRows ?? [], netTotal, totalTaxesAndChargesBase ?? 0)
+
+  if (!(totalForDiscount > 0)) {
+    return { netAmounts: [...netAmounts], distributed: netAmounts.map(() => 0) }
+  }
+
+  const adjusted: number[] = []
+  const distributed: number[] = []
+  let expectedNetTotal = 0
+  let runningNetTotal = 0
+
+  for (let i = 0; i < netAmounts.length; i++) {
+    const net = netAmounts[i]
+    const distributedAmount = (discountAmount * net) / totalForDiscount
+    const adjustedNet = net - distributedAmount
+    expectedNetTotal += adjustedNet
+
+    let roundedNet = round2(adjustedNet)
+    let distributedAmountRounded = round2(distributedAmount)
+
+    // ERPNext: expected_net_total accumulates the unrounded adjustedNet while
+    // net_total accumulates the rounded item.net_amount; the difference is
+    // absorbed by the current item each iteration (taxes_and_totals.py:779-790).
+    const roundingDifference = round2(expectedNetTotal - (runningNetTotal + roundedNet))
+    if (roundingDifference) {
+      roundedNet = round2(roundedNet + roundingDifference)
+      distributedAmountRounded = round2(distributedAmount + roundingDifference)
+    }
+
+    adjusted[i] = roundedNet
+    distributed[i] = distributedAmountRounded
+    runningNetTotal += roundedNet
+  }
+
+  // Ensure the discounted net_amounts sum exactly to the target net_total when
+  // the caller supplies one (reconciles any residual drift vs. the doc total).
+  const netTotalDiff = round2((discountedNetTotal ?? runningNetTotal) - runningNetTotal)
+  if (netAmounts.length && netTotalDiff) {
+    const last = netAmounts.length - 1
+    adjusted[last] = round2(adjusted[last] + netTotalDiff)
+    distributed[last] = round2(distributed[last] + netTotalDiff)
+  }
+
+  return { netAmounts: adjusted, distributed }
 }
 
 /** Create a blank tax row with sensible defaults. */

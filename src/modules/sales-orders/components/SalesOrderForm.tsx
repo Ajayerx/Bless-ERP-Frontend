@@ -1,5 +1,15 @@
 "use client"
 
+/**
+ * Full editable Sales Order form — "Create Sales Order from a submitted
+ * quotation" parity with ERPNext's Sales Order desk form. Mirrors the
+ * QuotationForm structure (ERPNext 3-column header, child-grid items +
+ * 3-column footer, editable taxes + ItemisedTaxBreakup, collapsible
+ * sections) but drives the field set from $SALES_ORDER_FIELD_META via
+ * $useSalesOrderVisibilityRules (hide/show / readOnly / reqd per field with
+ * docstatus awareness) and persists through $salesOrderService.saveDoc.
+ */
+
 import {
   forwardRef,
   useEffect,
@@ -10,23 +20,16 @@ import {
   type ReactNode,
 } from "react"
 import { useNavigate } from "react-router-dom"
-import {
-  CollapsibleSection,
-  Input,
-  LinkSearchField,
-  useToast,
-} from "@/components/ui"
-import { ScanBarcode, X } from "lucide-react"
-import {
-  Combobox,
-  inputClass,
-  labelClass,
-} from "@/components/ui/form-fields"
+import { CollapsibleSection, Input, LinkSearchField, useToast } from "@/components/ui"
+import { Combobox, inputClass, labelClass } from "@/components/ui/form-fields"
 import ChildTableGrid, { type GridColumn } from "@/components/ui/ChildTableGrid"
-import { useAuth } from "@/context/AuthContext"
 import { useCompany } from "@/context/CompanyContext"
 import { useLazyOptions } from "@/services/lookup-cache"
-import { quotationService, buildApplyPriceListArgs, buildDeskApplyPriceListDoc, enrichQuotationItem, SuppressedDuplicateError, deskRandomString } from "@/modules/quotations/services"
+import {
+  salesOrderService,
+  deskRandomString,
+  type SalesOrderPartyDetails,
+} from "@/modules/sales-orders/services"
 import { customerService } from "@/modules/customers/services"
 import {
   applyDiscountToItemNetAmounts,
@@ -44,38 +47,38 @@ import { AddMultipleModal, type LineItemForm } from "@/modules/invoices/componen
 import ItemisedTaxBreakup from "@/modules/invoices/components/ItemisedTaxBreakup"
 import SalesTaxesChargesTable from "@/modules/invoices/components/SalesTaxesChargesTable"
 import { moneyInWords } from "@/modules/payments/utils/moneyInWords"
+import { quotationService } from "@/modules/quotations/services"
 import type { Product } from "@/services"
 import type {
-  LostReasonRow,
-  PricingRuleRow,
-  Quotation,
-  QuotationFormData,
-  QuotationItem,
-  QuotationTax,
-} from "@/modules/quotations/types"
+  SalesOrderDoc,
+  SalesOrderFormData,
+  SalesOrderItemForm,
+  SalesOrderTax,
+  SalesOrderPaymentScheduleRow,
+  SalesOrderPricingRuleRow,
+  SalesOrderSalesTeamRow,
+} from "../types"
 import {
-  useVisibilityRules,
-  DEFAULT_RULES,
-  DEFAULT_FIELD_STATE,
-  EMPTY_HIDE_EXEMPT,
-  resolveDocstatusAware,
-} from "@/modules/quotations/hooks/useVisibilityRules"
+  useSalesOrderVisibilityRules,
+  SALES_ORDER_EMPTY_HIDE_EXEMPT,
+  salesOrderResolveField,
+  SALES_ORDER_DEFAULT_FIELD_STATE,
+} from "../hooks/useVisibilityRules"
 import { formatCurrency, formatFixed } from "@/lib/utils"
 
 const ORDER_TYPE_OPTIONS = ["Sales", "Maintenance", "Shopping Cart"] as const
 
-type QuotationFormTab = "details" | "address" | "terms" | "more_info"
+type SalesOrderFormTab = "details" | "address" | "terms" | "more_info"
 
-export interface QuotationFormHandle {
+export interface SalesOrderFormHandle {
   save: (action?: "Save" | "Update" | "Submit") => Promise<string | undefined>
   isDirty: () => boolean
 }
 
-export interface QuotationFormProps {
-  quotation?: Quotation | null
+export interface SalesOrderFormProps {
+  doc?: SalesOrderDoc | null
   mode?: "create" | "edit"
-  onSaved?: (doc: Quotation) => void
-  onSavingChange?: (saving: boolean) => void
+  onSaved?: (doc: SalesOrderDoc) => void
   onDirtyChange?: (dirty: boolean) => void
 }
 
@@ -89,14 +92,13 @@ function addDaysISO(days: number): string {
   return d.toISOString().slice(0, 10)
 }
 
-// SPA display fields normalize <br> to newlines (mirrors invoice Address block).
-function normalizeDisplayText(value?: string) {
+function normalizeDisplayText(value?: string): string {
   return (value ?? "").replace(/<br\s*\/?>/gi, "\n")
 }
 
-function createEmptyItem(): QuotationItem {
+function createEmptyItem(): SalesOrderItemForm {
   return {
-    name: `new-quotation-item-${deskRandomString()}`,
+    name: `new-sales-order-item-${deskRandomString()}`,
     item_name: "",
     item_code: "",
     qty: 1,
@@ -106,14 +108,14 @@ function createEmptyItem(): QuotationItem {
     rate: 0,
     amount: 0,
     discount_percentage: 0,
+    reserve_stock: 0,
+    delivered_by_supplier: 0,
     is_free_item: 0,
     grant_commission: 1,
-    is_alternative: 0,
-    has_alternative_item: 0,
   }
 }
 
-function quotationTaxesToEditable(taxes: QuotationTax[]): EditableTaxRow[] {
+function soTaxesToEditable(taxes: SalesOrderTax[]): EditableTaxRow[] {
   return taxes.map((t) => ({
     charge_type: (t.charge_type || "On Net Total") as EditableTaxRow["charge_type"],
     account_head: t.account_head,
@@ -126,7 +128,7 @@ function quotationTaxesToEditable(taxes: QuotationTax[]): EditableTaxRow[] {
   }))
 }
 
-function editableToQuotationTaxes(rows: EditableTaxRow[]): QuotationTax[] {
+function editableToSalesOrderTaxes(rows: EditableTaxRow[]): SalesOrderTax[] {
   return rows.map((r) => ({
     charge_type: r.charge_type,
     account_head: r.account_head,
@@ -138,78 +140,89 @@ function editableToQuotationTaxes(rows: EditableTaxRow[]): QuotationTax[] {
   }))
 }
 
-export default forwardRef<QuotationFormHandle, QuotationFormProps>(
-  function QuotationForm(
+export default forwardRef<SalesOrderFormHandle, SalesOrderFormProps>(
+  function SalesOrderForm(
     {
-      quotation: initialData,
+      doc: initialData,
       mode = initialData ? "edit" : "create",
       onSaved,
-      onSavingChange,
       onDirtyChange,
     },
     ref,
   ) {
     const { companyDefaults } = useCompany()
-    const { user } = useAuth()
     const { addToast } = useToast()
 
     const companyCurrency = companyDefaults?.currency || "CAD"
     const defaultCompany = companyDefaults?.company || ""
     const defaultPriceList = companyDefaults?.defaultSellingPriceList || "Standard Selling"
 
-    const buildEmptyForm = (): QuotationFormData => ({
-      doctype: "Quotation",
-      naming_series: "SAL-QTN-.YYYY.-",
-      quotation_to: "Customer",
-      transaction_date: todayISO(),
-      valid_till: addDaysISO(30),
+    const buildEmptyForm = (): SalesOrderFormData => ({
+      doctype: "Sales Order",
+      naming_series: "SO-",
+      customer: "",
       order_type: "Sales",
+      transaction_date: todayISO(),
+      delivery_date: addDaysISO(7),
       company: defaultCompany,
       currency: companyCurrency,
       conversion_rate: 1,
       selling_price_list: defaultPriceList,
       price_list_currency: companyCurrency,
       plc_conversion_rate: 1,
+      reserve_stock: 0,
+      skip_delivery_note: 0,
+      has_unit_price_items: 0,
       items: [createEmptyItem()],
       taxes: [],
       payment_schedule: [],
-      lost_reasons: [],
-      competitors: [],
       pricing_rules: [],
-      group_same_items: 0,
+      packed_items: [],
+      sales_team: [],
+      total_qty: 0,
+      base_total: 0,
+      base_net_total: 0,
+      total: 0,
+      net_total: 0,
+      base_total_taxes_and_charges: 0,
+      total_taxes_and_charges: 0,
+      base_grand_total: 0,
+      base_rounding_adjustment: 0,
+      base_rounded_total: 0,
+      base_in_words: "",
+      grand_total: 0,
+      rounding_adjustment: 0,
+      rounded_total: 0,
+      in_words: "",
+      per_delivered: 0,
+      per_billed: 0,
       disable_rounded_total: 0,
       ignore_pricing_rule: 0,
+      group_same_items: 0,
       docstatus: 0,
       status: "Draft",
     })
 
-    const [form, setForm] = useState<QuotationFormData>(() =>
+    const [form, setForm] = useState<SalesOrderFormData>(() =>
       initialData ? { ...initialData } : buildEmptyForm(),
     )
-    const [baseline, setBaseline] = useState<QuotationFormData>(() =>
+    const [baseline, setBaseline] = useState<SalesOrderFormData>(() =>
       initialData ? { ...initialData } : buildEmptyForm(),
     )
-    const [saving, setSaving] = useState(false)
     const [currencyFraction, setCurrencyFraction] = useState<number | null>(null)
-    const baselineRef = useRef<QuotationFormData>(baseline)
-    const [activeTab, setActiveTab] = useState<
-      "details" | "address" | "terms" | "more_info"
-    >("details")
+    const baselineRef = useRef<SalesOrderFormData>(baseline)
+    const [activeTab, setActiveTab] = useState<SalesOrderFormTab>("details")
 
     const currencies = useLazyOptions<string[]>(
-      "quotation:currencies",
-      quotationService.lookups.currencies,
+      "sales-order:currencies",
+      salesOrderService.lookups.currencies,
       [],
     )
     const priceLists = useLazyOptions<string[]>(
-      "quotation:price-lists",
-      quotationService.lookups.priceLists,
+      "sales-order:price-lists",
+      salesOrderService.lookups.priceLists,
       [],
     )
-
-    // Pre-seeded for edit mode so the mount run doesn't replay the company()
-    // trigger chain on an already-loaded doc (desk only fires it on change).
-    const defaultsAppliedForCompany = useRef<string | null>(initialData?.company ?? null)
 
     useEffect(() => {
       if (initialData) {
@@ -220,27 +233,6 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
       }
     }, [initialData])
 
-    // CompanyContext resolves after first paint on hard loads, so
-    // buildEmptyForm() captured "" and nothing wrote it back (the Company
-    // input was removed for desk parity). Write the default into form AND
-    // both baselines so a pristine untouched form stays non-dirty — desk new
-    // docs carry company from bootinfo defaults before any user edit.
-    const companySyncedFor = useRef<string | null>(initialData?.company ?? null)
-    useEffect(() => {
-      if (initialData || !defaultCompany) return
-      if (form.company) {
-        companySyncedFor.current = form.company
-        return
-      }
-      if (companySyncedFor.current === defaultCompany) return
-      companySyncedFor.current = defaultCompany
-      setForm((prev) => (prev.company ? prev : { ...prev, company: defaultCompany }))
-      setBaseline((prev) => (prev.company ? prev : { ...prev, company: defaultCompany }))
-      baselineRef.current = baselineRef.current.company
-        ? baselineRef.current
-        : { ...baselineRef.current, company: defaultCompany }
-    }, [defaultCompany, form.company, initialData])
-
     useEffect(() => {
       const frac = getCurrencySmallestFraction(form.currency)
       frac.then((f) => {
@@ -249,97 +241,13 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [form.currency])
 
-    // Latest doc snapshot for async handlers (mirrors desk's frm.doc reads).
     const formRef = useRef(form)
     useEffect(() => {
       formRef.current = form
     }, [form])
 
-    const inApplyPriceList = useRef(false)
-    const companyAddressTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-    const defaultTaxesTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-    // Desk TransactionController.apply_price_list(item, reset_plc_conversion)
-    // (transaction.js:2018-2072): guard → mutex → call → apply parent/children.
-    const runApplyPriceList = (
-      docOverride?: Partial<Quotation>,
-      item?: QuotationItem | null,
-      resetPlcConversion = false,
-    ) => {
-      const base: Partial<Quotation> = { ...(docOverride ?? formRef.current) }
-      if (!resetPlcConversion) {
-        // Desk blanks plc_conversion_rate before building args. We drop it
-        // from the payload only — blanking React state would phantom-dirty
-        // a pristine form; the wire bytes stay identical.
-        base.plc_conversion_rate = undefined
-      }
-      const args = buildApplyPriceListArgs(
-        base as Partial<Quotation> & Record<string, unknown>,
-        item,
-      )
-      // Desk sends doc = the full frappe doc dict (meta keys, defaulted child
-      // numerics, null link slots) — build that envelope from our state.
-      const wireDoc = buildDeskApplyPriceListDoc(base as Partial<Quotation> & Record<string, unknown>, {
-        isNew: mode === "create" && !initialData,
-        owner: user?.id,
-      })
-      const itemCount = Array.isArray(args.items) ? (args.items as unknown[]).length : 0
-      if (!itemCount && !args.price_list) return
-      if (inApplyPriceList.current) return
-      inApplyPriceList.current = true
-      quotationService
-        .applyPriceList(args, wireDoc)
-        .then((res) => {
-          if (!res) return
-          const parent = res.parent || {}
-          const patch: QuotationFormData = {}
-          if (parent.price_list_currency)
-            patch.price_list_currency = String(parent.price_list_currency)
-          const plcRate = Number(parent.plc_conversion_rate)
-          if (!Number.isNaN(plcRate) && plcRate > 0) patch.plc_conversion_rate = plcRate
-          setForm((prev) => (Object.keys(patch).length ? { ...prev, ...patch } : prev))
-          // _set_values_for_item_list: map child values back onto rows.
-          const children = res.children ?? []
-          if (children.length > 0) {
-            setForm((prev) => {
-              const items = [...(prev.items ?? [])]
-              for (const child of children) {
-                const c = child as Record<string, unknown>
-                const idx = items.findIndex(
-                  (it) =>
-                    (!!c.child_docname && !!it.name && it.name === c.child_docname) ||
-                    (!c.child_docname && !!it.item_code && it.item_code === c.item_code),
-                )
-                if (idx < 0) continue
-                const row: QuotationItem = { ...items[idx] }
-                for (const [key, value] of Object.entries(c)) {
-                  if (
-                    key === "doctype" ||
-                    key === "name" ||
-                    key === "free_item_data" ||
-                    key === "child_docname" ||
-                    key === "item_code"
-                  ) {
-                    continue
-                  }
-                  ;(row as unknown as Record<string, unknown>)[key] = value
-                }
-                if (c.price_list_rate !== undefined) row.rate = Number(c.price_list_rate)
-                const discounted =
-                  (row.rate || 0) - ((row.rate || 0) * (row.discount_percentage || 0)) / 100
-                row.amount = Math.round(discounted * (row.qty || 0) * 100) / 100
-                items[idx] = row
-              }
-              return { ...prev, items }
-            })
-          }
-        })
-        .finally(() => {
-          inApplyPriceList.current = false
-        })
-    }
-
-    // Setup: accounting dimensions once per mount (desk setup_accounting_dimension_triggers).
+    // Accounting dimensions → item cost_center once per mount (desk
+    // setup_accounting_dimension_triggers parity).
     useEffect(() => {
       quotationService.getAccountingDimensions().then((dims) => {
         const company = formRef.current.company || defaultCompany
@@ -361,145 +269,45 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [])
 
-    // ── company() trigger chain (sales_common.js parity) ───────────────
-    // validate_link on the Company value + debounced default address; on a
-    // fresh new-doc also price list defaults and default taxes.
-    useEffect(() => {
-      const company = form.company || defaultCompany
-      if (!company) return
-      if (defaultsAppliedForCompany.current === company) return
-      const isFirstRun = defaultsAppliedForCompany.current === null
-      defaultsAppliedForCompany.current = company
-
-      // Link control validates the auto-set Company value (link.js validate_link_and_fetch).
-      quotationService.validateLink("Company", company, []).catch(() => undefined)
-
-      // set_default_company_address — debounce 2000ms like desk.
-      if (companyAddressTimer.current) clearTimeout(companyAddressTimer.current)
-      companyAddressTimer.current = setTimeout(() => {
-        quotationService
-          .getDefaultCompanyAddress(company, formRef.current.company_address || "")
-          .then((addr) => {
-            setForm((prev) => ({ ...prev, company_address: addr ?? "" }))
-          })
-      }, 2000)
-
-      // set_default_company_contact_person — skipped on load like desk's
-      // `if (!this.is_onload)` guard (avoids overriding mapped contacts).
-      if (!isFirstRun) {
-        quotationService
-          .getValue("Company", "default_sales_contact", { name: company })
-          .then((res) => {
-            const contact = res?.default_sales_contact
-            setForm((prev) => ({
-              ...prev,
-              company_contact_person: contact ? String(contact) : "",
-            }))
-          })
-          .catch(() => undefined)
-      }
-
-      // New-document-only defaults (__islocal guards in desk onload_post_render).
-      if (mode === "create" && !initialData) {
-        runApplyPriceList()
-
-        if (defaultTaxesTimer.current) clearTimeout(defaultTaxesTimer.current)
-        defaultTaxesTimer.current = setTimeout(async () => {
-          const res = await quotationService.getDefaultTaxesAndCharges(company, "")
-          setForm((prev) => {
-            if (!res) return prev
-            if (!res.taxes_and_charges && res.taxes.length === 0) return prev
-            if ((prev.taxes ?? []).length > 0) return prev
-            const patch: QuotationFormData = {
-              taxes_and_charges: res.taxes_and_charges || undefined,
-            }
-            if (res.taxes.length > 0) patch.taxes = res.taxes as unknown as QuotationTax[]
-            return { ...prev, ...patch }
-          })
-        }, 2000)
-      }
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [mode, form.company, initialData])
-
-    useEffect(() => {
-      return () => {
-        if (companyAddressTimer.current) clearTimeout(companyAddressTimer.current)
-        if (defaultTaxesTimer.current) clearTimeout(defaultTaxesTimer.current)
-      }
-    }, [])
-
     const isDirty = () => JSON.stringify(form) !== JSON.stringify(baselineRef.current)
     useEffect(() => {
       onDirtyChange?.(isDirty())
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [form])
 
-    const rules = useVisibilityRules(
-      form,
-      DEFAULT_RULES,
-      // `__islocal` — a brand-new unsaved doc. `set_only_once` fields
-      // (naming_series) stay editable on new docs, read-only once saved.
-      mode === "create" && !initialData?.name,
-    )
-    const navigate = useNavigate()
+    const isLocal = mode === "create" || !initialData?.name
+    const baseRules = useSalesOrderVisibilityRules(form, undefined, isLocal)
     const docstatus = initialData?.docstatus ?? 0
 
-    /**
-     * ERPNext docstatus-driven rendering parity (whole form).
-     * - Draft (0): all fields visible and editable.
-     * - Submitted (1): read-only unless allow_on_submit; empty read-only
-     *   fields are hidden entirely — only fields carrying data show.
-     * - Cancelled (2): everything read-only (incl. allow_on_submit).
-     * Section placeholders / computed rows (in_words…) have their own
-     * hiddenWhen rules and are exempt from the hide-when-empty rule.
-     */
-    const rule = (fieldname: string) => {
-      const base = rules[fieldname] ?? DEFAULT_FIELD_STATE
-      return resolveDocstatusAware(
-        base,
+    const rule = (fieldname: string) =>
+      salesOrderResolveField(
+        baseRules[fieldname] ?? SALES_ORDER_DEFAULT_FIELD_STATE,
         (form as unknown as Record<string, unknown>)[fieldname],
         docstatus,
-        EMPTY_HIDE_EXEMPT.has(fieldname),
+        SALES_ORDER_EMPTY_HIDE_EXEMPT.has(fieldname),
       )
-    }
 
-    /**
-     * ERPNext field-editability parity.
-     * - docstatus 0 (Draft) → all fields editable
-     * - docstatus 1 (Submitted) → read-only unless allow_on_submit
-     * - docstatus 2 (Cancelled) → everything read-only
-     */
     const isFieldEditable = (fieldname: string): boolean => {
       if (docstatus === 0) return true
       if (docstatus === 2) return false
-      // docstatus 1 — editable only when allow_on_submit
       return rule(fieldname).allowOnSubmit
     }
 
-    const update = (patch: QuotationFormData) => setForm((prev) => ({ ...prev, ...patch }))
+    const update = (patch: SalesOrderFormData) => setForm((prev) => ({ ...prev, ...patch }))
 
-    // ── Party fetch: party_name select → get_party_details ─────────────
-    const handlePartySelect = async (party: string) => {
+    const navigate = useNavigate()
+
+    // ── Party (customer) select → get_party_details ──────────────────
+    const handleCustomerSelect = async (party: string) => {
       if (!party) return
-      // Selection must never be a silent no-op: set party_name first, then
-      // enrich best-effort. Missing company/date only skip the details fetch.
-      update({ party_name: party, customer_name: "" })
+      update({ customer: party, customer_name: "" })
       const company = formRef.current.company || defaultCompany
       const transactionDate = formRef.current.transaction_date
-      if (!company || !transactionDate) {
-        if (import.meta.env.DEV) {
-          console.warn("[quotations] party details skipped: company or date not ready", {
-            party,
-            company,
-            transactionDate,
-          })
-        }
-        return
-      }
-      let patch: QuotationFormData = {}
+      if (!company || !transactionDate) return
+      let patch: SalesOrderFormData = { customer: party }
       try {
-        const details = await quotationService.getPartyDetails(
-          formRef.current.quotation_to || "Customer",
+        const details: SalesOrderPartyDetails = await salesOrderService.getPartyDetails(
+          "Customer",
           party,
           company,
           transactionDate,
@@ -509,140 +317,81 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
             fetchPaymentTermsTemplate: true,
           },
         )
-        // Desk fills via frm.set_value(r.message) (utils/party.js:114):
-        // every non-null key overwrites — empty strings clear stale values
-        // left by a previously selected party; nulls are skipped. Unknown
-        // keys (sales_team…) are not form fields and are dropped.
         const known = new Set([
           "customer_name", "customer_group", "territory", "language",
           "tax_category", "taxes_and_charges", "payment_terms_template",
           "customer_address", "address_display", "contact_person",
-          "contact_display", "contact_mobile", "contact_email",
+          "contact_display", "contact_mobile", "contact_phone", "contact_email",
           "shipping_address_name", "shipping_address", "currency",
           "conversion_rate", "selling_price_list", "price_list_currency",
           "plc_conversion_rate", "company_address", "company_address_display",
+          "company_contact_person",
         ])
-        patch = { party_name: party }
         for (const [key, value] of Object.entries(details)) {
           if (!known.has(key)) continue
           if (value === null || value === undefined) continue
           ;(patch as Record<string, unknown>)[key] = value
         }
-      } catch (err) {
-        if (import.meta.env.DEV) {
-          console.warn("[quotations] get_party_details failed:", err)
-        }
+      } catch {
+        // party details fetch is best-effort
       }
-      // Fallback: when the details response carried no display name (or the
-      // call failed outright), resolve it straight from the Customer doc so
-      // the read-only name field is never blank.
       if (!(patch.customer_name ?? "").toString().trim()) {
         try {
-          const res = await quotationService.getValue("Customer", "customer_name", {
-            name: party,
-          })
+          const res = await salesOrderService.getValue("Customer", "customer_name", { name: party })
           if (typeof res.customer_name === "string" && res.customer_name.trim()) {
-            patch = { ...patch, party_name: party, customer_name: res.customer_name }
-          } else {
-            patch = { ...patch, party_name: party }
+            patch = { ...patch, customer_name: res.customer_name }
           }
         } catch {
-          patch = { ...patch, party_name: party }
+          // fall back to customer code only
         }
       }
-      if (formRef.current.party_name !== party) return // stale response guard
-      setForm((prev) => ({ ...prev, ...patch }))
-      // Desk customer()/party_name(): get_party_details callback → apply_price_list().
-      runApplyPriceList({ ...formRef.current, ...patch })
+      if (formRef.current.customer !== party) return // stale response guard
+      update(patch)
     }
 
-    // ── Currency change → get_exchange_rate ────────────────────────────
-    // Desk currency(): fetch rate → set conversion_rate → conversion_rate()
-    // trigger fires apply_price_list().
+    // ── Currency change → get_exchange_rate ──────────────────────────
     const handleCurrencyChange = async (currency: string) => {
       update({ currency })
       if (currency === companyCurrency) {
         update({ conversion_rate: 1, price_list_currency: companyCurrency, plc_conversion_rate: 1 })
-        runApplyPriceList({
-          ...formRef.current,
-          currency,
-          conversion_rate: 1,
-          price_list_currency: companyCurrency,
-        })
         return
       }
       try {
-        const rate = await quotationService.getExchangeRate(
+        const rate = await salesOrderService.getExchangeRate(
           currency,
           companyCurrency,
           form.transaction_date || todayISO(),
         )
-        const effectiveRate = rate || form.conversion_rate || 1
         setForm((prev) => ({
           ...prev,
           currency,
-          conversion_rate: rate || prev.conversion_rate,
+          conversion_rate: rate || prev.conversion_rate || 1,
           price_list_currency: currency,
-          plc_conversion_rate: rate || prev.plc_conversion_rate,
+          plc_conversion_rate: rate || prev.plc_conversion_rate || 1,
         }))
-        runApplyPriceList({
-          ...formRef.current,
-          currency,
-          conversion_rate: effectiveRate,
-          price_list_currency: currency,
-        })
       } catch {
         // keep prior conversion rate on failure
       }
     }
 
-    // ── Address & contact handlers (auto-fill display blocks) ─────────
-    const handlePartyAddressSelect = (v?: string) => {
-      update({ customer_address: v ?? "" })
-      if (!v) {
-        update({ address_display: "" })
-        return
-      }
-      quotationService.validateLink("Address", v, []).then(() => {
+    // ── Address / contact display fills ──────────────────────────────
+    const handleAddressSelect = (field: string, displayField: string) => async (v?: string) => {
+      update({ [field]: v ?? "", [displayField]: "" })
+      if (!v) return
+      customerService.validateLink("Address", v).then(() => {
         quotationService.getAddressDisplay(v).then((display) => {
-          if (display) update({ address_display: display })
+          if (display) update({ [displayField]: display })
         })
       }).catch(() => undefined)
     }
 
-    const handleShippingAddressSelect = (v?: string) => {
-      update({ shipping_address_name: v ?? "" })
-      if (!v) {
-        update({ shipping_address: "" })
-        return
-      }
-      quotationService.validateLink("Address", v, []).then(() => {
-        quotationService.getAddressDisplay(v).then((display) => {
-          if (display) update({ shipping_address: display })
-        })
-      }).catch(() => undefined)
-    }
-
-    const handleCompanyAddressSelect = (v?: string) => {
-      update({ company_address: v ?? "" })
-      if (!v) {
-        update({ company_address_display: "" })
-        return
-      }
-      quotationService.validateLink("Address", v, []).then(() => {
-        quotationService.getAddressDisplay(v).then((display) => {
-          if (display) update({ company_address_display: display })
-        })
-      }).catch(() => undefined)
-    }
-
-    const handleContactSelect = (v?: string) => {
+    const handleContactSelect = async (v?: string) => {
       update({ contact_person: v ?? "" })
       if (!v) {
         update({ contact_display: "", contact_mobile: "", contact_email: "" })
         return
       }
-      quotationService.validateLink("Contact", v, []).then(() => {
+      customerService.validateLink("Contact", v).then(() => {
         quotationService.getContactDetails(v).then((details) => {
           update({
             contact_display: details.contact_display ?? "",
@@ -653,80 +402,108 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
       }).catch(() => undefined)
     }
 
-    // ── Items ──────────────────────────────────────────────────────────
-    // Scan Barcode → get_item_details; replaces an empty row or appends.
+    // ── Item flow: item_code selection → get_item_details ────────────
     const blockIfMissingParty = (): boolean => {
       const missing = [
         (form.company || defaultCompany) ? null : "Company",
-        form.party_name ? null : "Customer",
+        form.customer ? null : "Customer",
       ].filter(Boolean)
       if (missing.length === 0) return false
       addToast(`Please specify: ${missing.join(", ")}. It is needed to fetch Item Details.`, "warning")
       return true
     }
 
-    const localDocNameRef = useRef("")
-    const localDocName = (): string => {
-      if (formRef.current.name) return formRef.current.name
-      if (mode === "create") {
-        if (!localDocNameRef.current) localDocNameRef.current = `new-quotation-${deskRandomString()}`
-        return localDocNameRef.current
-      }
-      return ""
-    }
-
-    const runItemCodeFlow = async (idx: number, itemCode: string): Promise<QuotationItem | null> => {
+    const runItemCodeFlow = async (idx: number, itemCode: string) => {
       const snapshot = formRef.current
       const current = snapshot.items?.[idx]
-      if (!current || !itemCode) return null
+      if (!current || !itemCode) return
 
-      const patched: QuotationItem = {
+      const patched: SalesOrderItemForm = {
         ...current,
         item_code: itemCode,
-        weight_per_unit: 0,
-        weight_uom: "",
         uom: "",
         conversion_factor: 0,
-        barcode: null,
-        pricing_rules: "",
+        price_list_rate: 0,
+        rate: 0,
+        amount: 0,
+        warehouse: current.warehouse || snapshot.set_warehouse || "",
+        reserve_stock: 0,
       }
       const items = [...(snapshot.items ?? [])]
       items[idx] = patched
       update({ items })
 
-      const mergedRow = await enrichQuotationItem(
-        snapshot,
-        current,
-        itemCode,
-        {
-          isNew: mode === "create" && !initialData,
-          owner: user?.id,
-          name: snapshot.name || localDocName(),
-          company: defaultCompany,
-        },
-      )
-      if (mergedRow) {
-        update({ items: (formRef.current.items ?? []).map((r, i) => (i === idx ? mergedRow : r)) })
+      const docPayload: Record<string, unknown> = {
+        ...snapshot,
+        name: snapshot.name || `new-sales-order-${deskRandomString()}`,
+        doctype: "Sales Order",
+        items,
+        __islocal: mode === "create" && !initialData?.name ? 1 : 0,
+        docstatus: snapshot.docstatus ?? 0,
       }
-      return mergedRow
+      const args: Record<string, unknown> = {
+        item_code: itemCode,
+        barcode: null,
+        serial_no: undefined,
+        batch_no: undefined,
+        set_warehouse: snapshot.set_warehouse || undefined,
+        warehouse: patched.warehouse || undefined,
+        customer: snapshot.customer || undefined,
+        currency: snapshot.currency || undefined,
+        conversion_rate: snapshot.conversion_rate ?? 1,
+        price_list: snapshot.selling_price_list || undefined,
+        price_list_currency: snapshot.price_list_currency || undefined,
+        plc_conversion_rate: snapshot.plc_conversion_rate ?? 1,
+        company: snapshot.company || defaultCompany,
+        order_type: snapshot.order_type || undefined,
+        ignore_pricing_rule: snapshot.ignore_pricing_rule ?? 0,
+        doctype: "Sales Order",
+        name: docPayload.name || undefined,
+        qty: patched.qty || 1,
+        net_rate: patched.rate || undefined,
+        stock_qty: patched.stock_qty || undefined,
+        conversion_factor: 0,
+        weight_per_unit: patched.weight_per_unit || 0,
+        uom: null,
+        stock_uom: patched.stock_uom || "Nos",
+        tax_category: snapshot.tax_category || "",
+        item_tax_template: undefined,
+        child_doctype: "Sales Order Item",
+        child_docname: patched.name || undefined,
+        transaction_date: snapshot.transaction_date || todayISO(),
+        delivery_date: snapshot.delivery_date || "",
+        is_pos: 0,
+        is_return: 0,
+        is_subcontracted: undefined,
+        update_stock: 0,
+      }
+
+      const details = await salesOrderService.getItemDetailsDesk(docPayload, args)
+      if (!details || typeof details !== "object") return
+
+      setForm((prev) => {
+        const nextItems = [...(prev.items ?? [])]
+        const target = { ...nextItems[idx] }
+        const ignored = new Set([
+          "item_code", "doctype", "name", "parent", "parentfield",
+          "parenttype", "idx", "child_docname",
+        ])
+        for (const [k, v] of Object.entries(details)) {
+          if (ignored.has(k)) continue
+          if (v === undefined || v === null) continue
+          ;(target as unknown as Record<string, unknown>)[k] = v
+        }
+        const plr = Number(target.price_list_rate) || 0
+        const discPct = Number(target.discount_percentage) || 0
+        const rate = plr - (plr * discPct) / 100
+        target.rate = Math.round(rate * 10000) / 10000
+        target.amount = Math.round((target.rate || 0) * (target.qty || 0) * 100) / 100
+        nextItems[idx] = target
+        return { ...prev, items: nextItems }
+      })
     }
 
-    const handleScanBarcode = async (barcode: string) => {
-      const value = (barcode ?? "").trim()
-      if (!value) return
-      if (blockIfMissingParty()) return
-      const items = [...(formRef.current.items ?? [])]
-      let idx = items.findIndex((i) => !i.item_code && !i.item_name)
-      if (idx < 0) {
-        items.push(createEmptyItem())
-        idx = items.length - 1
-      }
-      update({ items })
-      const row = await runItemCodeFlow(idx, value)
-      if (row?.warehouse) update({ last_scanned_warehouse: row.warehouse })
-    }
-
-    const handleItemsChange = (next: QuotationItem[]) => {
+    const handleItemsChange = (next: SalesOrderItemForm[]) => {
       const prev = form.items ?? []
       if (next.length !== prev.length) {
         update({ items: next })
@@ -738,8 +515,7 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
         const old = prev[i]
         if (!old || row === old) return
         changed = true
-        const patch = { ...row } as QuotationItem
-
+        const patch = { ...row } as SalesOrderItemForm
         if (row.item_code !== old.item_code) {
           if (row.item_code && !old.item_code) {
             if (blockIfMissingParty()) {
@@ -752,15 +528,36 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
             patch.item_name = ""
           }
         }
-
         if (row.qty !== old.qty) patch.qty = Math.max(0, Number(row.qty) || 0)
         if (row.rate !== old.rate) patch.rate = Math.max(0, Number(row.rate) || 0)
         if (patch.qty !== old.qty || patch.rate !== old.rate) {
           patch.amount = Math.round((patch.rate || 0) * (patch.qty || 0) * 100) / 100
         }
+        if (row.delivery_date !== old.delivery_date) {
+          patch.delivery_date = row.delivery_date
+        }
         items[i] = patch
       })
       if (changed) update({ items })
+    }
+
+    const handleUomChange = async (idx: number, itemCode: string, uom: string) => {
+      if (!itemCode) return
+      update({ items: (formRef.current.items ?? []).map((r, i) => (i === idx ? { ...r, uom } : r)) })
+      try {
+        const factor = await salesOrderService.getConversionFactor(itemCode, uom)
+        setForm((prev) => {
+          const items = [...(prev.items ?? [])]
+          const target = items[idx]
+          if (!target) return prev
+          target.conversion_factor = factor
+          target.stock_qty = Math.round((target.qty || 0) * factor * 1000) / 1000
+          items[idx] = target
+          return { ...prev, items }
+        })
+      } catch {
+        // best-effort conversion factor
+      }
     }
 
     const handleAddItemWithQty = async (product: Product, qty: number) => {
@@ -792,21 +589,25 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
       quantity: i.qty ?? 1,
       price: i.rate ?? 0,
       total: i.amount ?? 0,
+      uom: i.uom,
+      warehouse: i.warehouse,
+      conversionFactor: i.conversion_factor,
+      discountPercentage: i.discount_percentage,
     }))
 
-    // ── Taxes & totals ─────────────────────────────────────────────────
+    // ── Taxes & totals ────────────────────────────────────────────────
     const itemTotals = useMemo(() => {
       const items = form.items ?? []
       const total_qty = items.reduce((s, i) => s + (i.qty || 0), 0)
       const subtotal = items.reduce((s, i) => s + (i.amount || 0), 0)
-      return { total_qty, subtotal }
+      const total_net_weight = items.reduce((s, i) => s + (i.total_weight || 0), 0)
+      return { total_qty, subtotal, total_net_weight }
     }, [form.items])
 
-    const { total_qty, subtotal } = itemTotals
+    const { total_qty, subtotal, total_net_weight } = itemTotals
 
-    // Pre-discount tax run (ERPNext initialize_taxes base pass).
     const taxRowsBase = useMemo(
-      () => computeTaxes(quotationTaxesToEditable(form.taxes ?? []), subtotal, total_qty),
+      () => computeTaxes(soTaxesToEditable(form.taxes ?? []), subtotal, total_qty),
       [form.taxes, subtotal, total_qty],
     )
     const total_taxes_base = useMemo(
@@ -818,7 +619,6 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
       | "Grand Total"
       | "Net Total"
 
-    // Additional discount: explicit amount wins; otherwise % × base.
     let additional_discount = 0
     {
       const da = form.discount_amount ?? 0
@@ -832,8 +632,6 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
       }
     }
 
-    // ERPNext get_total_for_discount_amount parity: the discount distributes
-    // over net + non-Actual taxes (Grand Total) or net alone (Net Total).
     const total_for_discount =
       apply_discount_on === "Net Total"
         ? subtotal
@@ -870,9 +668,6 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
       additional_discount,
     ])
 
-    // ERPNext "Tax Breakup": prefer the authoritative server per-item detail
-    // (`taxes[].item_wise_tax_detail`) on saved docs; fall back to a live
-    // computation on unsaved drafts that have no stored detail yet.
     const breakupRows = useMemo(() => {
       const parseItemTaxRate = (raw?: string): Record<string, number> | undefined => {
         if (!raw) return undefined
@@ -890,10 +685,6 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
       }
 
       const rawNetAmounts = (form.items ?? []).map((it) => it.amount ?? 0)
-
-      // ERPNext `apply_discount_amount` parity: an additional discount reduces
-      // each item's net_amount (taxable amount). Use the discounted values so
-      // the Tax Breakup matches the server.
       const discounted = applyDiscountToItemNetAmounts(rawNetAmounts, {
         discountAmount: additional_discount,
         applyDiscountOn: apply_discount_on,
@@ -903,7 +694,7 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
         discountedNetTotal: net_total,
       })
 
-      const quoteItems = (form.items ?? []).map((it, idx) => ({
+      const soItems = (form.items ?? []).map((it, idx) => ({
         itemCode: it.item_code || "",
         itemName: it.item_name,
         netAmount: discounted.netAmounts[idx] ?? it.amount ?? 0,
@@ -917,12 +708,12 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
             category: t.category,
             item_wise_tax_detail: t.item_wise_tax_detail,
           })),
-          quoteItems,
+          soItems,
           form.conversion_rate ?? 1,
         )
       }
       return getItemisedTaxBreakupData(
-        quoteItems.map((it, idx) => ({
+        soItems.map((it, idx) => ({
           ...it,
           qty: (form.items ?? [])[idx]?.qty ?? 0,
           itemTaxRate: parseItemTaxRate((form.items ?? [])[idx]?.item_tax_rate),
@@ -942,10 +733,7 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
       )
     }, [form.items, form.taxes, net_total, form.conversion_rate, additional_discount, apply_discount_on, subtotal, taxRowsBase, total_taxes_base])
 
-    const rounded_total = roundToSmallestCurrencyFraction(
-      taxState.grand_total,
-      currencyFraction,
-    )
+    const rounded_total = roundToSmallestCurrencyFraction(taxState.grand_total, currencyFraction)
     const rounding_adjustment = Math.round((rounded_total - taxState.grand_total) * 100) / 100
     const conversion_rate = form.conversion_rate ?? 1
     const base_grand_total = taxState.grand_total * conversion_rate
@@ -956,12 +744,9 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
     const base_discount_amount = Math.round((form.discount_amount ?? 0) * conversion_rate * 100) / 100
 
     const handleTaxChange = (rows: EditableTaxRow[]) => {
-      update({ taxes: editableToQuotationTaxes(rows) })
+      update({ taxes: editableToSalesOrderTaxes(rows) })
     }
 
-    // Additional-discount handlers — invoice-form parity: percentage
-    // auto-computes discount_amount against grand_total (subtotal + taxes)
-    // or net_total (subtotal) depending on apply_discount_on.
     const discountBase = (applyOn: "Grand Total" | "Net Total"): number =>
       applyOn === "Net Total" ? subtotal : subtotal + total_taxes_base
 
@@ -980,8 +765,7 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
     const handleAdditionalDiscountPercentageChange = (value: number | undefined) => {
       update({ additional_discount_percentage: value })
       if (value && value > 0) {
-        const base = discountBase(apply_discount_on)
-        update({ discount_amount: Math.round(base * (value / 100) * 100) / 100 })
+        update({ discount_amount: Math.round(discountBase(apply_discount_on) * (value / 100) * 100) / 100 })
       } else {
         update({ discount_amount: undefined })
       }
@@ -998,7 +782,7 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
       update({ taxes_and_charges: template })
       if (!template) return
       try {
-        const result = await quotationService.getTaxesAndCharges(template)
+        const result = await salesOrderService.getTaxesAndCharges(template)
         if (result.taxes && result.taxes.length > 0) {
           update({ taxes: result.taxes })
         }
@@ -1008,19 +792,24 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
       }
     }
 
-    // ── Payment terms template → get_payment_terms ───────────────────
     const handlePaymentTermsSelect = async (template: string) => {
       update({ payment_terms_template: template })
       if (!template) return
       try {
-        const result = await quotationService.getPaymentTerms(
+        const result = await salesOrderService.getPaymentTerms(
           template,
-          form.transaction_date || todayISO(),
-          taxState.grand_total,
+          {
+            transaction_date: form.transaction_date || todayISO(),
+            grand_total: taxState.grand_total,
+            base_grand_total,
+            company: form.company || defaultCompany,
+            customer: form.customer || "",
+            currency: form.currency || companyCurrency,
+          },
         )
-        if (result.payment_schedule.length > 0) {
+        if (result.length > 0) {
           update({
-            payment_schedule: result.payment_schedule as unknown as Quotation["payment_schedule"],
+            payment_schedule: result as unknown as SalesOrderPaymentScheduleRow[],
           })
         }
       } catch {
@@ -1028,37 +817,16 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
       }
     }
 
-    // ── Terms & conditions → get_terms_and_conditions ───────────────
-    const handleTcNameSelect = async (template: string) => {
-      update({ tc_name: template, terms: "" })
-      if (!template) return
-      try {
-        const docCtx: Record<string, unknown> = {
-          doctype: "Quotation",
-          transaction_date: form.transaction_date || todayISO(),
-          valid_till: form.valid_till ?? "",
-          company: form.company ?? "",
-          quotation_to: form.quotation_to ?? "Customer",
-          party_name: form.party_name ?? "",
-          customer_name: form.customer_name ?? "",
-        }
-        const rendered = await quotationService.getTerms(template, docCtx)
-        if (rendered) update({ terms: rendered })
-      } catch {
-        // terms fill is best-effort
-      }
-    }
-
     const currencyLabel = form.currency || companyCurrency
 
-    const itemColumns: GridColumn<QuotationItem>[] = [
+    const itemColumns: GridColumn<SalesOrderItemForm>[] = [
       {
         key: "item_code",
         label: "Item",
         type: "link",
         docType: "Item",
         searchFn: async (q) => {
-          const results = await quotationService.searchItemsDesk(q).catch(() => [])
+          const results = await salesOrderService.searchItemsDesk(q).catch(() => [])
           return {
             items: results.map((r) => ({
               value: r.value,
@@ -1068,9 +836,21 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
           }
         },
         placeholder: "Search item…",
-        weight: 2.4,
+        weight: 2.2,
       },
       { key: "qty", label: "Quantity", type: "number", align: "right", weight: 1 },
+      {
+        key: "uom",
+        label: "UOM",
+        type: "link",
+        options: [],
+        onSelect: (row, value) => void handleUomChange(
+          (form.items ?? []).findIndex((r) => r === row),
+          row.item_code || "",
+          value,
+        ),
+        weight: 1,
+      },
       {
         key: "rate",
         label: `Rate (${currencyLabel})`,
@@ -1082,6 +862,12 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
         formatter: (row) => formatCurrency(row.rate ?? 0, currencyLabel),
       },
       {
+        key: "delivery_date",
+        label: "Delivery Date",
+        type: "date",
+        weight: 1.4,
+      },
+      {
         key: "amount",
         label: `Amount (${currencyLabel})`,
         type: "readonly",
@@ -1091,8 +877,8 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
       },
     ]
 
-    const readOnlyItemColumns: GridColumn<QuotationItem>[] = [
-      { key: "item_code", label: "Item", type: "link", weight: 2.4 },
+    const readOnlyItemColumns: GridColumn<SalesOrderItemForm>[] = [
+      { key: "item_code", label: "Item", type: "link", weight: 2.2 },
       {
         key: "qty",
         label: "Quantity",
@@ -1101,6 +887,7 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
         weight: 1,
         formatter: (row) => formatFixed(row.qty ?? 0, 3),
       },
+      { key: "uom", label: "UOM", type: "readonly", weight: 1 },
       {
         key: "rate",
         label: `Rate (${currencyLabel})`,
@@ -1109,6 +896,7 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
         weight: 1.2,
         formatter: (row) => formatCurrency(row.rate ?? 0, currencyLabel),
       },
+      { key: "delivery_date", label: "Delivery Date", type: "date", weight: 1.4 },
       {
         key: "amount",
         label: `Amount (${currencyLabel})`,
@@ -1119,7 +907,7 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
       },
     ]
 
-    const paymentScheduleColumns: GridColumn<Quotation["payment_schedule"][number]>[] = [
+    const paymentScheduleColumns: GridColumn<SalesOrderPaymentScheduleRow>[] = [
       { key: "payment_term", label: "Payment Term", type: "text", weight: 2 },
       { key: "description", label: "Description", type: "text", weight: 3 },
       { key: "due_date", label: "Due Date", type: "date" },
@@ -1132,7 +920,7 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
       },
     ]
 
-    const pricingRuleColumns: GridColumn<PricingRuleRow>[] = [
+    const pricingRuleColumns: GridColumn<SalesOrderPricingRuleRow>[] = [
       { key: "pricing_rule", label: "Pricing Rule", type: "readonly", weight: 2 },
       {
         key: "rule_applied",
@@ -1143,72 +931,57 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
       },
     ]
 
-    const lostReasonColumns: GridColumn<LostReasonRow>[] = [
-      { key: "lost_reason", label: "Lost Reason", type: "readonly", weight: 2 },
+    const salesTeamColumns: GridColumn<SalesOrderSalesTeamRow>[] = [
+      { key: "sales_person", label: "Sales Person", type: "text", weight: 2 },
+      { key: "allocated_percentage", label: "Contribution (%)", type: "number", align: "right" },
+      { key: "allocated_amount", label: "Contribution Amount", type: "number", align: "right" },
+      { key: "commission_rate", label: "Commission Rate (%)", type: "number", align: "right" },
+      { key: "incentives", label: "Incentives", type: "number", align: "right" },
     ]
 
-    // ERPNext set_dynamic_labels outs the party label to quotation_to ("Customer").
-    const partyLabel = form.quotation_to || "Customer"
-    const partyVisible = rule("party_name").visible
-    const partyLocked = rule("party_name").readOnly
-    const headerLocked = docstatus !== 0
-
     const handleSave = async (action?: "Save" | "Update" | "Submit"): Promise<string | undefined> => {
-      if (saving) return undefined
-      setSaving(true)
-      onSavingChange?.(true)
-      try {
-        const doc: Record<string, unknown> = {
-          ...form,
-          doctype: "Quotation",
-          items: (form.items ?? []).map(({ name: _n, ...rest }) => rest),
-          taxes: (form.taxes ?? []).map(({ name: _n, ...rest }) => rest),
-          payment_schedule: (form.payment_schedule ?? []).map(({ name: _n, ...rest }) => rest),
-          lost_reasons: (form.lost_reasons ?? []).map(({ name: _n, ...rest }) => rest),
-          competitors: (form.competitors ?? []).map(({ name: _n, ...rest }) => rest),
-          pricing_rules: (form.pricing_rules ?? []).map(({ name: _n, ...rest }) => rest),
-          total_qty,
-          net_total,
-          total: subtotal,
-          base_total,
-          base_net_total: net_total * conversion_rate,
-          base_discount_amount,
-          total_taxes_and_charges: taxState.total_taxes,
-          base_total_taxes_and_charges: taxState.total_taxes * conversion_rate,
-          grand_total: taxState.grand_total,
-          base_grand_total,
-          rounding_adjustment,
-          rounded_total,
-          base_rounding_adjustment: Math.round((base_rounded_total - base_grand_total) * 100) / 100,
-          base_rounded_total,
-        }
-        if (mode === "edit" && initialData?.name) doc.name = initialData.name
-        const saved =
-          action === "Submit"
-            ? await quotationService.saveDoc(doc, "Submit")
-            : mode === "edit" && (initialData?.docstatus ?? 0) === 1
-              ? await quotationService.saveDoc(doc, "Update")
-              : await quotationService.saveDoc(doc, "Save")
-        baselineRef.current = { ...form, name: saved?.name }
-        setBaseline(baselineRef.current)
-        onSaved?.(saved)
-        return saved?.name
-      } finally {
-        setSaving(false)
-        onSavingChange?.(false)
+      const doc: Record<string, unknown> = {
+        ...form,
+        doctype: "Sales Order",
+        items: (form.items ?? []).map(({ name: _n, ...rest }) => rest),
+        taxes: (form.taxes ?? []).map(({ name: _n, ...rest }) => rest),
+        payment_schedule: (form.payment_schedule ?? []).map(({ name: _n, ...rest }) => rest),
+        pricing_rules: (form.pricing_rules ?? []).map(({ name: _n, ...rest }) => rest),
+        packed_items: (form.packed_items ?? []).map(({ name: _n, ...rest }) => rest),
+        sales_team: (form.sales_team ?? []).map(({ name: _n, ...rest }) => rest),
+        total_qty,
+        total_net_weight,
+        net_total,
+        total: subtotal,
+        base_total,
+        base_net_total: Math.round(net_total * conversion_rate * 100) / 100,
+        base_discount_amount,
+        total_taxes_and_charges: taxState.total_taxes,
+        base_total_taxes_and_charges: Math.round(taxState.total_taxes * conversion_rate * 100) / 100,
+        grand_total: taxState.grand_total,
+        base_grand_total,
+        rounding_adjustment,
+        rounded_total,
+        base_rounding_adjustment,
+        base_rounded_total,
       }
+      if (mode === "edit" && initialData?.name) doc.name = initialData.name
+      const saved =
+        action === "Submit"
+          ? await salesOrderService.saveDoc(doc, "Submit")
+          : mode === "edit" && (initialData?.docstatus ?? 0) === 1
+            ? await salesOrderService.saveDoc(doc, "Update")
+            : await salesOrderService.saveDoc(doc, "Save")
+      baselineRef.current = { ...form, name: saved?.name }
+      setBaseline(baselineRef.current)
+      onSaved?.(saved)
+      return saved?.name
     }
 
     useImperativeHandle(ref, () => ({
       save: handleSave,
       isDirty,
     }))
-
-    // Desk selling_price_list(): apply_price_list() + set_dynamic_labels().
-    const handlePriceListChange = (value: string) => {
-      update({ selling_price_list: value })
-      runApplyPriceList({ ...formRef.current, selling_price_list: value })
-    }
 
     const Field = ({
       label,
@@ -1231,9 +1004,10 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
       )
     }
 
+    const headerLocked = docstatus !== 0
+
     return (
       <div className="space-y-4">
-        {/* Tab bar — matches Invoice form */}
         <div className="flex border-b border-border gap-0">
           {[
             { id: "details", label: "Details" },
@@ -1244,7 +1018,7 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
             <button
               key={tab.id}
               type="button"
-              onClick={() => setActiveTab(tab.id as QuotationFormTab)}
+              onClick={() => setActiveTab(tab.id as SalesOrderFormTab)}
               className={`px-4 py-2.5 text-sm font-semibold transition-colors border-b-2 ${
                 activeTab === tab.id
                   ? "border-primary-600 text-primary-700"
@@ -1258,200 +1032,94 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
 
         {activeTab === "details" && (
           <div className="space-y-4">
-            {/* Section 1: Header — ERPNext 3-column layout (docstatus-driven). */}
+            {/* Section 1: Header — ERPNext 3-column layout */}
             <div className="pb-4 border-b border-border">
               {mode !== "create" && (
                 <div className="mb-3">
                   <label className={labelClass}>Series</label>
                   <div className="font-medium text-sm py-1.5">
-                    {form.naming_series || "SAL-QTN-.YYYY.-"}
+                    {form.naming_series || "SO-"}
                   </div>
                 </div>
               )}
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-                {/* Col 1: Series / Quotation To / Customer / CRM Deal (draft only) */}
+                {/* Col 1 */}
                 <div className="space-y-3">
                   {mode === "create" && (
                     <div>
                       <label className={labelClass}>Series *</label>
                       <select
-                        value={form.naming_series ?? "SAL-QTN-.YYYY.-"}
+                        value={form.naming_series ?? "SO-"}
                         onChange={(e) => update({ naming_series: e.target.value })}
                         className={inputClass}
                       >
-                        <option value="SAL-QTN-.YYYY.-">SAL-QTN-.YYYY.-</option>
+                        <option value="SO-">SO-</option>
                       </select>
                     </div>
                   )}
-                  <Field label="Quotation To *" fieldname="quotation_to">
+                  <Field label="Customer *" fieldname="customer">
                     {headerLocked ? (
-                      <input
-                        type="text"
-                        value={form.quotation_to}
-                        readOnly
-                        className={inputClass}
-                      />
+                      <a
+                        href={`/customers/${encodeURIComponent(form.customer ?? "")}`}
+                        onClick={(e) => {
+                          e.preventDefault()
+                          navigate(`/customers/${encodeURIComponent(form.customer ?? "")}`)
+                        }}
+                        className={`${inputClass} block bg-gray-50 font-semibold text-primary cursor-pointer break-all`}
+                      >
+                        {form.customer_name || form.customer}
+                      </a>
                     ) : (
                       <LinkSearchField
-                        value={form.quotation_to}
-                        onChange={(v) =>
-                          update({
-                            quotation_to: (v ?? "") as Quotation["quotation_to"],
-                            party_name: "",
-                            customer_name: "",
-                          })
-                        }
-                        searchFn={async (q) => {
-                          const results = await quotationService.searchQuotationTo(q)
-                          return {
-                            items: results.map((r) => ({
-                              value: r.value,
-                              label: r.value,
-                              description: r.description ?? "",
-                            })),
-                          }
+                        value={form.customer}
+                        onChange={(v) => {
+                          if (v !== form.customer) void handleCustomerSelect(v ?? "")
                         }}
-                        docType="DocType"
-                        placeholder="Select party type…"
-                        disabled={partyLocked}
+                        searchFn={async (q) => {
+                          const results = await customerService.searchLink("Customer", q, "Sales Order")
+                          return { items: results }
+                        }}
+                        validate={async (v) => {
+                          await customerService.validateLink("Customer", v)
+                        }}
+                        docType="Customer"
+                        placeholder="Select customer…"
+                        required={rule("customer").reqd}
                       />
                     )}
                   </Field>
-                  {partyVisible &&
-                    (headerLocked ? (
-                      <div>
-                        <label className={labelClass}>{partyLabel}</label>
-                        {form.quotation_to === "Customer" && form.party_name ? (
-                          <a
-                            href={`/customers/${encodeURIComponent(form.party_name)}`}
-                            onClick={(e) => {
-                              e.preventDefault()
-                              navigate(`/customers/${encodeURIComponent(form.party_name ?? "")}`)
-                            }}
-                            className={`${inputClass} block bg-gray-50 font-semibold text-primary cursor-pointer break-all`}
-                          >
-                            {form.customer_name || form.party_name}
-                          </a>
-                        ) : (
-                          <div className={`${inputClass} bg-gray-50 font-semibold break-all`}>
-                            {form.customer_name || form.party_name}
-                          </div>
-                        )}
-                      </div>
-                    ) : (
-                      <div>
-                        <label className={labelClass}>
-                          {partyLabel} {rule("party_name").reqd ? "*" : ""}
-                        </label>
-                        <LinkSearchField
-                          value={form.party_name}
-                          onChange={(v) => {
-                            if (v !== form.party_name) void handlePartySelect(v ?? "")
-                          }}
-                          searchFn={async (q) => {
-                            const results = await customerService.searchLink(
-                              form.quotation_to || "Customer",
-                              q,
-                              "Quotation",
-                            )
-                            return { items: results }
-                          }}
-                          validate={async (v) => {
-                            // Desk link.js validate_link_and_fetch → POST
-                            // frappe.client.validate_link with x-frappe-doctype.
-                            try {
-                              const doc = await quotationService.validateLink(
-                                form.quotation_to || "Customer",
-                                v,
-                                [],
-                              )
-                              if (!doc || Object.keys(doc).length === 0) {
-                                throw new Error(`Invalid ${form.quotation_to || "Customer"}`)
-                              }
-                            } catch (err) {
-                              // A dedup-skipped re-check is not an invalid link.
-                              if (err instanceof SuppressedDuplicateError) return
-                              throw err
-                            }
-                          }}
-                          docType={form.quotation_to || "Customer"}
-                          placeholder="Select party…"
-                          readOnly={partyLocked}
-                          required={rule("party_name").reqd}
-                        />
-                      </div>
-                    ))}
-                  {docstatus === 0 && (
+                  {form.customer && (
                     <div>
-                      <label className={labelClass}>Frappe CRM Deal</label>
-                      <Input
-                        value={form.crm_deal ?? ""}
-                        onChange={(e) => update({ crm_deal: e.target.value || "" })}
-                        placeholder="CRM deal reference"
+                      <label className={labelClass}>Customer Name</label>
+                      <input
+                        type="text"
+                        value={form.customer_name || form.customer}
+                        readOnly
+                        className={`${inputClass} bg-gray-50 font-semibold break-all`}
                       />
                     </div>
                   )}
-                  <div>
-                    <label className={labelClass}>Customer Name</label>
-                    <input
-                      type="text"
-                      value={form.customer_name || form.party_name}
-                      readOnly
-                      className={`${inputClass} bg-gray-50 font-semibold break-all`}
-                    />
-                  </div>
-                </div>
-                {/* Col 2: Date / Valid Till */}
-                <div className="space-y-3">
-                  <Field label="Date *" fieldname="transaction_date">
-                    {headerLocked ? (
+                  {form.tax_id && (
+                    <div>
+                      <label className={labelClass}>Tax ID</label>
                       <input
-                        type="date"
-                        value={form.transaction_date}
+                        type="text"
+                        value={form.tax_id}
                         readOnly
-                        className={inputClass}
+                        className={`${inputClass} bg-gray-50`}
                       />
-                    ) : (
-                      <Input
-                        type="date"
-                        value={form.transaction_date}
-                        onChange={(e) => update({ transaction_date: e.target.value })}
-                        readOnly={rule("transaction_date").readOnly}
-                      />
-                    )}
-                  </Field>
-                  <Field label="Valid Till" fieldname="valid_till">
-                    {headerLocked ? (
-                      <input
-                        type="date"
-                        value={form.valid_till ?? ""}
-                        readOnly
-                        className={inputClass}
-                      />
-                    ) : (
-                      <Input
-                        type="date"
-                        value={form.valid_till}
-                        onChange={(e) => update({ valid_till: e.target.value })}
-                        readOnly={rule("valid_till").readOnly}
-                      />
-                    )}
-                  </Field>
+                    </div>
+                  )}
                 </div>
-                {/* Col 3: Order Type */}
+                {/* Col 2 */}
                 <div className="space-y-3">
                   <Field label="Order Type *" fieldname="order_type">
                     {headerLocked ? (
-                      <input
-                        type="text"
-                        value={form.order_type}
-                        readOnly
-                        className={inputClass}
-                      />
+                      <input type="text" value={form.order_type} readOnly className={inputClass} />
                     ) : (
                       <select
                         value={form.order_type}
-                        onChange={(e) => update({ order_type: e.target.value })}
+                        onChange={(e) => update({ order_type: e.target.value as SalesOrderDoc["order_type"] })}
                         className={inputClass}
                       >
                         {ORDER_TYPE_OPTIONS.map((opt) => (
@@ -1462,6 +1130,70 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
                       </select>
                     )}
                   </Field>
+                  <Field label="Transaction Date *" fieldname="transaction_date">
+                    {headerLocked ? (
+                      <input type="date" value={form.transaction_date} readOnly className={inputClass} />
+                    ) : (
+                      <Input
+                        type="date"
+                        value={form.transaction_date}
+                        onChange={(e) => update({ transaction_date: e.target.value })}
+                        readOnly={rule("transaction_date").readOnly}
+                      />
+                    )}
+                  </Field>
+                  <Field label="Delivery Date *" fieldname="delivery_date">
+                    {headerLocked ? (
+                      <input type="date" value={form.delivery_date ?? ""} readOnly className={inputClass} />
+                    ) : (
+                      <Input
+                        type="date"
+                        value={form.delivery_date ?? ""}
+                        onChange={(e) => update({ delivery_date: e.target.value })}
+                        readOnly={rule("delivery_date").readOnly}
+                      />
+                    )}
+                  </Field>
+                </div>
+                {/* Col 3 */}
+                <div className="space-y-3">
+                  <div>
+                    <label className={labelClass}>Company *</label>
+                    {headerLocked ? (
+                      <input type="text" value={form.company} readOnly className={inputClass} />
+                    ) : (
+                      <LinkSearchField
+                        value={form.company}
+                        onChange={(v) => update({ company: v ?? "" })}
+                        searchFn={async (q) => {
+                          const results = await customerService.searchLink("Company", q, "Sales Order")
+                          return { items: results }
+                        }}
+                        validate={async (v) => {
+                          await customerService.validateLink("Company", v)
+                        }}
+                        docType="Company"
+                        placeholder="Select company…"
+                        required={rule("company").reqd}
+                      />
+                    )}
+                  </div>
+                  <Field label="Customer's Purchase Order" fieldname="po_no">
+                    <Input
+                      value={form.po_no ?? ""}
+                      onChange={(e) => update({ po_no: e.target.value || "" })}
+                      placeholder="PO number…"
+                      readOnly={!isFieldEditable("po_no")}
+                    />
+                  </Field>
+                  <Field label="PO Date" fieldname="po_date">
+                    <Input
+                      type="date"
+                      value={form.po_date ?? ""}
+                      onChange={(e) => update({ po_date: e.target.value })}
+                      readOnly={!isFieldEditable("po_date")}
+                    />
+                  </Field>
                   {form.amended_from && (
                     <div>
                       <label className={labelClass}>Amended From</label>
@@ -1469,10 +1201,8 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
                         type="text"
                         value={form.amended_from}
                         readOnly
-                        onClick={() =>
-                          navigate(`/quotations/${encodeURIComponent(form.amended_from ?? "")}`)
-                        }
-                        title="Open amended quotation"
+                        onClick={() => navigate(`/sales-orders/${encodeURIComponent(form.amended_from ?? "")}`)}
+                        title="Open amended sales order"
                         className={`${inputClass} bg-gray-50 text-primary cursor-pointer`}
                       />
                     </div>
@@ -1481,7 +1211,7 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
               </div>
             </div>
 
-            {/* ===== Currency & Price List ===== */}
+            {/* ===== Currency and Price List ===== */}
             <CollapsibleSection title="Currency and Price List">
               {(() => {
                 const effectiveCurrency = form.currency || companyCurrency
@@ -1514,8 +1244,6 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
                             onChange={(e) => {
                               const v = parseFloat(e.target.value) || 1
                               update({ conversion_rate: v })
-                              // Desk conversion_rate() trigger → apply_price_list().
-                              runApplyPriceList({ ...formRef.current, conversion_rate: v })
                             }}
                             readOnly={rule("conversion_rate").readOnly}
                             className={inputClass}
@@ -1533,7 +1261,7 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
                           name="selling_price_list"
                           value={form.selling_price_list || defaultPriceList}
                           options={priceLists}
-                          onChange={(_name, val) => handlePriceListChange(val)}
+                          onChange={(_name, val) => update({ selling_price_list: val })}
                           disabled={rule("selling_price_list").readOnly}
                         />
                       </div>
@@ -1558,64 +1286,59 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
                               onChange={(e) => {
                                 const v = parseFloat(e.target.value) || 1
                                 update({ plc_conversion_rate: v })
-                                // Desk plc_conversion_rate() → apply_price_list(null, true).
-                                runApplyPriceList(
-                                  { ...formRef.current, plc_conversion_rate: v },
-                                  null,
-                                  true,
-                                )
                               }}
                               readOnly={rule("plc_conversion_rate").readOnly}
                               className={inputClass}
                             />
-                            <p className="text-xs text-muted mt-1">
-                              1 {effectivePlcCurrency} = {form.plc_conversion_rate ?? 1}{" "}
-                              {companyCurrency}
-                            </p>
                           </div>
                         </>
                       )}
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="checkbox"
-                          id="ignorePricingRule"
-                          checked={!!form.ignore_pricing_rule}
-                          onChange={(e) => update({ ignore_pricing_rule: e.target.checked ? 1 : 0 })}
-                          disabled={!isFieldEditable("ignore_pricing_rule")}
-                          className="h-4 w-4 rounded border-border"
-                        />
-                        <label htmlFor="ignorePricingRule" className="text-sm text-body">
-                          Ignore Pricing Rule
-                        </label>
-                      </div>
                     </div>
                   </div>
                 )
               })()}
             </CollapsibleSection>
 
+            {/* ===== Warehouse ===== */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 pb-4 border-b border-border">
+              <div>
+                <label className={labelClass}>Set Warehouse</label>
+                <LinkSearchField
+                  value={form.set_warehouse ?? ""}
+                  onChange={(v) => update({ set_warehouse: v ?? "" })}
+                  searchFn={async (q) => {
+                    const results = await customerService.searchLink("Warehouse", q, "Sales Order")
+                    return { items: results }
+                  }}
+                  validate={async (v) => {
+                    await customerService.validateLink("Warehouse", v)
+                  }}
+                  docType="Warehouse"
+                  placeholder="Select warehouse…"
+                  clearIconMode="hover"
+                  disabled={!isFieldEditable("set_warehouse")}
+                />
+              </div>
+              <div className="flex items-end pb-2">
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id="reserveStock"
+                    checked={!!form.reserve_stock}
+                    onChange={(e) => update({ reserve_stock: e.target.checked ? 1 : 0 })}
+                    disabled={!isFieldEditable("reserve_stock")}
+                    className="h-4 w-4 rounded border-border"
+                  />
+                  <label htmlFor="reserveStock" className="text-sm text-body">
+                    Reserve Stock
+                  </label>
+                </div>
+              </div>
+            </div>
+
             {/* ===== Items ===== */}
             <div className="space-y-3 pb-4 border-b border-border">
-              {isFieldEditable("scan_barcode") && (
-                <div className="mb-3">
-                  <div className="relative max-w-sm">
-                    <ScanBarcode size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
-                    <input
-                      type="text"
-                      placeholder="Scan Barcode…"
-                      className="w-full pl-9 pr-3 py-2 text-sm border border-border rounded-[10px] focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 transition-all bg-white"
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") {
-                          const val = (e.target as HTMLInputElement).value
-                          ;(e.target as HTMLInputElement).value = ""
-                          void handleScanBarcode(val)
-                        }
-                      }}
-                    />
-                  </div>
-                </div>
-              )}
-              <ChildTableGrid<QuotationItem>
+              <ChildTableGrid<SalesOrderItemForm>
                 title="Items"
                 description={!isFieldEditable("items") ? undefined : "Click a row to edit its fields."}
                 rows={form.items ?? []}
@@ -1626,27 +1349,19 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
                 canAdd={mode === "create" || isFieldEditable("items")}
                 minWidth="760px"
                 noTopBorder
-                testId="quotation-items"
+                testId="sales-order-items"
                 footer={
                   isFieldEditable("items") ? (
                     <AddMultipleModal
                       items={lineItemsForModal}
-                      itemDetailsContext={{ customer: form.party_name || undefined }}
+                      itemDetailsContext={{ customer: form.customer || undefined }}
                       onAddItemWithQty={(product, qty) => void handleAddItemWithQty(product, qty)}
                       onBlocked={() => blockIfMissingParty()}
                     />
                   ) : undefined
                 }
               />
-              {/* Items footer: ERPNext-readable totals (parity with transaction.js
-                  and `sec_break23`, a THREE-column layout):
-                    Col 1 = total_qty + total_net_weight
-                    Col 2 = base_total + base_net_total  (company currency; only
-                            shown when it differs from the transaction currency,
-                            otherwise an EMPTY ~33% column — transaction.js:1564-1569)
-                    Col 3 = total + net_total (transaction currency)
-                  `net_total` shown only on discount or inclusive tax
-                  (transaction.js:1574-1583). */}
+              {/* Items footer: ERPNext-readable totals (3-column layout). */}
               {(() => {
                 const currency = form.currency || companyCurrency
                 const isMultiCurrency = currency !== companyCurrency
@@ -1670,22 +1385,19 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
                           readOnly
                         />
                       </div>
-                      {(form.total_net_weight ?? 0) > 0 && (
+                      {total_net_weight > 0 && (
                         <div>
                           <label className={labelClass}>Total Net Weight</label>
                           <input
                             type="text"
-                            value={form.total_net_weight ?? 0}
+                            value={total_net_weight}
                             className={`${inputClass} bg-gray-50`}
                             readOnly
                           />
                         </div>
                       )}
                     </div>
-                    {/* Col 2: company-currency totals — fields shown only when
-                        multi-currency; otherwise an empty ~33% column, mirroring
-                        ERPNext's retained blank column (all three columns stay
-                        present so that Col 3 remains on the right). */}
+                    {/* Col 2: company-currency totals */}
                     <div className="space-y-3">
                       {isMultiCurrency && (
                         <>
@@ -1742,7 +1454,7 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
               })()}
             </div>
 
-            {/* ===== Taxes and Charges — fully shown (not collapsible, ERPNext) ===== */}
+            {/* ===== Taxes and Charges ===== */}
             <div className="space-y-3 pb-4 border-b border-border">
               <h3 className="text-base font-bold text-heading">Taxes and Charges</h3>
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -1751,12 +1463,7 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
                     value={form.tax_category ?? ""}
                     onChange={(v) => update({ tax_category: v ?? "" })}
                     searchFn={async (q) => {
-                      const results = await customerService.searchLink(
-                        "Tax Category",
-                        q,
-                        "Quotation",
-                        { disabled: 0 },
-                      )
+                      const results = await customerService.searchLink("Tax Category", q, "Sales Order", { disabled: 0 })
                       return { items: results }
                     }}
                     validate={async (v) => {
@@ -1773,12 +1480,7 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
                     value={form.shipping_rule ?? ""}
                     onChange={(v) => update({ shipping_rule: v ?? "" })}
                     searchFn={async (q) => {
-                      const results = await customerService.searchLink(
-                        "Shipping Rule",
-                        q,
-                        "Quotation",
-                        { disabled: 0 },
-                      )
+                      const results = await customerService.searchLink("Shipping Rule", q, "Sales Order", { disabled: 0 })
                       return { items: results }
                     }}
                     validate={async (v) => {
@@ -1795,11 +1497,7 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
                     value={form.incoterm ?? ""}
                     onChange={(v) => update({ incoterm: v ?? "" })}
                     searchFn={async (q) => {
-                      const results = await customerService.searchLink(
-                        "Incoterm",
-                        q,
-                        "Quotation",
-                      )
+                      const results = await customerService.searchLink("Incoterm", q, "Sales Order")
                       return { items: results }
                     }}
                     validate={async (v) => {
@@ -1831,7 +1529,7 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
                     const results = await customerService.searchLink(
                       "Sales Taxes and Charges Template",
                       q,
-                      "Quotation",
+                      "Sales Order",
                       { disabled: 0 },
                     )
                     return { items: results }
@@ -1868,43 +1566,93 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
               )}
             </div>
 
-              {/* ===== Totals — fully shown (not collapsible, ERPNext) ===== */}
+            {/* ===== Totals ===== */}
             <div className="space-y-3 pb-4 border-b border-border">
               <h3 className="text-base font-bold text-heading">Totals</h3>
               {(() => {
                 const showRounding = !form.disable_rounded_total
-                const quoteCurrency = form.currency || companyCurrency
-                // in_words: use the stored server value when present (exact
-                // ERPNext display on saved docs), else compute live on drafts.
+                const soCurrency = form.currency || companyCurrency
                 const inWordsDisplay =
-                  form.in_words || moneyInWords(rounded_total, quoteCurrency)
+                  form.in_words || moneyInWords(rounded_total, soCurrency)
                 const baseInWordsDisplay =
                   form.base_in_words || moneyInWords(base_rounded_total, companyCurrency)
                 return (
                   <div className="mt-3 lg:w-1/2 lg:ml-auto">
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    {/* Company-currency column — hidden when it equals the
-                        transaction currency (ERPNext transaction.js collapses
-                        base_* when company currency === doc currency). */}
-                    {quoteCurrency !== companyCurrency && (
-                      <div className="space-y-3">
+                      {soCurrency !== companyCurrency && (
+                        <div className="space-y-3">
+                          <div>
+                            <label className={labelClass}>Grand Total ({companyCurrency})</label>
+                            <input
+                              type="text"
+                              value={formatCurrency(base_grand_total)}
+                              className={`${inputClass} bg-gray-50`}
+                              readOnly
+                            />
+                          </div>
+                          {showRounding && (
+                            <div>
+                              <label className={labelClass}>
+                                Rounding Adjustment ({companyCurrency})
+                              </label>
+                              <input
+                                type="text"
+                                value={formatCurrency(base_rounding_adjustment)}
+                                className={`${inputClass} bg-gray-50`}
+                                readOnly
+                              />
+                            </div>
+                          )}
+                          {showRounding && (
+                            <div>
+                              <label className={labelClass}>
+                                Rounded Total ({companyCurrency})
+                              </label>
+                              <input
+                                type="text"
+                                value={formatCurrency(base_rounded_total)}
+                                className={`${inputClass} bg-gray-50`}
+                                readOnly
+                              />
+                            </div>
+                          )}
+                          {rule("base_in_words").visible && (
+                            <div>
+                              <label className={labelClass}>In Words ({companyCurrency})</label>
+                              <input
+                                type="text"
+                                value={baseInWordsDisplay}
+                                className={`${inputClass} bg-gray-50 font-bold`}
+                                readOnly
+                              />
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      <div
+                        className={
+                          soCurrency === companyCurrency
+                            ? "space-y-3 lg:col-span-2"
+                            : "space-y-3"
+                        }
+                      >
                         <div>
-                          <label className={labelClass}>Grand Total ({companyCurrency})</label>
+                          <label className={labelClass}>Grand Total ({soCurrency})</label>
                           <input
                             type="text"
-                            value={formatCurrency(base_grand_total)}
-                            className={`${inputClass} bg-gray-50`}
+                            value={formatCurrency(taxState.grand_total)}
+                            className={`${inputClass} bg-gray-50 font-bold`}
                             readOnly
                           />
                         </div>
                         {showRounding && (
                           <div>
                             <label className={labelClass}>
-                              Rounding Adjustment ({companyCurrency})
+                              Rounding Adjustment ({soCurrency})
                             </label>
                             <input
                               type="text"
-                              value={formatCurrency(base_rounding_adjustment)}
+                              value={formatCurrency(rounding_adjustment)}
                               className={`${inputClass} bg-gray-50`}
                               readOnly
                             />
@@ -1912,114 +1660,50 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
                         )}
                         {showRounding && (
                           <div>
-                            <label className={labelClass}>
-                              Rounded Total ({companyCurrency})
-                            </label>
+                            <label className={labelClass}>Rounded Total ({soCurrency})</label>
                             <input
                               type="text"
-                              value={formatCurrency(base_rounded_total)}
-                              className={`${inputClass} bg-gray-50`}
+                              value={formatCurrency(rounded_total)}
+                              className={`${inputClass} bg-gray-50 font-bold`}
                               readOnly
                             />
                           </div>
                         )}
-                        {rule("base_in_words").visible && (
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            id="disableRoundedTotal"
+                            checked={!!form.disable_rounded_total}
+                            onChange={(e) =>
+                              update({ disable_rounded_total: e.target.checked ? 1 : 0 })
+                            }
+                            disabled={!isFieldEditable("disable_rounded_total")}
+                            className="h-4 w-4 rounded border-border"
+                          />
+                          <label htmlFor="disableRoundedTotal" className="text-sm text-body">
+                            Disable Rounded Total
+                          </label>
+                        </div>
+                        {rule("in_words").visible && (
                           <div>
-                            <label className={labelClass}>In Words ({companyCurrency})</label>
+                            <label className={labelClass}>In Words ({soCurrency})</label>
                             <input
                               type="text"
-                              value={baseInWordsDisplay}
+                              value={inWordsDisplay}
                               className={`${inputClass} bg-gray-50 font-bold`}
                               readOnly
                             />
                           </div>
                         )}
                       </div>
-                    )}
-                    {/* Transaction-currency column — always shown. When the
-                        company-currency column is hidden (currencies equal),
-                        span the full width of the totals container so the
-                        boxes are not cropped into a leftover grid column. */}
-                    <div
-                      className={
-                        quoteCurrency === companyCurrency
-                          ? "space-y-3 lg:col-span-2"
-                          : "space-y-3"
-                      }
-                    >
-                      <div>
-                        <label className={labelClass}>
-                          Grand Total ({quoteCurrency})
-                        </label>
-                        <input
-                          type="text"
-                          value={formatCurrency(taxState.grand_total)}
-                          className={`${inputClass} bg-gray-50 font-bold`}
-                          readOnly
-                        />
-                      </div>
-                      {showRounding && (
-                        <div>
-                          <label className={labelClass}>
-                            Rounding Adjustment ({quoteCurrency})
-                          </label>
-                          <input
-                            type="text"
-                            value={formatCurrency(rounding_adjustment)}
-                            className={`${inputClass} bg-gray-50`}
-                            readOnly
-                          />
-                        </div>
-                      )}
-                      {showRounding && (
-                        <div>
-                          <label className={labelClass}>
-                            Rounded Total ({quoteCurrency})
-                          </label>
-                          <input
-                            type="text"
-                            value={formatCurrency(rounded_total)}
-                            className={`${inputClass} bg-gray-50 font-bold`}
-                            readOnly
-                          />
-                        </div>
-                      )}
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="checkbox"
-                          id="disableRoundedTotal"
-                          checked={!!form.disable_rounded_total}
-                          onChange={(e) =>
-                            update({ disable_rounded_total: e.target.checked ? 1 : 0 })
-                          }
-                          disabled={!isFieldEditable("disable_rounded_total")}
-                          className="h-4 w-4 rounded border-border"
-                        />
-                        <label htmlFor="disableRoundedTotal" className="text-sm text-body">
-                          Disable Rounded Total
-                        </label>
-                      </div>
-                      {rule("in_words").visible && (
-                        <div>
-                          <label className={labelClass}>In Words ({quoteCurrency})</label>
-                          <input
-                            type="text"
-                            value={inWordsDisplay}
-                            className={`${inputClass} bg-gray-50 font-bold`}
-                            readOnly
-                          />
-                        </div>
-                      )}
                     </div>
                   </div>
-                </div>
                 )
               })()}
             </div>
 
-            {/* ===== Additional Discount — collapsed by default (ERPNext) ===== */}
+            {/* ===== Additional Discount ===== */}
             <CollapsibleSection title="Additional Discount">
-              {/* Desk section_break_44: two columns split by column_break_46 */}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 <div className="space-y-3">
                   <Field label="Apply Additional Discount On" fieldname="apply_discount_on">
@@ -2042,7 +1726,7 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
                       value={form.coupon_code ?? ""}
                       onChange={(v) => update({ coupon_code: v ?? "" })}
                       searchFn={async (q) => {
-                        const results = await customerService.searchLink("Coupon Code", q, "Quotation")
+                        const results = await customerService.searchLink("Coupon Code", q, "Sales Order")
                         return { items: results }
                       }}
                       validate={async (v) => {
@@ -2090,33 +1774,11 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
                       }
                     />
                   </Field>
-                  <Field label="Referral Sales Partner" fieldname="referral_sales_partner">
-                    <LinkSearchField
-                      value={form.referral_sales_partner ?? ""}
-                      onChange={(v) => update({ referral_sales_partner: v ?? "" })}
-                      searchFn={async (q) => {
-                        const results = await customerService.searchLink(
-                          "Sales Partner",
-                          q,
-                          "Quotation",
-                          { disabled: 0 },
-                        )
-                        return { items: results }
-                      }}
-                      validate={async (v) => {
-                        await customerService.validateLink("Sales Partner", v)
-                      }}
-                      docType="Sales Partner"
-                      placeholder="Select sales partner…"
-                      clearIconMode="hover"
-                      disabled={!isFieldEditable("referral_sales_partner")}
-                    />
-                  </Field>
                 </div>
               </div>
               {(form.pricing_rules ?? []).length > 0 && (
                 <div className="pt-3">
-                  <ChildTableGrid<PricingRuleRow>
+                  <ChildTableGrid<SalesOrderPricingRuleRow>
                     title="Pricing Rules"
                     rows={form.pricing_rules ?? []}
                     columns={pricingRuleColumns}
@@ -2135,30 +1797,28 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
                 storedHtml={form.other_charges_calculation}
               />
             )}
-            </div>
-            )}
+          </div>
+        )}
 
-          {activeTab === "address" && (
+        {activeTab === "address" && (
           <div className="space-y-4">
-            {/* Section 1: Billing Address — plain (non-collapsible) */}
+            {/* Billing Address */}
             <div className="border-b border-border last:border-b-0">
               <div className="py-3 text-base font-bold text-heading">Billing Address</div>
               <div className="pb-4 space-y-3">
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                   <div className="space-y-3">
                     <div>
-                      <label className={labelClass}>
-                        {form.quotation_to || "Party"} Address
-                      </label>
+                      <label className={labelClass}>Customer Address</label>
                       <LinkSearchField
                         value={form.customer_address ?? ""}
-                        onChange={(v) => handlePartyAddressSelect(v)}
+                        onChange={(v) => void handleAddressSelect("customer_address", "address_display")(v)}
                         searchFn={async (q) => {
                           const results = await customerService.searchLink(
                             "Address",
                             q,
-                            "Quotation",
-                            form.party_name ? { link_name: form.party_name } : undefined,
+                            "Sales Order",
+                            form.customer ? { link_name: form.customer } : undefined,
                           )
                           return { items: results }
                         }}
@@ -2171,9 +1831,7 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
                     {form.address_display && (
                       <div>
                         <label className={labelClass}>Address</label>
-                        <div
-                          className={`${inputClass} bg-gray-50 whitespace-pre-line min-h-[76px] py-2.5`}
-                        >
+                        <div className={`${inputClass} bg-gray-50 whitespace-pre-line min-h-[76px] py-2.5`}>
                           {normalizeDisplayText(form.address_display)}
                         </div>
                       </div>
@@ -2184,13 +1842,13 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
                       <label className={labelClass}>Contact Person</label>
                       <LinkSearchField
                         value={form.contact_person ?? ""}
-                        onChange={(v) => handleContactSelect(v)}
+                        onChange={(v) => void handleContactSelect(v ?? "")}
                         searchFn={async (q) => {
                           const results = await customerService.searchLink(
                             "Contact",
                             q,
-                            "Quotation",
-                            form.party_name ? { link_name: form.party_name } : undefined,
+                            "Sales Order",
+                            form.customer ? { link_name: form.customer } : undefined,
                           )
                           return { items: results }
                         }}
@@ -2204,9 +1862,7 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
                     {form.contact_display && (
                       <div>
                         <label className={labelClass}>Contact</label>
-                        <div
-                          className={`${inputClass} bg-gray-50 whitespace-pre-line py-2.5`}
-                        >
+                        <div className={`${inputClass} bg-gray-50 whitespace-pre-line py-2.5`}>
                           {normalizeDisplayText(form.contact_display)}
                         </div>
                       </div>
@@ -2227,7 +1883,7 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
               </div>
             </div>
 
-            {/* Section 2: Shipping Address */}
+            {/* Shipping Address */}
             <div className="border-b border-border last:border-b-0">
               <div className="py-3 text-base font-bold text-heading">Shipping Address</div>
               <div className="pb-4 space-y-3">
@@ -2237,13 +1893,13 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
                       <label className={labelClass}>Shipping Address</label>
                       <LinkSearchField
                         value={form.shipping_address_name ?? ""}
-                        onChange={(v) => handleShippingAddressSelect(v)}
+                        onChange={(v) => void handleAddressSelect("shipping_address_name", "shipping_address")(v)}
                         searchFn={async (q) => {
                           const results = await customerService.searchLink(
                             "Address",
                             q,
-                            "Quotation",
-                            form.party_name ? { link_name: form.party_name } : undefined,
+                            "Sales Order",
+                            form.customer ? { link_name: form.customer } : undefined,
                           )
                           return { items: results }
                         }}
@@ -2258,9 +1914,7 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
                     {form.shipping_address && (
                       <div>
                         <label className={labelClass}>Shipping Address</label>
-                        <div
-                          className={`${inputClass} bg-gray-50 whitespace-pre-line min-h-[76px] py-2.5`}
-                        >
+                        <div className={`${inputClass} bg-gray-50 whitespace-pre-line min-h-[76px] py-2.5`}>
                           {normalizeDisplayText(form.shipping_address)}
                         </div>
                       </div>
@@ -2270,7 +1924,7 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
               </div>
             </div>
 
-            {/* Section 3: Company Address */}
+            {/* Company Address */}
             <div className="border-b border-border last:border-b-0">
               <div className="py-3 text-base font-bold text-heading">Company Address</div>
               <div className="pb-4 space-y-3">
@@ -2280,12 +1934,12 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
                       <label className={labelClass}>Company Address Name</label>
                       <LinkSearchField
                         value={form.company_address ?? ""}
-                        onChange={(v) => handleCompanyAddressSelect(v)}
+                        onChange={(v) => void handleAddressSelect("company_address", "company_address_display")(v)}
                         searchFn={async (q) => {
                           const results = await customerService.searchLink(
                             "Address",
                             q,
-                            "Quotation",
+                            "Sales Order",
                             form.company ? { link_name: form.company } : undefined,
                           )
                           return { items: results }
@@ -2299,9 +1953,7 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
                     {form.company_address_display && (
                       <div>
                         <label className={labelClass}>Company Address</label>
-                        <div
-                          className={`${inputClass} bg-gray-50 whitespace-pre-line min-h-[76px] py-2.5`}
-                        >
+                        <div className={`${inputClass} bg-gray-50 whitespace-pre-line min-h-[76px] py-2.5`}>
                           {normalizeDisplayText(form.company_address_display)}
                         </div>
                       </div>
@@ -2316,16 +1968,16 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
                         const results = await customerService.searchLink(
                           "Contact",
                           q,
-                          "Quotation",
-                      form.company ? { link_name: form.company } : undefined,
-                      )
-                      return { items: results }
-                    }}
-                    placeholder="Select contact…"
-                    validate={async (v) => {
-                      await customerService.validateLink("Contact", v)
-                    }}
-                    suppressExternalLabelFetch
+                          "Sales Order",
+                          form.company ? { link_name: form.company } : undefined,
+                        )
+                        return { items: results }
+                      }}
+                      placeholder="Select contact…"
+                      validate={async (v) => {
+                        await customerService.validateLink("Contact", v)
+                      }}
+                      suppressExternalLabelFetch
                       clearIconMode="hover"
                       disabled={!isFieldEditable("company_contact_person")}
                     />
@@ -2333,10 +1985,61 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
                 </div>
               </div>
             </div>
-          </div>
-          )}
 
-          {activeTab === "terms" && (
+            {/* Territory */}
+            <div className="border-b border-border last:border-b-0">
+              <div className="py-3 text-base font-bold text-heading">Territory</div>
+              <div className="pb-4 max-w-sm space-y-3">
+                <Field label="Territory" fieldname="territory">
+                  <LinkSearchField
+                    value={form.territory ?? ""}
+                    onChange={(v) => update({ territory: v ?? "" })}
+                    searchFn={async (q) => {
+                      const results = await customerService.searchLink("Territory", q, "Sales Order")
+                      return { items: results }
+                    }}
+                    validate={async (v) => {
+                      await customerService.validateLink("Territory", v)
+                    }}
+                    docType="Territory"
+                    placeholder="Select territory…"
+                    clearIconMode="hover"
+                    disabled={!isFieldEditable("territory")}
+                  />
+                </Field>
+                <Field label="Dispatch Address" fieldname="dispatch_address_name">
+                  <LinkSearchField
+                    value={form.dispatch_address_name ?? ""}
+                    onChange={(v) => void handleAddressSelect("dispatch_address_name", "dispatch_address")(v)}
+                    searchFn={async (q) => {
+                      const results = await customerService.searchLink(
+                        "Address",
+                        q,
+                        "Sales Order",
+                        form.customer ? { link_name: form.customer } : undefined,
+                      )
+                      return { items: results }
+                    }}
+                    placeholder="Select address…"
+                    suppressExternalLabelFetch
+                    clearIconMode="hover"
+                    disabled={!isFieldEditable("dispatch_address_name")}
+                  />
+                </Field>
+                {form.dispatch_address && (
+                  <div>
+                    <label className={labelClass}>Dispatch Address</label>
+                    <div className={`${inputClass} bg-gray-50 whitespace-pre-line min-h-[76px] py-2.5`}>
+                      {normalizeDisplayText(form.dispatch_address)}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {activeTab === "terms" && (
           <div className="space-y-4">
             <div className="pb-4 border-b border-border space-y-3">
               <h3 className="text-base font-bold text-heading">Payment Terms</h3>
@@ -2346,14 +2049,10 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
                   value={form.payment_terms_template ?? ""}
                   onChange={(v) => void handlePaymentTermsSelect(v ?? "")}
                   searchFn={async (q) => {
-                    // ERPNext desk sends no filters for this Link field
-                    // (quotation.js); the backend's Payment Terms Template
-                    // table has no `disabled` column, so filtering on it
-                    // 500s (Unknown column).
                     const results = await customerService.searchLink(
                       "Payment Terms Template",
                       q,
-                      "Quotation",
+                      "Sales Order",
                     )
                     return { items: results }
                   }}
@@ -2366,7 +2065,7 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
                   disabled={!isFieldEditable("payment_terms_template")}
                 />
               </div>
-              <ChildTableGrid<Quotation["payment_schedule"][number]>
+              <ChildTableGrid<SalesOrderPaymentScheduleRow>
                 title="Payment Schedule"
                 titleClassName="text-xs font-semibold text-muted"
                 noTopBorder
@@ -2385,12 +2084,12 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
                 <label className={labelClass}>Terms</label>
                 <LinkSearchField
                   value={form.tc_name ?? ""}
-                  onChange={(v) => void handleTcNameSelect(v ?? "")}
+                  onChange={(v) => update({ tc_name: v ?? "", terms: "" })}
                   searchFn={async (q) => {
                     const results = await customerService.searchLink(
                       "Terms and Conditions",
                       q,
-                      "Quotation",
+                      "Sales Order",
                       { disabled: 0 },
                     )
                     return { items: results }
@@ -2417,14 +2116,25 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
               </div>
             </div>
           </div>
-          )}
+        )}
 
-          {activeTab === "more_info" && (
+        {activeTab === "more_info" && (
           <div className="space-y-4">
-            {/* Section 1: Print Settings — collapsed */}
+            <CollapsibleSection title="Sales Team">
+              <ChildTableGrid<SalesOrderSalesTeamRow>
+                title="Sales Team"
+                noTopBorder
+                rows={form.sales_team ?? []}
+                columns={salesTeamColumns}
+                emptyRow={{ sales_person: "", allocated_percentage: 0, allocated_amount: 0, commission_rate: 0, incentives: 0 }}
+                onChange={(rows) => update({ sales_team: rows })}
+                readOnly={!isFieldEditable("sales_team")}
+                minWidth="720px"
+                canAdd={mode === "create" || isFieldEditable("sales_team")}
+              />
+            </CollapsibleSection>
+
             <CollapsibleSection title="Print Settings">
-              {/* Desk print_settings layout: letter_head | select_print_heading
-                  then group_same_items | language */}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 <div>
                   <label className={labelClass}>Letter Head</label>
@@ -2432,7 +2142,7 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
                     value={form.letter_head ?? ""}
                     onChange={(v) => update({ letter_head: v ?? "" })}
                     searchFn={async (q) => {
-                      const results = await customerService.searchLink("Letter Head", q, "Quotation")
+                      const results = await customerService.searchLink("Letter Head", q, "Sales Order")
                       return { items: results }
                     }}
                     docType="Letter Head"
@@ -2444,25 +2154,7 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
                     disabled={!isFieldEditable("letter_head")}
                   />
                 </div>
-                <div>
-                  <label className={labelClass}>Print Heading</label>
-                  <LinkSearchField
-                    value={form.select_print_heading ?? ""}
-                    onChange={(v) => update({ select_print_heading: v ?? "" })}
-                    searchFn={async (q) => {
-                      const results = await customerService.searchLink("Print Heading", q, "Quotation")
-                      return { items: results }
-                    }}
-                    validate={async (v) => {
-                      await customerService.validateLink("Print Heading", v)
-                    }}
-                    docType="Print Heading"
-                    placeholder="Select print heading…"
-                    clearIconMode="hover"
-                    disabled={!isFieldEditable("select_print_heading")}
-                  />
-                </div>
-                <div className="flex items-start gap-2">
+                <div className="flex items-start gap-2 pt-6">
                   <input
                     type="checkbox"
                     id="groupSameItems"
@@ -2487,97 +2179,8 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
               </div>
             </CollapsibleSection>
 
-            {/* Section 2: Lost Reasons — always shown (collapsed), contents
-                populated conditionally (ERPNext parity) */}
-            <CollapsibleSection title="Lost Reasons">
-              {form.status === "Lost" && (
-                  <div className="max-w-sm mb-3">
-                    <label className={labelClass}>Detailed Reason</label>
-                    <textarea
-                      rows={3}
-                      value={form.order_lost_reason ?? ""}
-                      onChange={(e) => update({ order_lost_reason: e.target.value })}
-                      className={inputClass}
-                      readOnly={!isFieldEditable("order_lost_reason")}
-                      placeholder="Detailed reason…"
-                    />
-                  </div>
-                )}
-                {(form.lost_reasons ?? []).length > 0 && (
-                  <ChildTableGrid<LostReasonRow>
-                    title="Lost Reasons"
-                    rows={form.lost_reasons ?? []}
-                    columns={lostReasonColumns}
-                    emptyRow={{ lost_reason: "" }}
-                    onChange={() => undefined}
-                    readOnly
-                    minWidth="420px"
-                  />
-                )}
-                <div className="max-w-sm">
-                  <label className={labelClass}>Competitors</label>
-                  {(form.competitors ?? []).length > 0 && (
-                    <div className="flex flex-wrap gap-1.5 mb-2">
-                      {(form.competitors ?? []).map((c, i) => (
-                        <span
-                          key={i}
-                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-gray-100 text-body text-xs font-medium"
-                        >
-                          {c.competitor}
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const updated = (form.competitors ?? []).filter(
-                                (_, idx) => idx !== i,
-                              )
-                              update({ competitors: updated })
-                            }}
-                            title="Remove"
-                            disabled={!isFieldEditable("competitors")}
-                            className="hover:text-danger-700 transition-colors"
-                          >
-                            <X size={11} />
-                          </button>
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                  <LinkSearchField
-                    value={undefined}
-                    onChange={(v) => {
-                      if (!v) return
-                      const existing = form.competitors ?? []
-                      if (
-                        !existing.some(
-                          (c) => c.competitor.toLowerCase() === v.toLowerCase(),
-                        )
-                      ) {
-                        update({ competitors: [...existing, { competitor: v }] })
-                      }
-                    }}
-                    readOnly={!isFieldEditable("competitors")}
-                    searchFn={async (q) => {
-                      const results = await customerService.searchLink(
-                        "Competitor",
-                        q,
-                        "Quotation",
-                        {},
-                      )
-                      return { items: results }
-                    }}
-                    docType="Competitor"
-                    placeholder="Search competitor…"
-                    validate={async (v) => {
-                      await customerService.validateLink("Competitor", v)
-                    }}
-                    clearIconMode="hover"
-                  />
-                </div>
-              </CollapsibleSection>
-
-            {/* Section 3: Additional Info — collapsed */}
             <CollapsibleSection title="Additional Info">
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 <div>
                   <label className={labelClass}>Status</label>
                   <input
@@ -2588,21 +2191,39 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
                   />
                 </div>
                 <div>
-                  <label className={labelClass}>Territory</label>
+                  <label className={labelClass}>Project</label>
                   <LinkSearchField
-                    value={form.territory ?? ""}
-                    onChange={(v) => update({ territory: v ?? "" })}
+                    value={form.project ?? ""}
+                    onChange={(v) => update({ project: v ?? "" })}
                     searchFn={async (q) => {
-                      const results = await customerService.searchLink("Territory", q, "Quotation")
+                      const results = await customerService.searchLink("Project", q, "Sales Order")
                       return { items: results }
                     }}
                     validate={async (v) => {
-                      await customerService.validateLink("Territory", v)
+                      await customerService.validateLink("Project", v)
                     }}
-                    docType="Territory"
-                    placeholder="Select territory…"
+                    docType="Project"
+                    placeholder="Select project…"
                     clearIconMode="hover"
-                    disabled={!isFieldEditable("territory")}
+                    disabled={!isFieldEditable("project")}
+                  />
+                </div>
+                <div>
+                  <label className={labelClass}>Source</label>
+                  <LinkSearchField
+                    value={form.source ?? ""}
+                    onChange={(v) => update({ source: v ?? "" })}
+                    searchFn={async (q) => {
+                      const results = await customerService.searchLink("Lead Source", q, "Sales Order")
+                      return { items: results }
+                    }}
+                    docType="Lead Source"
+                    placeholder="Select source…"
+                    validate={async (v) => {
+                      await customerService.validateLink("Lead Source", v)
+                    }}
+                    clearIconMode="hover"
+                    disabled={!isFieldEditable("source")}
                   />
                 </div>
                 <div>
@@ -2611,7 +2232,7 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
                     value={form.campaign ?? ""}
                     onChange={(v) => update({ campaign: v ?? "" })}
                     searchFn={async (q) => {
-                      const results = await customerService.searchLink("Campaign", q, "Quotation")
+                      const results = await customerService.searchLink("Campaign", q, "Sales Order")
                       return { items: results }
                     }}
                     docType="Campaign"
@@ -2624,62 +2245,27 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
                   />
                 </div>
                 <div>
-                  <label className={labelClass}>Source</label>
+                  <label className={labelClass}>Cost Center</label>
                   <LinkSearchField
-                    value={form.source ?? ""}
-                    onChange={(v) => update({ source: v ?? "" })}
+                    value={form.cost_center ?? ""}
+                    onChange={(v) => update({ cost_center: v ?? "" })}
                     searchFn={async (q) => {
-                      const results = await customerService.searchLink("Lead Source", q, "Quotation")
+                      const results = await customerService.searchLink("Cost Center", q, "Sales Order")
                       return { items: results }
                     }}
-                    docType="Lead Source"
-                    placeholder="Select source…"
                     validate={async (v) => {
-                      await customerService.validateLink("Lead Source", v)
+                      await customerService.validateLink("Cost Center", v)
                     }}
+                    docType="Cost Center"
+                    placeholder="Select cost center…"
                     clearIconMode="hover"
-                    disabled={!isFieldEditable("source")}
-                  />
-                </div>
-                {form.opportunity && (
-                  <div>
-                    <label className={labelClass}>Opportunity</label>
-                    <LinkSearchField
-                      value={form.opportunity}
-                      onChange={(v) => update({ opportunity: v ?? "" })}
-                      searchFn={async (q) => {
-                        const results = await customerService.searchLink("Opportunity", q, "Quotation")
-                        return { items: results }
-                      }}
-                      docType="Opportunity"
-                      placeholder="Select opportunity…"
-                      readOnly
-                      clearIconMode="hover"
-                    />
-                  </div>
-                )}
-                <div>
-                  <label className={labelClass}>Supplier Quotation</label>
-                  <LinkSearchField
-                    value={form.supplier_quotation ?? ""}
-                    onChange={(v) => update({ supplier_quotation: v ?? "" })}
-                    searchFn={async (q) => {
-                      const results = await customerService.searchLink("Supplier Quotation", q, "Quotation")
-                      return { items: results }
-                    }}
-                    docType="Supplier Quotation"
-                    placeholder="Select supplier quotation…"
-                    validate={async (v) => {
-                      await customerService.validateLink("Supplier Quotation", v)
-                    }}
-                    clearIconMode="hover"
-                    disabled={!isFieldEditable("supplier_quotation")}
+                    disabled={!isFieldEditable("cost_center")}
                   />
                 </div>
               </div>
             </CollapsibleSection>
           </div>
-          )}
+        )}
       </div>
     )
   },

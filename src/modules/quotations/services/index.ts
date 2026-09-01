@@ -3,6 +3,7 @@ import { postMethod, postMethodRaw } from "@/services/frappe-client"
 import { API_CONFIG } from "@/config/api.config"
 import { buildTimelineItems, toQuillHtml } from "@/modules/payments/services"
 import type { DocInfo, PaymentActivityItem, PaymentComment } from "@/modules/payments/types"
+import type { SalesOrderMappedDoc } from "@/modules/sales-orders/types"
 import type { Quotation, QuotationItem, QuotationTax, QuotationFormData, QuotationListResponse } from "../types"
 
 export type {
@@ -366,6 +367,7 @@ function deskChildRow(
       row_id: row.row_id ?? null,
       account_head: row.account_head ?? "",
       description: row.description ?? "",
+      category: row.category ?? "Total",
       project: null,
       rate: dnum(row.rate),
       tax_amount: dnum(row.tax_amount),
@@ -822,7 +824,10 @@ export const quotationService = {
   },
 
   // ── Conversion chain (Create menu) ─────────────────────────────────
-  async makeSalesOrder(sourceName: string, selectedItems?: Array<{ name: string; item_code: string; is_alternative: number }>): Promise<{ doctype: string; name: string }> {
+  // make_mapped_doc returns an UNSAVED mapped doc (no name) — exactly like
+  // ERPNext's open_mapped_doc — which the caller opens as a prefilled new
+  // Sales Order form rather than navigating to a persisted URL.
+  async makeSalesOrder(sourceName: string, selectedItems?: Array<{ name: string; item_code: string; is_alternative: number }>): Promise<SalesOrderMappedDoc> {
     const body: Record<string, unknown> = {
       method: "erpnext.selling.doctype.quotation.quotation.make_sales_order",
       source_name: sourceName,
@@ -830,7 +835,7 @@ export const quotationService = {
     if (selectedItems && selectedItems.length > 0) {
       body.args = JSON.stringify({ selected_items: selectedItems })
     }
-    return apiClient<{ doctype: string; name: string }>(
+    return apiClient<SalesOrderMappedDoc>(
       "/method/frappe.model.mapper.make_mapped_doc",
       { method: "POST", body: JSON.stringify(body) },
     )
@@ -1402,4 +1407,191 @@ export const quotationService = {
     params.set("options", JSON.stringify(pdfOptions))
     return `${API_CONFIG.baseUrl}/method/frappe.utils.print_format.download_multi_pdf?${params.toString()}`
   },
+}
+
+/** Standard child-table fields that must never be merged back from a desk
+ * get_item_details response into a Quotation Item row. */
+export const ITEM_CHILD_STD_FIELDS = new Set([
+  "doctype",
+  "name",
+  "owner",
+  "creation",
+  "modified",
+  "modified_by",
+  "docstatus",
+  "idx",
+  "parent",
+  "parentfield",
+  "parenttype",
+  "__islocal",
+  "__unsaved",
+  "__unedited",
+  "_user_tags",
+  "comments",
+  "likes",
+])
+
+export interface EnrichQuotationItemOptions {
+  /** True for a fresh unsaved doc (desk __islocal/__unsaved envelope). */
+  isNew: boolean
+  /** Session user id (desk doc.owner). Omitted when unknown. */
+  owner?: string
+  /** Resolved doc name for the desk call (existing name or new-doc id). */
+  name: string
+  /** Company fallback when snapshot carries no company value. */
+  company?: string
+}
+
+/**
+ * ERPNext-faithful item select for a Quotation item row. Single source of truth
+ * shared by the form's item grid and the Update Items dialog: validates the
+ * item link, calls the full desk get_item_details (price list, currency
+ * conversion, margins, discounts, pricing rules, item defaults), computes the
+ * net rate + amount like transaction.js, and fetches the item tax template.
+ *
+ * `snapshot` is the current quotation doc (party/price list/currency…), `item`
+ * the target row to enrich (may carry existing qty). The desk call rewrites
+ * volatile child fields (uom/conversion_factor/price fields reset to 0) exactly
+ * as the main form's runItemCodeFlow does; `opts.isNew` must therefore be true
+ * only for a real new doc.
+ */
+export async function enrichQuotationItem(
+  snapshot: Partial<Quotation> & Record<string, unknown>,
+  item: QuotationItem | null,
+  itemCode: string,
+  opts: EnrichQuotationItemOptions,
+): Promise<QuotationItem | null> {
+  if (!item || !itemCode) return null
+
+  const patched: QuotationItem = {
+    ...item,
+    item_code: itemCode,
+    weight_per_unit: 0,
+    weight_uom: "",
+    uom: "",
+    conversion_factor: 0,
+    barcode: null,
+    pricing_rules: "",
+  }
+
+  await quotationService.validateLink("Item", itemCode, []).catch(() => undefined)
+
+  const items = [...((snapshot.items ?? []) as QuotationItem[])]
+  const idxOf = items.findIndex((r) => r === item || r.name === item.name)
+  if (idxOf >= 0) items[idxOf] = patched
+  else items.push(patched)
+
+  const docName = opts.name || `new-quotation-${deskRandomString()}`
+  const doc = buildDeskApplyPriceListDoc(
+    { ...snapshot, name: docName, items },
+    { isNew: opts.isNew, owner: opts.owner },
+  )
+  const args: Record<string, unknown> = {
+    item_code: itemCode,
+    barcode: null,
+    serial_no: undefined,
+    batch_no: undefined,
+    set_warehouse: undefined,
+    warehouse: patched.warehouse || undefined,
+    customer: snapshot.party_name || undefined,
+    quotation_to: snapshot.quotation_to || undefined,
+    supplier: undefined,
+    currency: snapshot.currency || undefined,
+    is_internal_supplier: undefined,
+    is_internal_customer: undefined,
+    update_stock: 0,
+    conversion_rate: snapshot.conversion_rate ?? 1,
+    price_list: snapshot.selling_price_list || undefined,
+    price_list_currency: snapshot.price_list_currency || undefined,
+    plc_conversion_rate: snapshot.plc_conversion_rate ?? 1,
+    company: snapshot.company || opts.company,
+    order_type: snapshot.order_type || undefined,
+    is_pos: 0,
+    is_return: 0,
+    is_subcontracted: undefined,
+    ignore_pricing_rule: snapshot.ignore_pricing_rule ?? 0,
+    doctype: DOCTYPE,
+    name: docName || undefined,
+    project: undefined,
+    qty: patched.qty || 1,
+    net_rate: patched.rate || undefined,
+    base_net_rate: undefined,
+    stock_qty: patched.stock_qty || undefined,
+    conversion_factor: 0,
+    weight_per_unit: 0,
+    uom: null,
+    weight_uom: "",
+    manufacturer: undefined,
+    stock_uom: patched.stock_uom || "Nos",
+    pos_profile: "",
+    tax_category: snapshot.tax_category || "",
+    item_tax_template: undefined,
+    child_doctype: "Quotation Item",
+    child_docname: patched.name || undefined,
+    is_old_subcontracting_flow: undefined,
+    use_serial_batch_fields: undefined,
+    serial_and_batch_bundle: undefined,
+  }
+
+  const details = await quotationService.getItemDetailsDesk(doc, args)
+  if (!details || typeof details !== "object") return null
+
+  const merged: Record<string, unknown> = { ...patched }
+  for (const [k, v] of Object.entries(details)) {
+    if (ITEM_CHILD_STD_FIELDS.has(k)) continue
+    merged[k] = v
+  }
+
+  const plr = Number(merged.price_list_rate) || 0
+  const marginType = String(merged.margin_type ?? "")
+  const mra = Number(merged.margin_rate_or_amount) || 0
+  const rateWithMargin = plr + (marginType === "Percentage" ? plr * (mra / 100) : mra)
+  const discPct = Number(merged.discount_percentage) || 0
+  let discountAmount = Number(merged.discount_amount) || 0
+  if (discPct && !discountAmount) discountAmount = rateWithMargin * (discPct / 100)
+  let rate = rateWithMargin
+  if (discountAmount > 0) {
+    rate = rateWithMargin - discountAmount
+    merged.discount_percentage = (100 * discountAmount) / rateWithMargin
+  }
+
+  const qty = Number(merged.qty) || 0
+  const convRate = Number(snapshot.conversion_rate) || 1
+  merged.rate = Math.round(rate * 100) / 100
+  merged.amount = Math.round(rate * qty * 100) / 100
+  merged.base_net_rate = Math.round(rate * convRate * 100) / 100
+  merged.stock_qty = qty * (Number(merged.conversion_factor) || 0)
+
+  if (plr > 0 && rate > plr) {
+    merged.discount_percentage = 0
+    merged.margin_type = "Amount"
+    merged.margin_rate_or_amount = Math.round((rate - plr) * 100) / 100
+    merged.rate_with_margin = rate
+  } else if (plr > 0) {
+    merged.discount_percentage = Math.round((1 - rate / plr) * 100 * 100) / 100
+    merged.discount_amount = Math.round((plr - rate) * 100) / 100
+    merged.margin_type = ""
+    merged.margin_rate_or_amount = 0
+    merged.rate_with_margin = 0
+  } else {
+    merged.discount_percentage = 0
+    merged.margin_type = ""
+    merged.margin_rate_or_amount = 0
+    merged.rate_with_margin = 0
+  }
+
+  const mergedRow = merged as unknown as QuotationItem
+
+  if (mergedRow.item_code && mergedRow.rate) {
+    const tpl = await quotationService.getItemTaxTemplate({
+      item_code: mergedRow.item_code,
+      company: snapshot.company || opts.company || "",
+      base_net_rate: Number(merged.base_net_rate) || 0,
+      tax_category: snapshot.tax_category || "",
+      transaction_date: snapshot.transaction_date || "",
+    })
+    if (tpl) mergedRow.item_tax_template = tpl
+  }
+
+  return mergedRow
 }

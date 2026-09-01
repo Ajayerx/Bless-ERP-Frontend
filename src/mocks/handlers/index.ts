@@ -10,6 +10,7 @@ import { billHandlers } from "./bills"
 import { bankAccountHandlers } from "./bank_accounts"
 import { journalEntryHandlers } from "./journal_entries"
 import { salesOrderHandlers } from "./sales_orders"
+import { salesOrderFormHandlers } from "./sales-orders-form"
 import { quotationHandlers } from "./quotations"
 import { contactHandlers } from "./contacts"
 import { opportunityHandlers } from "./opportunities"
@@ -38,6 +39,7 @@ export const handlers = [
   ...bankAccountHandlers,
   ...journalEntryHandlers,
   ...salesOrderHandlers,
+  ...salesOrderFormHandlers,
   ...quotationHandlers,
   ...contactHandlers,
   ...opportunityHandlers,

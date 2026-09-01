@@ -1,5 +1,5 @@
 import { http, HttpResponse, delay } from "msw"
-import { salesInvoices, salesOrders } from "./frappe-lookups"
+import { salesInvoices, quotations, quotationItems, quotationTaxes } from "./frappe-lookups"
 import { addQuotationRow } from "./quotations"
 
 // ERPNext "Create" actions from the Sales Invoice toolbar (sales_invoice.js
@@ -87,27 +87,39 @@ export const invoiceMakeHandlers = [
     const method = String(body.method ?? "")
     const target = MAPPED_TARGETS[method] ?? { doctype: "Sales Invoice", prefix: "SINV-MAP" }
     const result: MakeDocResult = { doctype: target.doctype, name: nextName(target.prefix) }
+    let message: unknown = result
 
-    // Seed the created doc so its detail route resolves within the session.
+    // make_sales_order (quotation → SO) mirrors the real ERPNext response:
+    // an UNSAVED prefilled mapped doc (no server name) that the SPA opens as
+    // a new editable Sales Order form — exactly like open_mapped_doc.
     const today = new Date().toISOString().slice(0, 10)
     const stamp = new Date().toISOString().replace("T", " ").slice(0, 19)
-    if (target.doctype === "Sales Order" && !salesOrders.some((so) => so.name === result.name)) {
-      salesOrders.push({
-        name: result.name,
-        customer: "CUST-0001",
-        customer_name: "Maple Leaf Bakery",
-        transaction_date: today,
+    if (target.doctype === "Sales Order") {
+      const sourceQuotation = quotations.find((q) => q.name === body.source_name)
+      const fromQuotation = method === "erpnext.selling.doctype.quotation.quotation.make_sales_order" && sourceQuotation
+      message = {
+        doctype: "Sales Order",
+        naming_series: "SO-",
+        customer: fromQuotation ? String(sourceQuotation.party_name ?? "CUST-0001") : "CUST-0001",
+        customer_name: fromQuotation ? String(sourceQuotation.customer_name ?? "Maple Leaf Bakery") : "Maple Leaf Bakery",
+        transaction_date: fromQuotation ? String(sourceQuotation.transaction_date ?? today) : today,
         delivery_date: today,
-        grand_total: 2450.0,
+        company: "BlessERP Inc.",
+        currency: fromQuotation ? String(sourceQuotation.currency ?? "CAD") : "CAD",
+        grand_total: fromQuotation ? Number(sourceQuotation.grand_total ?? 0) : 2450.0,
+        rounded_total: fromQuotation ? Number(sourceQuotation.rounded_total ?? sourceQuotation.grand_total ?? 0) : 2450.0,
         status: "Draft",
         docstatus: 0,
         per_delivered: 0,
         per_billed: 0,
+        items: quotationItems.map((i) => ({ ...i, doctype: "Sales Order Item" })),
+        taxes: quotationTaxes.map((t) => ({ ...t, doctype: "Sales Taxes and Charges" })),
+        payment_schedule: [],
         owner: "admin@blesserp.com",
         creation: stamp,
         modified: stamp,
         modified_by: "admin@blesserp.com",
-      })
+      }
     }
     if (target.doctype === "Sales Invoice" && !salesInvoices.some((si) => si.name === result.name)) {
       salesInvoices.push({
@@ -145,6 +157,6 @@ export const invoiceMakeHandlers = [
       })
     }
 
-    return HttpResponse.json({ message: result })
+    return HttpResponse.json({ message })
   }),
 ]

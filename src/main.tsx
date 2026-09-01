@@ -9,7 +9,11 @@ import { MessageDialogProvider } from "./components/ui/message-dialog"
 import ErrorBoundary from "./components/ErrorBoundary"
 import { NotificationProvider } from "./modules/notifications/context/NotificationContext"
 import App from "./App"
+import { API_CONFIG } from "./config/api.config"
 import "./index.css"
+
+// TEMP verification — remove after local cross-origin test confirms flag is live
+console.log("[test-mode]", import.meta.env.VITE_LOCAL_CROSS_ORIGIN_TEST, API_CONFIG.baseUrl)
 
 async function startMsw() {
   try {

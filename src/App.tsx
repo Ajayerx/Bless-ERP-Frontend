@@ -15,7 +15,7 @@ import { Suppliers, NewSupplier, SupplierDetail, EditSupplier } from "./modules/
 import { Bills, BillDetail, CreateBill, EditBill } from "./modules/bills/pages";
 import { Purchases, PurchaseDetail, CreatePurchaseOrder, EditPurchaseOrder } from "./modules/purchases/pages";
 import { Quotations, QuotationCreateWorkspace, QuotationDetailWorkspace } from "./modules/quotations/pages";
-import { SalesOrders, SalesOrderDetail } from "./modules/sales-orders/pages";
+import { SalesOrders, SalesOrderCreateWorkspace, SalesOrderDetailWorkspace } from "./modules/sales-orders/pages";
 import { Taxes } from "./modules/taxes/pages";
 import { Settings } from "./modules/settings/pages";
 import { Contacts, NewContact, ContactDetail, EditContact } from "./modules/contacts/pages";
@@ -96,7 +96,8 @@ function App() {
         <Route path="quotations/new" element={<QuotationCreateWorkspace />} />
         <Route path="quotations/:id" element={<QuotationDetailWorkspace />} />
         <Route path="sales-orders" element={<SalesOrders />} />
-        <Route path="sales-orders/:id" element={<SalesOrderDetail />} />
+        <Route path="sales-orders/new" element={<SalesOrderCreateWorkspace />} />
+        <Route path="sales-orders/:id" element={<SalesOrderDetailWorkspace />} />
         <Route path="suppliers" element={<Suppliers />} />
         <Route path="suppliers/new" element={<NewSupplier />} />
         <Route path="suppliers/:id" element={<SupplierDetail />} />

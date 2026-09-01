@@ -70,6 +70,11 @@ export interface QuotationTax {
   description?: string
   cost_center?: string
   included_in_print_rate?: number
+  /** "Total" (default) or "Valuation"; Valuation rows are excluded from the Tax Breakup. */
+  category?: string
+  row_id?: number
+  /** ERPNext `item_wise_tax_detail` JSON: `{ item_key: [rate, baseAmount] }`. */
+  item_wise_tax_detail?: string
   idx?: number
 }
 
@@ -156,6 +161,7 @@ export interface Quotation {
   shipping_rule?: string
   incoterm?: string
   named_place?: string
+  other_charges_calculation?: string
 
   apply_discount_on?: string
   coupon_code?: string

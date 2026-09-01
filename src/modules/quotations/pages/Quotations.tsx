@@ -5,7 +5,7 @@ import { useNavigate } from "react-router-dom"
 import { motion } from "framer-motion"
 import { Plus, Download, Printer, UserRound } from "lucide-react"
 import Topbar from "@/components/layout/Topbar"
-import { Button, Modal, ModalFooter, Input, useToast, ConfirmationDialog } from "@/components/ui"
+import { Button, Modal, ModalFooter, Input, ConfirmationDialog } from "@/components/ui"
 import { useMessageDialog, messageFromError, LinkSearchField } from "@/components/ui"
 import { quotationService, QUOTATION_EXPORT_FIELDS, type Quotation, type QuotationListResponse } from "@/services"
 import QuotationTable from "../components/QuotationTable"
@@ -24,7 +24,6 @@ function downloadBlob(blob: Blob, filename: string) {
 
 export default function Quotations() {
   const navigate = useNavigate()
-  const { addToast } = useToast()
   const { showMessage } = useMessageDialog()
   const [data, setData] = useState<QuotationListResponse | null>(null)
   const [allItems, setAllItems] = useState<Quotation[]>([])
@@ -34,7 +33,7 @@ export default function Quotations() {
   const [pageLength, setPageLength] = useState(20)
   const [activeFilter, setActiveFilter] = useState("All")
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set())
-  const [bulkLoading, setBulkLoading] = useState(false)
+  const [bulkLoading] = useState(false)
   const [actingToolbar, setActingToolbar] = useState(false)
 
   // Confirmation dialog

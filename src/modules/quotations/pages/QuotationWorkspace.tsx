@@ -239,7 +239,8 @@ export default function QuotationWorkspace({ mode, id }: QuotationWorkspaceProps
     }
     try {
       const res = await quotationService.makeSalesOrder(quotation.name)
-      navigate(`/sales-orders/${res.name}`)
+      if (res.name) navigate(`/sales-orders/${res.name}`)
+      else navigate("/sales-orders/new", { state: { mappedDoc: res } })
     } catch (err) {
       showMessage(messageFromError(err, "Failed to create Sales Order."))
     }
@@ -260,7 +261,8 @@ export default function QuotationWorkspace({ mode, id }: QuotationWorkspaceProps
     if (!quotation) return
     try {
       const res = await quotationService.makeSalesOrder(quotation.name, selectedItems)
-      navigate(`/sales-orders/${res.name}`)
+      if (res.name) navigate(`/sales-orders/${res.name}`)
+      else navigate("/sales-orders/new", { state: { mappedDoc: res } })
     } catch (err) {
       showMessage(messageFromError(err, "Failed to create Sales Order."))
     }
@@ -560,10 +562,7 @@ export default function QuotationWorkspace({ mode, id }: QuotationWorkspaceProps
                 <UpdateItemsDialog
                   open={updateItemsOpen}
                   onOpenChange={setUpdateItemsOpen}
-                  items={quotation.items}
-                  quotationName={quotation.name}
-                  currency={quotation.currency}
-                  company={quotation.company}
+                  doc={quotation}
                   onUpdated={() => void loadDoc(quotation.name)}
                 />
                 <AlternativeItemsDialog

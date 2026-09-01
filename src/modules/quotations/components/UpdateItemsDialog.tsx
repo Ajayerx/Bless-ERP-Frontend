@@ -1,19 +1,16 @@
 "use client"
 
-import { useState, useCallback } from "react"
-import { Plus, Trash2 } from "lucide-react"
+import { useCallback, useMemo, useRef, useState } from "react"
 import { Button, Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui"
-import { LinkSearchField } from "@/components/ui"
-import { quotationService, type QuotationItem } from "../services"
+import ChildTableGrid, { type GridColumn } from "@/components/ui/ChildTableGrid"
+import { quotationService, enrichQuotationItem, type Quotation } from "../services"
+import type { QuotationItem } from "../types"
 import { formatCurrency } from "@/lib/utils"
 
 interface UpdateItemsDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  items: QuotationItem[]
-  quotationName: string
-  currency: string
-  company: string
+  doc: Quotation
   onUpdated: () => void
 }
 
@@ -26,7 +23,6 @@ interface EditableRow {
   conversion_factor: number
   qty: number
   rate: number
-  amount: number
 }
 
 function rowFromItem(item: QuotationItem): EditableRow {
@@ -39,7 +35,6 @@ function rowFromItem(item: QuotationItem): EditableRow {
     conversion_factor: item.conversion_factor ?? 1,
     qty: item.qty ?? 0,
     rate: item.rate ?? 0,
-    amount: item.amount ?? 0,
   }
 }
 
@@ -50,88 +45,112 @@ function emptyRow(): EditableRow {
     item_name: "",
     uom: "",
     conversion_factor: 1,
-    qty: 0,
+    qty: 1,
     rate: 0,
-    amount: 0,
   }
 }
 
 export default function UpdateItemsDialog({
   open,
   onOpenChange,
-  items,
-  quotationName,
-  currency,
-  company,
+  doc,
   onUpdated,
 }: UpdateItemsDialogProps) {
-  const [rows, setRows] = useState<EditableRow[]>(() => items.map(rowFromItem))
+  const quotationName = doc.name
+  const currency = doc.currency
+  const company = doc.company
+
+  const [rows, setRows] = useState<EditableRow[]>(() => (doc.items ?? []).map(rowFromItem))
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState("")
+  const rowsRef = useRef(rows)
+  rowsRef.current = rows
 
   const updateRow = useCallback((key: string, patch: Partial<EditableRow>) => {
-    setRows((prev) =>
-      prev.map((r) => {
-        if (r.key !== key) return r
-        const next = { ...r, ...patch }
-        if (patch.qty !== undefined || patch.rate !== undefined) {
-          next.amount = next.qty * next.rate
-        }
-        return next
-      }),
-    )
+    setRows((prev) => prev.map((r) => (r.key === key ? { ...r, ...patch } : r)))
   }, [])
 
-  const removeRow = useCallback((key: string) => {
-    setRows((prev) => prev.filter((r) => r.key !== key))
-  }, [])
-
-  const handleItemCodeChange = useCallback(
-    async (key: string, value: string | null) => {
+  const handleItemCodeSelect = useCallback(
+    async (row: EditableRow, value: string) => {
       if (!value) {
-        updateRow(key, { item_code: "", item_name: "", uom: "", rate: 0, amount: 0 })
+        updateRow(row.key, { item_code: "", item_name: "", uom: "", rate: 0 })
         return
       }
+      const docItems: QuotationItem[] = rowsRef.current.map((r) => ({
+        name: r.docname,
+        item_code: r.item_code,
+        item_name: r.item_name,
+        uom: r.uom,
+        conversion_factor: r.conversion_factor ?? 1,
+        qty: r.qty ?? 0,
+        rate: r.rate ?? 0,
+        amount: 0,
+        price_list_rate: 0,
+        discount_percentage: 0,
+        is_free_item: 0,
+        is_alternative: 0,
+        has_alternative_item: 0,
+      }))
+      const item = docItems.find((d) => d.name === row.docname && d.item_code === row.item_code) ?? docItems[0]
+      if (!item) return
       try {
-        const details = await quotationService.getItemDetails(
-          {
-            item_code: value,
-            transaction_date: new Date().toISOString().slice(0, 10),
-            currency,
-          },
-          company,
+        const enriched = await enrichQuotationItem(
+          { ...doc, items: docItems },
+          item,
+          value,
+          { isNew: false, name: doc.name || "", company: doc.company },
         )
-        updateRow(key, {
-          item_code: value,
-          item_name: details.item_name ?? value,
-          uom: details.uom ?? "",
-          conversion_factor: details.conversion_factor ?? 1,
-          rate: details.rate ?? 0,
-          amount: (details.rate ?? 0) * (rows.find((r) => r.key === key)?.qty ?? 0),
-        })
+        if (enriched) {
+          updateRow(row.key, {
+            item_code: enriched.item_code ?? value,
+            item_name: enriched.item_name ?? value,
+            uom: enriched.uom ?? "",
+            conversion_factor: enriched.conversion_factor ?? 1,
+            rate: enriched.rate ?? 0,
+          })
+          return
+        }
       } catch {
-        updateRow(key, { item_code: value, item_name: value })
+        // fall through to minimal commit
       }
+      updateRow(row.key, { item_code: value, item_name: value })
     },
-    [currency, company, rows, updateRow],
+    [doc, company, updateRow],
   )
 
-  const handleUomChange = useCallback(
-    async (key: string, value: string | null) => {
-      if (!value) return
-      const row = rows.find((r) => r.key === key)
-      if (!row || !row.item_code) {
-        updateRow(key, { uom: value })
-        return
-      }
-      try {
-        const factor = await quotationService.getConversionFactor(row.item_code, value)
-        updateRow(key, { uom: value, conversion_factor: factor })
-      } catch {
-        updateRow(key, { uom: value })
-      }
-    },
-    [rows, updateRow],
+  const columns = useMemo<GridColumn<EditableRow>[]>(
+    () => [
+      {
+        key: "item_code",
+        label: "Item Code",
+        type: "link",
+        docType: "Item",
+        searchFn: async (q) => {
+          const results = await quotationService.searchItemsDesk(q).catch(() => [])
+          return {
+            items: results.map((r) => ({
+              value: r.value,
+              label: r.value,
+              description: r.description ?? "",
+            })),
+          }
+        },
+        onSelect: handleItemCodeSelect,
+        placeholder: "Search item…",
+        weight: 2.6,
+      },
+      { key: "qty", label: "Qty", type: "number", align: "right", weight: 0.8 },
+      {
+        key: "rate",
+        label: "Rate",
+        type: "number",
+        align: "right",
+        weight: 1,
+        prefix: "$",
+        formatter: (row) => formatCurrency(row.rate ?? 0, currency),
+      },
+    ],
+    [handleItemCodeSelect, currency],
   )
 
   const handleSubmit = async () => {
@@ -163,112 +182,36 @@ export default function UpdateItemsDialog({
 
   const handleOpenChange = (nextOpen: boolean) => {
     if (!nextOpen) {
-      setRows(items.map(rowFromItem))
+      setRows((doc.items ?? []).map(rowFromItem))
       setError("")
     }
     onOpenChange(nextOpen)
   }
 
-  const total = rows.reduce((s, r) => s + r.amount, 0)
-
   return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-3xl max-h-[85vh] flex flex-col">
+    <Dialog open={open} onOpenChange={handleOpenChange} modal={false}>
+      <DialogContent
+        className="sm:max-w-3xl max-h-[85vh] flex flex-col"
+        onPointerDownOutside={(e) => e.preventDefault()}
+        onInteractOutside={(e) => e.preventDefault()}
+      >
         <DialogHeader>
           <DialogTitle>Update Items — {quotationName}</DialogTitle>
         </DialogHeader>
 
         <div className="flex-1 overflow-auto -mx-6 px-6">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border text-xs text-muted">
-                <th className="text-left py-2 font-semibold w-[30%]">Item Code</th>
-                <th className="text-left py-2 font-semibold w-[15%]">UOM</th>
-                <th className="text-right py-2 font-semibold w-[12%]">Qty</th>
-                <th className="text-right py-2 font-semibold w-[15%]">Rate</th>
-                <th className="text-right py-2 font-semibold w-[18%]">Amount</th>
-                <th className="w-[5%]"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row) => (
-                <tr key={row.key} className="border-b border-border/50">
-                  <td className="py-1.5">
-                    <LinkSearchField
-                      value={row.item_code || undefined}
-                      onChange={(v) => handleItemCodeChange(row.key, v)}
-                      searchFn={(q) =>
-                        quotationService.searchItemsDesk(q).then((items) => ({
-                          items: items.map((i) => ({ value: i.value, label: i.value, description: i.description })),
-                        }))
-                      }
-                      placeholder="Search item..."
-                      clearIconMode="hover"
-                      className="w-full"
-                    />
-                  </td>
-                  <td className="py-1.5">
-                    <input
-                      type="text"
-                      value={row.uom}
-                      onChange={(e) => handleUomChange(row.key, e.target.value || null)}
-                      className="w-full h-8 px-2 text-sm rounded-lg border border-border bg-surface text-heading focus:outline-none focus:ring-2 focus:ring-primary-500/20"
-                    />
-                  </td>
-                  <td className="py-1.5">
-                    <input
-                      type="number"
-                      value={row.qty || ""}
-                      onChange={(e) => updateRow(row.key, { qty: parseFloat(e.target.value) || 0 })}
-                      className="w-full h-8 px-2 text-sm text-right rounded-lg border border-border bg-surface text-heading focus:outline-none focus:ring-2 focus:ring-primary-500/20"
-                      min={0}
-                    />
-                  </td>
-                  <td className="py-1.5">
-                    <input
-                      type="number"
-                      value={row.rate || ""}
-                      onChange={(e) => updateRow(row.key, { rate: parseFloat(e.target.value) || 0 })}
-                      className="w-full h-8 px-2 text-sm text-right rounded-lg border border-border bg-surface text-heading focus:outline-none focus:ring-2 focus:ring-primary-500/20"
-                      min={0}
-                    />
-                  </td>
-                  <td className="py-1.5 text-right text-sm font-medium tabular-nums text-heading pr-2">
-                    {formatCurrency(row.amount)}
-                  </td>
-                  <td className="py-1.5 text-center">
-                    <button
-                      type="button"
-                      onClick={() => removeRow(row.key)}
-                      className="p-1 text-muted hover:text-danger-600 transition-colors rounded"
-                      title="Remove item"
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-
-          <button
-            type="button"
-            onClick={() => setRows((prev) => [...prev, emptyRow()])}
-            className="mt-3 inline-flex items-center gap-1.5 text-xs font-medium text-primary-600 hover:text-primary-700 transition-colors"
-          >
-            <Plus size={13} /> Add Row
-          </button>
+          <ChildTableGrid<EditableRow>
+            title="Items"
+            rows={rows}
+            columns={columns}
+            emptyRow={emptyRow()}
+            onChange={setRows}
+            minWidth="720px"
+          />
         </div>
 
-        <div className="flex items-center justify-between border-t border-border pt-3 mt-2">
-          <span className="text-sm font-semibold text-heading">
-            Total: {formatCurrency(total)}
-          </span>
-          <div className="flex items-center gap-2">
-            {error && (
-              <span className="text-xs text-danger-600 mr-2">{error}</span>
-            )}
-          </div>
+        <div className="flex items-center justify-end border-t border-border pt-3 mt-2">
+          {error && <span className="text-xs text-danger-600 mr-2">{error}</span>}
         </div>
 
         <DialogFooter>

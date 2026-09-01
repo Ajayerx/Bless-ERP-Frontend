@@ -53,6 +53,18 @@ const columns: Column<SalesOrder>[] = [
     render: (so) => <Badge variant={statusVariant[so.status] ?? "info"}>{so.status.charAt(0).toUpperCase() + so.status.slice(1)}</Badge>,
   },
   {
+    key: "perDelivered",
+    header: "Delivered",
+    className: "text-right",
+    render: (so) => <span className="text-sm tabular-nums text-muted">{so.perDelivered ?? 0}%</span>,
+  },
+  {
+    key: "perBilled",
+    header: "Billed",
+    className: "text-right",
+    render: (so) => <span className="text-sm tabular-nums text-muted">{so.perBilled ?? 0}%</span>,
+  },
+  {
     key: "fulfillmentStatus",
     header: "Fulfillment",
     render: (so) => (
@@ -63,9 +75,6 @@ const columns: Column<SalesOrder>[] = [
   },
 ]
 
-const FILTERS = ["All", "Draft", "Confirmed", "Completed", "Cancelled"] as const
-type Filter = (typeof FILTERS)[number]
-
 interface SalesOrderTableProps {
   data: SalesOrderListResponse | null
   loading: boolean
@@ -73,8 +82,9 @@ interface SalesOrderTableProps {
   onSearch: (q: string) => void
   page: number
   onPageChange: (page: number) => void
-  activeFilter: Filter
-  onFilterChange: (filter: Filter) => void
+  filters: readonly string[]
+  activeFilter: string
+  onFilterChange: (filter: string) => void
   onRowClick?: (so: SalesOrder) => void
 }
 
@@ -85,6 +95,7 @@ export default function SalesOrderTable({
   onSearch,
   page,
   onPageChange,
+  filters,
   activeFilter,
   onFilterChange,
   onRowClick,
@@ -123,7 +134,7 @@ export default function SalesOrderTable({
       </div>
 
       <FilterPills
-        options={FILTERS}
+        options={filters}
         value={activeFilter}
         onChange={(f) => {
           onFilterChange(f)

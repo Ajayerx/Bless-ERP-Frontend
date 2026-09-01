@@ -19,11 +19,12 @@ import { useLazyOptions } from "@/services/lookup-cache";
 import { formatCurrency, formatDateDDMMYYYY } from "@/lib/utils";
 import type { EditableTaxRow, ChargeType } from "../types";
 import {
+  applyDiscountToItemNetAmounts,
   buildDeskSetMissingValuesDoc,
-  createEmptyTaxRow,
   deskRandomString,
   getCurrencySmallestFraction,
   getItemisedTaxBreakupData,
+  getItemisedTaxBreakupRowsFromDetail,
   invoiceTaxesToEditable,
   roundToSmallestCurrencyFraction,
   type ItemisedTaxBreakupTaxRow,
@@ -31,6 +32,7 @@ import {
 import type { LineItemForm } from "./InvoiceLineItems";
 import ItemisedTaxBreakup from "./ItemisedTaxBreakup";
 import PaymentsTable from "./PaymentsTable";
+import SalesTaxesChargesTable from "./SalesTaxesChargesTable";
 
 export interface InvoiceFormData {
   customer: string;
@@ -329,6 +331,8 @@ interface InvoiceFormProps {
     included_in_print_rate?: boolean;
     row_id?: number;
     category?: string;
+    /** ERPNext `item_wise_tax_detail` JSON: `{ item_key: [rate, baseAmount] }`. */
+    item_wise_tax_detail?: string;
   }>;
   editableTaxRows?: EditableTaxRow[];
   onTaxRowsChange?: (rows: EditableTaxRow[]) => void;
@@ -447,39 +451,76 @@ export default function InvoiceForm({
     };
   }, [formData.currency, companyDefaults?.currency, isReadOnly]);
 
-  // ERPNext "Tax Breakup": live per-item breakdown, computed from the current
-  // line items + recomputed tax rows. Shown only when the doc has no stored
-  // `other_charges_calculation` HTML (ERPNext renders that stored HTML instead).
-  const breakupRows = useMemo(
-    () =>
-      getItemisedTaxBreakupData(
-        (itemLines ?? []).map((line) => ({
-          itemCode: line.productId ?? line.sku ?? "",
-          itemName: line.productName,
-          qty: line.quantity,
-          netAmount: line.netAmount ?? line.total,
-        })),
-        (taxRows ?? []).map(
-          (r): ItemisedTaxBreakupTaxRow => ({
+  // ERPNext "Tax Breakup": prefer the authoritative server per-item detail
+  // (`taxes[].item_wise_tax_detail`) on saved docs; fall back to a live
+  // computation on unsaved drafts that have no stored detail yet.
+  const breakupRows = useMemo(() => {
+    const rawNetAmounts = (itemLines ?? []).map((line) => line.netAmount ?? line.total ?? 0);
+
+    // ERPNext `apply_discount_amount` parity: an additional discount reduces
+    // each item's net_amount (taxable amount). Use the discounted values so the
+    // Tax Breakup matches the server.
+    const discounted = applyDiscountToItemNetAmounts(rawNetAmounts, {
+      discountAmount: formData.discountAmount ?? 0,
+      applyDiscountOn: formData.applyDiscountOn ?? "Grand Total",
+      netTotal: subtotal ?? 0,
+      taxRows: (taxRows ?? []).map(
+        (r) =>
+          ({
             charge_type: r.charge_type as ChargeType,
+            account_head: r.account_head,
             description: r.description,
             rate: r.rate,
             tax_amount: r.tax_amount,
             row_id: r.row_id,
             category: r.category,
-          }),
-        ),
+          }) as EditableTaxRow,
       ),
-    [itemLines, taxRows],
-  );
+      totalTaxesAndChargesBase: totalTaxesAndChargesBase ?? 0,
+      discountedNetTotal: netTotal,
+    });
+
+    const quoteItems = (itemLines ?? []).map((line, idx) => ({
+      itemCode: line.productId ?? line.sku ?? "",
+      itemName: line.productName,
+      netAmount: discounted.netAmounts[idx] ?? line.netAmount ?? line.total ?? 0,
+    }));
+
+    const detailRows = (taxRows ?? []).filter((r) => !!r.item_wise_tax_detail);
+    if (detailRows.length > 0) {
+      return getItemisedTaxBreakupRowsFromDetail(
+        detailRows.map((r) => ({
+          description: r.description,
+          category: r.category,
+          item_wise_tax_detail: r.item_wise_tax_detail,
+        })),
+        quoteItems,
+        formData.conversionRate ?? 1,
+      );
+    }
+    return getItemisedTaxBreakupData(
+      quoteItems.map((it, idx) => ({
+        ...it,
+        qty: (itemLines ?? [])[idx]?.quantity ?? 0,
+      })),
+      (taxRows ?? []).map(
+        (r): ItemisedTaxBreakupTaxRow => ({
+          charge_type: r.charge_type as ChargeType,
+          description: r.description,
+          account_head: r.account_head,
+          rate: r.rate,
+          tax_amount: r.tax_amount,
+          row_id: r.row_id,
+          category: r.category,
+        }),
+      ),
+      { netTotal: discounted.netAmounts.reduce((s, n) => s + n, 0), conversionRate: formData.conversionRate ?? 1 },
+    )
+  }, [itemLines, taxRows, netTotal, subtotal, formData.conversionRate, formData.discountAmount, formData.applyDiscountOn, totalTaxesAndChargesBase])
 
   const namingSeriesOptions = ["ACC-SINV-.YYYY.-", "ACC-SINV-RET-.YYYY.-"];
   const applyDiscountOnOptions = ["Grand Total", "Net Total"];
   const isOpeningOptions = ["No", "Yes"];
-  const chargeTypeOptions = [
-    "Actual", "On Net Total", "On Previous Row Amount",
-    "On Previous Row Total", "On Item Quantity",
-  ];
   const currentCompany = formData.company || companyDefaults?.company;
   const currencies = useLazyOptions<string[]>(
     "sales-invoice:currencies",
@@ -1770,8 +1811,10 @@ export default function InvoiceForm({
                   taxRows?.some((r) => r.included_in_print_rate) ||
                   editableTaxRows?.some((r) => r.included_in_print_rate)
                 const showNetTotal = hasDiscount || hasIncludedTax
+                const currency = formData.currency ?? companyCurrency
                 return (
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-3">
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mt-3">
+                    {/* Col 1: Total Quantity, Total Net Weight */}
                     <div className="space-y-3">
                       <div>
                         <label className={labelClass}>Total Quantity</label>
@@ -1782,6 +1825,23 @@ export default function InvoiceForm({
                           readOnly
                         />
                       </div>
+                      {formData.totalNetWeight != null && formData.totalNetWeight > 0 && (
+                        <div>
+                          <label className={labelClass}>Total Net Weight</label>
+                          <input
+                            type="text"
+                            value={formData.totalNetWeight}
+                            className={`${inputClass} bg-gray-50`}
+                            readOnly
+                          />
+                        </div>
+                      )}
+                    </div>
+                    {/* Col 2: company-currency totals — fields shown only when
+                        multi-currency; otherwise an empty ~33% column, mirroring
+                        ERPNext's retained blank column (all three columns stay
+                        present so that Col 3 remains on the right). */}
+                    <div className="space-y-3">
                       {isMultiCurrency && (
                         <>
                           <div>
@@ -1807,9 +1867,10 @@ export default function InvoiceForm({
                         </>
                       )}
                     </div>
+                    {/* Col 3: transaction-currency totals */}
                     <div className="space-y-3">
                       <div>
-                        <label className={labelClass}>Total ({formData.currency ?? "CAD"})</label>
+                        <label className={labelClass}>Total ({currency})</label>
                         <input
                           type="text"
                           value={formatCurrency(subtotal ?? 0)}
@@ -1819,21 +1880,10 @@ export default function InvoiceForm({
                       </div>
                       {showNetTotal && (
                         <div>
-                          <label className={labelClass}>Net Total ({formData.currency ?? "CAD"})</label>
+                          <label className={labelClass}>Net Total ({currency})</label>
                           <input
                             type="text"
                             value={formatCurrency(netTotal ?? subtotal ?? 0)}
-                            className={`${inputClass} bg-gray-50`}
-                            readOnly
-                          />
-                        </div>
-                      )}
-                      {formData.totalNetWeight != null && formData.totalNetWeight > 0 && (
-                        <div>
-                          <label className={labelClass}>Total Net Weight</label>
-                          <input
-                            type="text"
-                            value={formData.totalNetWeight}
                             className={`${inputClass} bg-gray-50`}
                             readOnly
                           />
@@ -1931,8 +1981,8 @@ export default function InvoiceForm({
               />
             </div>
             {/* Row 3: Tax table — ERPNext-style grid */}
-            {(() => {
-              const rows: EditableTaxRow[] = taxRows && taxRows.length > 0
+            <SalesTaxesChargesTable
+              rows={taxRows && taxRows.length > 0
                 ? taxRows.map((r) => ({
                     charge_type: r.charge_type as ChargeType,
                     account_head: r.account_head,
@@ -1943,106 +1993,12 @@ export default function InvoiceForm({
                     net_amount: 0,
                     included_in_print_rate: !!r.included_in_print_rate,
                   }))
-                : (editableTaxRows ?? [])
-              const isEditable = !!onTaxRowsChange
-              const currency = formData.currency ?? "CAD"
-              const company = formData.company ?? companyDefaults?.company
-              const chargeTypes = chargeTypeOptions as ChargeType[]
-
-              const handleTaxRowsChange = (next: EditableTaxRow[]) => {
-                if (!onTaxRowsChange) return
-                onTaxRowsChange(next)
-                next.forEach((row, i) => {
-                  const old = rows[i]
-                  if (
-                    old &&
-                    row.account_head &&
-                    row.account_head !== old.account_head &&
-                    row.charge_type !== "Actual"
-                  ) {
-                    const withDesc = next.map((r, j) =>
-                      j === i ? { ...r, description: row.account_head } : r
-                    )
-                    invoiceService.getTaxRate(row.account_head).then((result) => {
-                      if (result.tax_rate > 0 && onTaxRowsChange) {
-                        onTaxRowsChange(
-                          withDesc.map((r, j) =>
-                            j === i
-                              ? { ...r, rate: result.tax_rate, description: result.account_name || r.description }
-                              : r
-                          )
-                        )
-                      }
-                    })
-                  }
-                })
-              }
-
-              const taxColumns: GridColumn<EditableTaxRow>[] = [
-                {
-                  key: "charge_type",
-                  label: "Type",
-                  type: "link",
-                  options: chargeTypes,
-                  weight: 1.4,
-                },
-                {
-                  key: "account_head",
-                  label: "Account Head",
-                  type: "link",
-                  searchFn: (q) => invoiceService.searchTaxAccounts(q, company),
-                  docType: "Account",
-                  placeholder: "Select account…",
-                  disabled: (row) => !row.charge_type,
-                  weight: 2.6,
-                },
-                {
-                  key: "rate",
-                  label: "Tax Rate",
-                  type: "number",
-                  align: "right",
-                  disabled: (row) => row.charge_type === "Actual",
-                  weight: 1,
-                },
-                {
-                  key: "tax_amount",
-                  label: `Amount (${currency})`,
-                  type: "number",
-                  align: "right",
-                  disabled: (row) => row.charge_type !== "Actual",
-                  formatter: (r) => formatCurrency(r.tax_amount),
-                  weight: 1.4,
-                },
-                {
-                  key: "total",
-                  label: `Total (${currency})`,
-                  type: "readonly",
-                  align: "right",
-                  formatter: (r) => formatCurrency(r.total),
-                  weight: 1.4,
-                },
-              ]
-
-              return (
-                <ChildTableGrid<EditableTaxRow>
-                  title="Sales Taxes and Charges"
-                  titleClassName="text-xs font-semibold text-muted"
-                  description={
-                    isEditable
-                      ? "Select an Account Head to auto-fill the tax rate."
-                      : undefined
-                  }
-                  rows={rows}
-                  columns={taxColumns}
-                  emptyRow={createEmptyTaxRow()}
-                  onChange={handleTaxRowsChange}
-                  readOnly={!isEditable}
-                  canDelete={() => rows.length > 1}
-                  testId="taxes_grid"
-                  minWidth="720px"
-                />
-              )
-            })()}
+                : (editableTaxRows ?? [])}
+              currency={formData.currency ?? "CAD"}
+              company={formData.company ?? companyDefaults?.company}
+              onChange={onTaxRowsChange}
+              readOnly={!onTaxRowsChange}
+            />
             {/* Tax totals — transaction currency only, right side (matching ERPNext) */}
             {totalTaxesAndCharges != null && (
               <div className="mt-3">
@@ -2404,12 +2360,15 @@ export default function InvoiceForm({
 
           {/* ERPNext "Tax Breakup" — last section of the Details tab. Stored
               server HTML when present, otherwise the live computed itemised
-              breakdown rendered as a proper table. */}
-          <ItemisedTaxBreakup
-            rows={breakupRows}
-            storedHtml={storedTaxBreakupHtml}
-            isReturn={!!formData.isReturn}
-          />
+              breakdown rendered as a proper table. Only shown on saved
+              invoices (ERPNext populates it after calculation/save). */}
+          {mode === "existing" && (
+            <ItemisedTaxBreakup
+              rows={breakupRows}
+              storedHtml={storedTaxBreakupHtml}
+              isReturn={!!formData.isReturn}
+            />
+          )}
 
         </div>
       )}

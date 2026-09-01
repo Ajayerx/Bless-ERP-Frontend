@@ -20,6 +20,7 @@ export interface GridColumn<T> {
   placeholder?: string;
   render?: (row: T) => ReactNode;
   formatter?: (row: T) => ReactNode;
+  prefix?: string;
   weight?: number;
   align?: "left" | "right";
 }
@@ -264,14 +265,17 @@ export default function ChildTableGrid<T extends object>({
                             className={cellInputClass}
                           />
                         ) : col.type === "number" && interactive ? (
-                          <input
-                            type="number"
-                            value={(row[col.key] as number) || ""}
-                            onChange={(e) => updateCell(idx, col.key, Number(e.target.value))}
-                            disabled={col.disabled?.(row) || readOnly}
-                            placeholder={col.placeholder ?? col.label}
-                            className={cn(cellInputClass, col.align === "right" && "text-right")}
-                          />
+                          <div className="flex w-full items-center gap-0.5">
+                            {col.prefix && <span className="text-[13px] text-body">{col.prefix}</span>}
+                            <input
+                              type="number"
+                              value={(row[col.key] as number) || ""}
+                              onChange={(e) => updateCell(idx, col.key, Number(e.target.value))}
+                              disabled={col.disabled?.(row) || readOnly}
+                              placeholder={col.placeholder ?? col.label}
+                              className={cn(cellInputClass, col.align === "right" && "text-right")}
+                            />
+                          </div>
                         ) : col.type === "date" && interactive ? (
                           <div
                             className="relative w-full"
@@ -307,10 +311,12 @@ export default function ChildTableGrid<T extends object>({
                           col.render(row)
                         ) : col.type === "number" ? (
                           <span className="text-xs tabular-nums text-body">
+                            {col.prefix && <span className="mr-0.5">{col.prefix}</span>}
                             {col.formatter ? col.formatter(row) : ((row[col.key] as number) ?? "—")}
                           </span>
                         ) : col.formatter ? (
                           <span className="text-xs tabular-nums text-body truncate">
+                            {col.prefix && <span className="mr-0.5">{col.prefix}</span>}
                             {col.formatter(row)}
                           </span>
                         ) : (

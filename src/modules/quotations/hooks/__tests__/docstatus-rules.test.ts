@@ -6,14 +6,12 @@ import {
   resolveDocstatusAware,
 } from "../useVisibilityRules"
 
-describe("isDocFieldEmpty (frappe is_value_internal parity)", () => {
+describe("isDocFieldEmpty (frappe is_null parity)", () => {
   it.each([
     [null, true],
     [undefined, true],
     ["", true],
-    [0, true],
-    [false, true],
-    [[], true],
+    ["   ", true],
     ["X", false],
     [1, false],
     [true, false],
@@ -21,6 +19,18 @@ describe("isDocFieldEmpty (frappe is_value_internal parity)", () => {
     [{ a: 1 }, false],
   ])("treats %s as empty=%s", (value: unknown, empty: boolean) => {
     expect(isDocFieldEmpty(value)).toBe(empty)
+  })
+
+  it("does NOT treat 0 as empty (frappe is_null('0') is false)", () => {
+    expect(isDocFieldEmpty(0)).toBe(false)
+  })
+
+  it("does NOT treat false as empty (frappe cstr(false) is 'false')", () => {
+    expect(isDocFieldEmpty(false)).toBe(false)
+  })
+
+  it("treats empty array as empty (frappe cstr([]) is '')", () => {
+    expect(isDocFieldEmpty([])).toBe(true)
   })
 })
 
@@ -79,17 +89,44 @@ describe("resolveDocstatusAware — ERPNext docstatus-driven rendering", () => {
     const r = resolveDocstatusAware(editable, [], 1)
     expect(r.visible).toBe(false)
   })
-})
 
-describe("DEFAULT_RULES — customer_name no longer pinned hidden", () => {
-  it("customer_name has no hiddenWhen rule (displays read-only per ERPNext)", () => {
-    const rule = DEFAULT_RULES.find((r) => r.fieldname === "customer_name")
-    expect(rule).toBeUndefined()
+  it("submitted (1): numeric 0 is NOT hidden (frappe is_null(0) is false)", () => {
+    const r = resolveDocstatusAware(editable, 0, 1)
+    expect(r.visible).toBe(true)
+    expect(r.readOnly).toBe(true)
   })
 
-  it("customer_group stays permanently hidden", () => {
+  it("submitted (1): boolean false is NOT hidden (frappe cstr(false) is 'false')", () => {
+    const r = resolveDocstatusAware(editable, false, 1)
+    expect(r.visible).toBe(true)
+    expect(r.readOnly).toBe(true)
+  })
+
+  it("cancelled (2): numeric 0 is shown but read-only", () => {
+    const r = resolveDocstatusAware(editable, 0, 2)
+    expect(r.visible).toBe(true)
+    expect(r.readOnly).toBe(true)
+  })
+})
+
+describe("DEFAULT_RULES — generated from FIELD_META (quotation.json)", () => {
+  it("customer_name is read-only and permanently hidden (hidden:1 in quotation.json)", () => {
+    const rule = DEFAULT_RULES.find((r) => r.fieldname === "customer_name")
+    expect(rule).toBeDefined()
+    expect(rule?.readOnly).toBe(true)
+    expect(rule?.hiddenWhen).toBe("1=1")
+  })
+
+  it("customer_group stays permanently hidden (hidden:1 dominates)", () => {
     const rule = DEFAULT_RULES.find((r) => r.fieldname === "customer_group")
     expect(rule?.hiddenWhen).toBe("1=1")
+  })
+
+  it("title / customer_name / contact_email / enq_det / has_unit_price_items are permanently hidden", () => {
+    for (const f of ["title", "customer_name", "contact_email", "enq_det", "has_unit_price_items"]) {
+      const rule = DEFAULT_RULES.find((r) => r.fieldname === f)
+      expect(rule?.hiddenWhen).toBe("1=1")
+    }
   })
 
   it("party_name remains reqd", () => {
@@ -97,10 +134,36 @@ describe("DEFAULT_RULES — customer_name no longer pinned hidden", () => {
     expect(rule?.reqd).toBe(true)
   })
 
-  it("allow_on_submit parity set unchanged (title, letter_head, group_same_items, select_print_heading, order_lost_reason, competitors)", () => {
+  it("naming_series is reqd and set_only_once", () => {
+    const rule = DEFAULT_RULES.find((r) => r.fieldname === "naming_series")
+    expect(rule?.reqd).toBe(true)
+    expect(rule?.setOnlyOnce).toBe(true)
+  })
+
+  it("allow_on_submit parity matches ERPNext quotation.json set exactly", () => {
     const allowOnSubmit = DEFAULT_RULES.filter((r) => r.allowOnSubmit).map((r) => r.fieldname)
     expect(allowOnSubmit.sort()).toEqual(
-      ["title", "letter_head", "group_same_items", "select_print_heading", "order_lost_reason", "competitors"].sort(),
+      [
+        "title",
+        "letter_head",
+        "group_same_items",
+        "select_print_heading",
+        "order_lost_reason",
+        "lost_reasons",
+        "competitors",
+        "update_auto_repeat_reference",
+      ].sort(),
     )
+  })
+
+  it("lost_reasons is read_only on every docstatus (read_only dominates allow_on_submit)", () => {
+    const rule = DEFAULT_RULES.find((r) => r.fieldname === "lost_reasons")
+    expect(rule?.readOnly).toBe(true)
+    expect(rule?.allowOnSubmit).toBe(true)
+  })
+
+  it("ignore_pricing_rule is not statically read-only (permlevel-1 documented, role-gated)", () => {
+    const rule = DEFAULT_RULES.find((r) => r.fieldname === "ignore_pricing_rule")
+    expect(rule?.readOnly).toBeFalsy()
   })
 })
