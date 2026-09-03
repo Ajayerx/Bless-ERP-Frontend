@@ -54,6 +54,7 @@ import type { PaymentActivityItem } from "@/modules/payments/types"
 import { useAuth } from "@/context/AuthContext"
 import PaymentActivity from "@/modules/payments/components/PaymentActivity"
 import SalesOrderForm, { type SalesOrderFormHandle } from "../components/SalesOrderForm"
+import SalesOrderMetaPanel from "../components/SalesOrderMetaPanel"
 import type { SalesOrderDoc, SalesOrderMappedDoc, SalesOrderStatus } from "../types"
 import { formatDate } from "@/lib/utils"
 
@@ -612,17 +613,7 @@ export default function SalesOrderWorkspace({ mode, id }: SalesOrderWorkspacePro
 
         <div className="flex items-start gap-6">
           {mode === "existing" && metaOpen && salesOrder && (
-            <div className="hidden lg:block w-72 shrink-0">
-              <div className="bg-white rounded-2xl shadow-card p-4">
-                <div className="flex items-center justify-between mb-3">
-                  <h3 className="text-sm font-bold text-heading">Assignments & Tags</h3>
-                  <button type="button" onClick={toggleMeta} className="text-muted hover:text-body" aria-label="Collapse panel">
-                    <PanelLeftClose size={15} />
-                  </button>
-                </div>
-                <p className="text-xs text-muted">Volunteer / To Do metadata panel — placeholder for the SO meta sidebar.</p>
-              </div>
-            </div>
+            <SalesOrderMetaPanel name={salesOrder.name} onCollapse={toggleMeta} />
           )}
           <div className="flex-1 min-w-0 space-y-6">
             <div className="bg-white rounded-2xl shadow-card p-6">

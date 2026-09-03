@@ -20,6 +20,8 @@ export interface GridColumn<T> {
   placeholder?: string;
   render?: (row: T) => ReactNode;
   formatter?: (row: T) => ReactNode;
+  /** Color indicator dot rendered before the cell value (ERPNext grid indicator). */
+  indicator?: (row: T) => "green" | "orange" | "yellow" | undefined | null;
   prefix?: string;
   weight?: number;
   align?: "left" | "right";
@@ -212,6 +214,17 @@ export default function ChildTableGrid<T extends object>({
                         )}
                         style={{ flexGrow: col.weight ?? 1, flexShrink: 1, flexBasis: 0 }}
                       >
+                        {col.indicator && (
+                          <span
+                            aria-hidden
+                            className={cn(
+                              "mr-1.5 inline-block h-2 w-2 shrink-0 rounded-full",
+                              col.indicator(row) === "green" && "bg-green-500",
+                              col.indicator(row) === "orange" && "bg-orange-500",
+                              col.indicator(row) === "yellow" && "bg-yellow-500",
+                            )}
+                          />
+                        )}
                         {col.type === "checkbox" ? (
                           readOnly ? (
                             <span className="text-xs text-muted">

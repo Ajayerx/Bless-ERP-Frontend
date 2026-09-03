@@ -108,10 +108,10 @@ function createEmptyItem(): SalesOrderItemForm {
     rate: 0,
     amount: 0,
     discount_percentage: 0,
-    reserve_stock: 0,
+    reserve_stock: 1,
     delivered_by_supplier: 0,
     is_free_item: 0,
-    grant_commission: 1,
+    grant_commission: 0,
   }
 }
 
@@ -210,6 +210,7 @@ export default forwardRef<SalesOrderFormHandle, SalesOrderFormProps>(
       initialData ? { ...initialData } : buildEmptyForm(),
     )
     const [currencyFraction, setCurrencyFraction] = useState<number | null>(null)
+    const [stockReservationEnabled, setStockReservationEnabled] = useState<boolean>(true)
     const baselineRef = useRef<SalesOrderFormData>(baseline)
     const [activeTab, setActiveTab] = useState<SalesOrderFormTab>("details")
 
@@ -240,6 +241,21 @@ export default forwardRef<SalesOrderFormHandle, SalesOrderFormProps>(
       })
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [form.currency])
+
+    // ERPNext parity: gate `reserve_stock` on the server feature flag
+    // (erpnext ... get_stock_reservation_status).
+    useEffect(() => {
+      salesOrderService.getStockReservationStatus().then((enabled) => {
+        setStockReservationEnabled(enabled)
+        if (!enabled) {
+          setForm((prev) => ({
+            ...prev,
+            reserve_stock: 0,
+            items: (prev.items ?? []).map((r) => ({ ...r, reserve_stock: 0 })),
+          }))
+        }
+      })
+    }, [])
 
     const formRef = useRef(form)
     useEffect(() => {
@@ -498,6 +514,10 @@ export default forwardRef<SalesOrderFormHandle, SalesOrderFormProps>(
         const rate = plr - (plr * discPct) / 100
         target.rate = Math.round(rate * 10000) / 10000
         target.amount = Math.round((target.rate || 0) * (target.qty || 0) * 100) / 100
+        // ERPNext parity: copy delivery_date from parent (or first row) to child row
+        if (!target.delivery_date) {
+          target.delivery_date = prev.delivery_date || nextItems[0]?.delivery_date || ""
+        }
         nextItems[idx] = target
         return { ...prev, items: nextItems }
       })
@@ -506,7 +526,19 @@ export default forwardRef<SalesOrderFormHandle, SalesOrderFormProps>(
     const handleItemsChange = (next: SalesOrderItemForm[]) => {
       const prev = form.items ?? []
       if (next.length !== prev.length) {
-        update({ items: next })
+        // ERPNext parity: when a new row is added, copy parent's project & delivery_date
+        if (next.length > prev.length) {
+          const parentProject = formRef.current.project || ""
+          const parentDeliveryDate = formRef.current.delivery_date || prev[0]?.delivery_date || ""
+          const patched = next.map((row, i) =>
+            i >= prev.length
+              ? { ...row, project: row.project || parentProject, delivery_date: row.delivery_date || parentDeliveryDate }
+              : row,
+          )
+          update({ items: patched })
+        } else {
+          update({ items: next })
+        }
         return
       }
       const items = [...prev]
@@ -535,29 +567,16 @@ export default forwardRef<SalesOrderFormHandle, SalesOrderFormProps>(
         }
         if (row.delivery_date !== old.delivery_date) {
           patch.delivery_date = row.delivery_date
+          // ERPNext parity: when parent has no delivery_date, propagate child date to all rows
+          if (row.delivery_date && !formRef.current.delivery_date) {
+            next.forEach((_row, j) => {
+              if (j !== i) items[j] = { ...items[j], delivery_date: row.delivery_date } as SalesOrderItemForm
+            })
+          }
         }
         items[i] = patch
       })
       if (changed) update({ items })
-    }
-
-    const handleUomChange = async (idx: number, itemCode: string, uom: string) => {
-      if (!itemCode) return
-      update({ items: (formRef.current.items ?? []).map((r, i) => (i === idx ? { ...r, uom } : r)) })
-      try {
-        const factor = await salesOrderService.getConversionFactor(itemCode, uom)
-        setForm((prev) => {
-          const items = [...(prev.items ?? [])]
-          const target = items[idx]
-          if (!target) return prev
-          target.conversion_factor = factor
-          target.stock_qty = Math.round((target.qty || 0) * factor * 1000) / 1000
-          items[idx] = target
-          return { ...prev, items }
-        })
-      } catch {
-        // best-effort conversion factor
-      }
     }
 
     const handleAddItemWithQty = async (product: Product, qty: number) => {
@@ -837,19 +856,27 @@ export default forwardRef<SalesOrderFormHandle, SalesOrderFormProps>(
         },
         placeholder: "Search item…",
         weight: 2.2,
+        indicator: (row) => {
+          if (!row.item_code) return undefined
+          if (!row.qty && form.has_unit_price_items) return "yellow"
+          const stockAvail = (row.stock_qty ?? 0) - (row.delivered_qty ?? 0)
+          return stockAvail <= (row.actual_qty ?? 0) ? "green" : "orange"
+        },
       },
       { key: "qty", label: "Quantity", type: "number", align: "right", weight: 1 },
       {
-        key: "uom",
-        label: "UOM",
+        key: "warehouse",
+        label: "Source Warehouse",
         type: "link",
-        options: [],
-        onSelect: (row, value) => void handleUomChange(
-          (form.items ?? []).findIndex((r) => r === row),
-          row.item_code || "",
-          value,
-        ),
-        weight: 1,
+        docType: "Warehouse",
+        searchFn: async (q) => {
+          const results = await salesOrderService.searchWarehouses(q, form.company).catch(() => [])
+          return {
+            items: results.map((r) => ({ value: r.value, label: r.label, description: r.description })),
+          }
+        },
+        placeholder: "Source Warehouse…",
+        weight: 2,
       },
       {
         key: "rate",
@@ -878,7 +905,18 @@ export default forwardRef<SalesOrderFormHandle, SalesOrderFormProps>(
     ]
 
     const readOnlyItemColumns: GridColumn<SalesOrderItemForm>[] = [
-      { key: "item_code", label: "Item", type: "link", weight: 2.2 },
+      {
+        key: "item_code",
+        label: "Item",
+        type: "link",
+        weight: 2.2,
+        indicator: (row) => {
+          if (!row.item_code) return undefined
+          if (!row.qty && form.has_unit_price_items) return "yellow"
+          const stockAvail = (row.stock_qty ?? 0) - (row.delivered_qty ?? 0)
+          return stockAvail <= (row.actual_qty ?? 0) ? "green" : "orange"
+        },
+      },
       {
         key: "qty",
         label: "Quantity",
@@ -887,7 +925,7 @@ export default forwardRef<SalesOrderFormHandle, SalesOrderFormProps>(
         weight: 1,
         formatter: (row) => formatFixed(row.qty ?? 0, 3),
       },
-      { key: "uom", label: "UOM", type: "readonly", weight: 1 },
+      { key: "warehouse", label: "Source Warehouse", type: "readonly", weight: 2 },
       {
         key: "rate",
         label: `Rate (${currencyLabel})`,
@@ -965,7 +1003,12 @@ export default forwardRef<SalesOrderFormHandle, SalesOrderFormProps>(
         base_rounding_adjustment,
         base_rounded_total,
       }
-      if (mode === "edit" && initialData?.name) doc.name = initialData.name
+      if (mode === "edit" && initialData?.name) {
+        doc.name = initialData.name
+      } else if (!doc.name) {
+        doc.__islocal = 1
+        doc.name = "new-sales-order"
+      }
       const saved =
         action === "Submit"
           ? await salesOrderService.saveDoc(doc, "Submit")
@@ -1137,7 +1180,14 @@ export default forwardRef<SalesOrderFormHandle, SalesOrderFormProps>(
                       <Input
                         type="date"
                         value={form.transaction_date}
-                        onChange={(e) => update({ transaction_date: e.target.value })}
+                        onChange={(e) => {
+                          const transactionDate = e.target.value
+                          const items = (formRef.current.items ?? []).map((row) => ({
+                            ...row,
+                            delivery_date: "",
+                          }))
+                          update({ transaction_date: transactionDate, delivery_date: "", items })
+                        }}
                         readOnly={rule("transaction_date").readOnly}
                       />
                     )}
@@ -1149,7 +1199,15 @@ export default forwardRef<SalesOrderFormHandle, SalesOrderFormProps>(
                       <Input
                         type="date"
                         value={form.delivery_date ?? ""}
-                        onChange={(e) => update({ delivery_date: e.target.value })}
+                        min={form.transaction_date || ""}
+                        onChange={(e) => {
+                          const deliveryDate = e.target.value
+                          const items = (formRef.current.items ?? []).map((row) => ({
+                            ...row,
+                            delivery_date: deliveryDate || row.delivery_date,
+                          }))
+                          update({ delivery_date: deliveryDate, items })
+                        }}
                         readOnly={rule("delivery_date").readOnly}
                       />
                     )}
@@ -1321,14 +1379,16 @@ export default forwardRef<SalesOrderFormHandle, SalesOrderFormProps>(
               </div>
               <div className="flex items-end pb-2">
                 <div className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    id="reserveStock"
-                    checked={!!form.reserve_stock}
-                    onChange={(e) => update({ reserve_stock: e.target.checked ? 1 : 0 })}
-                    disabled={!isFieldEditable("reserve_stock")}
-                    className="h-4 w-4 rounded border-border"
-                  />
+                  {stockReservationEnabled && (
+                    <input
+                      type="checkbox"
+                      id="reserveStock"
+                      checked={!!form.reserve_stock}
+                      onChange={(e) => update({ reserve_stock: e.target.checked ? 1 : 0 })}
+                      disabled={!isFieldEditable("reserve_stock")}
+                      className="h-4 w-4 rounded border-border"
+                    />
+                  )}
                   <label htmlFor="reserveStock" className="text-sm text-body">
                     Reserve Stock
                   </label>

@@ -654,6 +654,25 @@ export const salesOrderService = {
     }
   },
 
+  async searchAssignableUsers(
+    query: string,
+  ): Promise<{ value: string; label: string; description: string }[]> {
+    const results = await apiClient<{ value: string; label?: string; description?: string }[]>(
+      `/method/frappe.desk.search.search_link?` +
+        new URLSearchParams({
+          doctype: "User",
+          txt: query,
+          page_length: "10",
+          filters: JSON.stringify({ user_type: "System User", enabled: 1 }),
+        }).toString()
+    )
+    return (results ?? []).map((u) => ({
+      value: u.value,
+      label: u.label ?? u.value,
+      description: u.description ?? "",
+    }))
+  },
+
   // frappe.desk.search.search_link for the items grid Item column.
   async searchItemsDesk(query: string): Promise<Array<{ value: string; description?: string }>> {
     return apiFormCall<Array<{ value: string; description?: string }>>(
@@ -669,6 +688,37 @@ export const salesOrderService = {
       ],
       { doctype: "Item" },
     )
+  },
+
+  // Warehouse search for the items grid Source Warehouse column, scoped to
+  // the Sales Order's company (mirrors ERPNext's warehouse_query link).
+  async searchWarehouses(
+    query: string,
+    company?: string,
+  ): Promise<Array<{ value: string; label: string; description: string }>> {
+    try {
+      const filters: Record<string, unknown> = { is_group: 0 }
+      if (company) filters.company = ["in", ["", company]]
+      const results = await apiFormCall<Array<{ value: string; label?: string; description?: string }>>(
+        "/method/frappe.desk.search.search_link",
+        [
+          ["txt", query],
+          ["doctype", "Warehouse"],
+          ["ignore_user_permissions", "0"],
+          ["reference_doctype", "Sales Order Item"],
+          ["page_length", "10"],
+          ["filters", JSON.stringify(filters)],
+        ],
+        { doctype: "Warehouse" },
+      )
+      return (results ?? []).map((u) => ({
+        value: u.value,
+        label: u.label ?? u.value,
+        description: u.description ?? "",
+      }))
+    } catch {
+      return []
+    }
   },
 
   // ── Fetch flows (form field fills) ─────────────────────────────────
@@ -1073,6 +1123,111 @@ export const salesOrderService = {
     return {
       failed: undeleted.length > 0 ? undeleted : failedNamesFromMessages(names, messages),
       messages,
+    }
+  },
+
+  // ── Status / bulk close ─────────────────────────────────────────────
+  // erpnext.selling.doctype.sales_order.sales_order.close_or_unclose_sales_orders.
+  async closeOrUncloseSalesOrders(names: string[], status: "Closed" | "Open"): Promise<{ message?: string }> {
+    return postMethod<{ message?: string }>(
+      "erpnext.selling.doctype.sales_order.sales_order.close_or_unclose_sales_orders",
+      {
+        names: JSON.stringify(names),
+        status: status === "Closed" ? "Closed" : "Draft",
+      },
+    )
+  },
+
+  // ── Calendar / events ───────────────────────────────────────────────
+  // erpnext.selling.doctype.sales_order.sales_order.get_events.
+  async getEvents(start: string, end: string, filters?: string): Promise<
+    Array<{
+      name: string
+      customer_name?: string
+      status?: string
+      delivery_status?: string
+      billing_status?: string
+      delivery_date?: string
+    }>
+  > {
+    return postMethod<
+      Array<{
+        name: string
+        customer_name?: string
+        status?: string
+        delivery_status?: string
+        billing_status?: string
+        delivery_date?: string
+      }>
+    >("erpnext.selling.doctype.sales_order.sales_order.get_events", {
+      start,
+      end,
+      filters: filters ?? "[]",
+    })
+  },
+
+  // erpnext.selling.doctype.sales_order.sales_order.make_purchase_order_for_default_supplier.
+  // Returns a single Purchase Order (target_doc) object.
+  async makePurchaseOrderForDefaultSupplier(
+    sourceName: string,
+    selectedItems: Array<{ name: string; item_code?: string; item_name?: string; pending_qty?: number; uom?: string; supplier?: string }>,
+  ): Promise<unknown> {
+    return postMethodRaw<unknown>(
+      "erpnext.selling.doctype.sales_order.sales_order.make_purchase_order_for_default_supplier",
+      {
+        source_name: sourceName,
+        selected_items: JSON.stringify(selectedItems),
+        target_doc: undefined,
+      },
+    )
+  },
+
+  // erpnext.selling.doctype.sales_order.sales_order.get_work_order_items —
+  // pre-fetch of BOM items before the Work Order dialog.
+  async getWorkOrderItems(
+    salesOrder: string,
+    forRawMaterialRequest = 0,
+  ): Promise<
+    Array<{
+      name: string
+      item_code: string
+      description?: string
+      bom?: string
+      warehouse?: string
+      pending_qty?: number
+      required_qty?: number
+      sales_order_item?: string
+    }>
+  > {
+    return postMethod<
+      Array<{
+        name: string
+        item_code: string
+        description?: string
+        bom?: string
+        warehouse?: string
+        pending_qty?: number
+        required_qty?: number
+        sales_order_item?: string
+      }>
+    >("erpnext.selling.doctype.sales_order.sales_order.get_work_order_items", {
+      sales_order: salesOrder,
+      for_raw_material_request: forRawMaterialRequest,
+    })
+  },
+
+  // erpnext.selling.doctype.sales_order.sales_order.get_stock_reservation_status —
+  // gates the `reserve_stock` checkbox visibility/read-only.
+  async getStockReservationStatus(): Promise<boolean> {
+    try {
+      return !!(
+        await postMethodRaw<{ message?: number | boolean }>(
+          "erpnext.selling.doctype.sales_order.sales_order.get_stock_reservation_status",
+          {},
+        )
+      ).message
+    } catch {
+      return true
     }
   },
 }

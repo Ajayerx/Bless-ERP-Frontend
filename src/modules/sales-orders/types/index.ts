@@ -67,6 +67,7 @@ export interface SalesOrderItemForm {
   stock_uom_rate?: number
   actual_qty?: number
   projected_qty?: number
+  delivered_qty?: number
   reserved_qty?: number
   qty: number
   price_list_rate: number
@@ -98,6 +99,7 @@ export interface SalesOrderItemForm {
   income_account?: string
   cost_center?: string
   expense_account?: string
+  project?: string
   weight_per_unit?: number
   weight_uom?: string
   total_weight?: number
@@ -260,7 +262,6 @@ export interface SalesOrderDoc {
   shipping_rule?: string
   incoterm?: string
   named_place?: string
-  shipment_address?: string
 
   payment_terms_template?: string
   payment_schedule: SalesOrderPaymentScheduleRow[]
