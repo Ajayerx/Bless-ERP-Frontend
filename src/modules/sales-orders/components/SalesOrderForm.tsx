@@ -150,21 +150,27 @@ export default forwardRef<SalesOrderFormHandle, SalesOrderFormProps>(
     },
     ref,
   ) {
-    const { companyDefaults } = useCompany()
+    const { companyDefaults, companies } = useCompany()
     const { addToast } = useToast()
 
     const companyCurrency = companyDefaults?.currency || "CAD"
     const defaultCompany = companyDefaults?.company || ""
     const defaultPriceList = companyDefaults?.defaultSellingPriceList || "Standard Selling"
 
+    // ERPNext parity: erpnext.hide_company — when the user has access to
+    // exactly one company, the Company field is pre-set to it and hidden.
+    const companyNames = companies.map((c) => c.name)
+    const singleCompany = companyNames.length === 1
+    const effectiveDefaultCompany = singleCompany ? companyNames[0] : defaultCompany
+
     const buildEmptyForm = (): SalesOrderFormData => ({
       doctype: "Sales Order",
-      naming_series: "SO-",
+      naming_series: "SAL-ORD-.YYYY.-",
       customer: "",
       order_type: "Sales",
       transaction_date: todayISO(),
       delivery_date: addDaysISO(7),
-      company: defaultCompany,
+      company: effectiveDefaultCompany,
       currency: companyCurrency,
       conversion_rate: 1,
       selling_price_list: defaultPriceList,
@@ -360,6 +366,16 @@ export default forwardRef<SalesOrderFormHandle, SalesOrderFormProps>(
         } catch {
           // fall back to customer code only
         }
+      }
+      // ERPNext parity: sales_order.js `frm.add_fetch("customer", "tax_id", "tax_id")`
+      // auto-fetches the customer's Tax Id (shown only when the customer has one).
+      try {
+        const res = await salesOrderService.getValue("Customer", "tax_id", { name: party })
+        if (typeof res.tax_id === "string" && res.tax_id.trim()) {
+          patch = { ...patch, tax_id: res.tax_id }
+        }
+      } catch {
+        // tax id is best-effort
       }
       if (formRef.current.customer !== party) return // stale response guard
       update(patch)
@@ -1081,7 +1097,7 @@ export default forwardRef<SalesOrderFormHandle, SalesOrderFormProps>(
                 <div className="mb-3">
                   <label className={labelClass}>Series</label>
                   <div className="font-medium text-sm py-1.5">
-                    {form.naming_series || "SO-"}
+                    {form.naming_series || "SAL-ORD-.YYYY.-"}
                   </div>
                 </div>
               )}
@@ -1092,11 +1108,11 @@ export default forwardRef<SalesOrderFormHandle, SalesOrderFormProps>(
                     <div>
                       <label className={labelClass}>Series *</label>
                       <select
-                        value={form.naming_series ?? "SO-"}
+                        value={form.naming_series ?? "SAL-ORD-.YYYY.-"}
                         onChange={(e) => update({ naming_series: e.target.value })}
                         className={inputClass}
                       >
-                        <option value="SO-">SO-</option>
+                        <option value="SAL-ORD-.YYYY.-">SAL-ORD-.YYYY.-</option>
                       </select>
                     </div>
                   )}
@@ -1131,17 +1147,6 @@ export default forwardRef<SalesOrderFormHandle, SalesOrderFormProps>(
                       />
                     )}
                   </Field>
-                  {form.customer && (
-                    <div>
-                      <label className={labelClass}>Customer Name</label>
-                      <input
-                        type="text"
-                        value={form.customer_name || form.customer}
-                        readOnly
-                        className={`${inputClass} bg-gray-50 font-semibold break-all`}
-                      />
-                    </div>
-                  )}
                   {form.tax_id && (
                     <div>
                       <label className={labelClass}>Tax ID</label>
@@ -1153,9 +1158,6 @@ export default forwardRef<SalesOrderFormHandle, SalesOrderFormProps>(
                       />
                     </div>
                   )}
-                </div>
-                {/* Col 2 */}
-                <div className="space-y-3">
                   <Field label="Order Type *" fieldname="order_type">
                     {headerLocked ? (
                       <input type="text" value={form.order_type} readOnly className={inputClass} />
@@ -1173,7 +1175,10 @@ export default forwardRef<SalesOrderFormHandle, SalesOrderFormProps>(
                       </select>
                     )}
                   </Field>
-                  <Field label="Transaction Date *" fieldname="transaction_date">
+                </div>
+                {/* Col 2 */}
+                <div className="space-y-3">
+                  <Field label="Date *" fieldname="transaction_date">
                     {headerLocked ? (
                       <input type="date" value={form.transaction_date} readOnly className={inputClass} />
                     ) : (
@@ -1215,27 +1220,29 @@ export default forwardRef<SalesOrderFormHandle, SalesOrderFormProps>(
                 </div>
                 {/* Col 3 */}
                 <div className="space-y-3">
-                  <div>
-                    <label className={labelClass}>Company *</label>
-                    {headerLocked ? (
-                      <input type="text" value={form.company} readOnly className={inputClass} />
-                    ) : (
-                      <LinkSearchField
-                        value={form.company}
-                        onChange={(v) => update({ company: v ?? "" })}
-                        searchFn={async (q) => {
-                          const results = await customerService.searchLink("Company", q, "Sales Order")
-                          return { items: results }
-                        }}
-                        validate={async (v) => {
-                          await customerService.validateLink("Company", v)
-                        }}
-                        docType="Company"
-                        placeholder="Select company…"
-                        required={rule("company").reqd}
-                      />
-                    )}
-                  </div>
+                  {!singleCompany && (
+                    <div>
+                      <label className={labelClass}>Company *</label>
+                      {headerLocked ? (
+                        <input type="text" value={form.company} readOnly className={inputClass} />
+                      ) : (
+                        <LinkSearchField
+                          value={form.company}
+                          onChange={(v) => update({ company: v ?? "" })}
+                          searchFn={async (q) => {
+                            const results = await customerService.searchLink("Company", q, "Sales Order")
+                            return { items: results }
+                          }}
+                          validate={async (v) => {
+                            await customerService.validateLink("Company", v)
+                          }}
+                          docType="Company"
+                          placeholder="Select company…"
+                          required={rule("company").reqd}
+                        />
+                      )}
+                    </div>
+                  )}
                   <Field label="Customer's Purchase Order" fieldname="po_no">
                     <Input
                       value={form.po_no ?? ""}
@@ -1244,7 +1251,7 @@ export default forwardRef<SalesOrderFormHandle, SalesOrderFormProps>(
                       readOnly={!isFieldEditable("po_no")}
                     />
                   </Field>
-                  <Field label="PO Date" fieldname="po_date">
+                  <Field label="Customer's Purchase Order Date" fieldname="po_date">
                     <Input
                       type="date"
                       value={form.po_date ?? ""}
@@ -1268,6 +1275,53 @@ export default forwardRef<SalesOrderFormHandle, SalesOrderFormProps>(
                 </div>
               </div>
             </div>
+
+            {/* ===== Accounting Dimensions ===== */}
+            {form.customer && (
+              <CollapsibleSection
+                title="Accounting Dimensions"
+                defaultOpen={!!(form.cost_center || form.project)}
+              >
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <div>
+                    <label className={labelClass}>Cost Center</label>
+                    <LinkSearchField
+                      value={form.cost_center ?? ""}
+                      onChange={(v) => update({ cost_center: v ?? "" })}
+                      searchFn={async (q) => {
+                        const results = await customerService.searchLink("Cost Center", q, "Sales Order")
+                        return { items: results }
+                      }}
+                      validate={async (v) => {
+                        await customerService.validateLink("Cost Center", v)
+                      }}
+                      docType="Cost Center"
+                      placeholder="Select cost center…"
+                      clearIconMode="hover"
+                      disabled={!isFieldEditable("cost_center")}
+                    />
+                  </div>
+                  <div>
+                    <label className={labelClass}>Project</label>
+                    <LinkSearchField
+                      value={form.project ?? ""}
+                      onChange={(v) => update({ project: v ?? "" })}
+                      searchFn={async (q) => {
+                        const results = await customerService.searchLink("Project", q, "Sales Order")
+                        return { items: results }
+                      }}
+                      validate={async (v) => {
+                        await customerService.validateLink("Project", v)
+                      }}
+                      docType="Project"
+                      placeholder="Select project…"
+                      clearIconMode="hover"
+                      disabled={!isFieldEditable("project")}
+                    />
+                  </div>
+                </div>
+              </CollapsibleSection>
+            )}
 
             {/* ===== Currency and Price List ===== */}
             <CollapsibleSection title="Currency and Price List">
@@ -1357,10 +1411,10 @@ export default forwardRef<SalesOrderFormHandle, SalesOrderFormProps>(
               })()}
             </CollapsibleSection>
 
-            {/* ===== Warehouse ===== */}
+            {/* ===== Items (Set Source Warehouse) ===== */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 pb-4 border-b border-border">
               <div>
-                <label className={labelClass}>Set Warehouse</label>
+                <label className={labelClass}>Set Source Warehouse</label>
                 <LinkSearchField
                   value={form.set_warehouse ?? ""}
                   onChange={(v) => update({ set_warehouse: v ?? "" })}
@@ -2180,19 +2234,80 @@ export default forwardRef<SalesOrderFormHandle, SalesOrderFormProps>(
 
         {activeTab === "more_info" && (
           <div className="space-y-4">
-            <CollapsibleSection title="Sales Team">
-              <ChildTableGrid<SalesOrderSalesTeamRow>
-                title="Sales Team"
-                noTopBorder
-                rows={form.sales_team ?? []}
-                columns={salesTeamColumns}
-                emptyRow={{ sales_person: "", allocated_percentage: 0, allocated_amount: 0, commission_rate: 0, incentives: 0 }}
-                onChange={(rows) => update({ sales_team: rows })}
-                readOnly={!isFieldEditable("sales_team")}
-                minWidth="720px"
-                canAdd={mode === "create" || isFieldEditable("sales_team")}
-              />
-            </CollapsibleSection>
+            {/* Top-level (ERPNext More Info: inter_company_order_reference, project, source, campaign) */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 pb-4 border-b border-border">
+              <Field label="Inter Company Order Reference" fieldname="inter_company_order_reference">
+                <LinkSearchField
+                  value={form.inter_company_order_reference ?? ""}
+                  onChange={(v) => update({ inter_company_order_reference: v ?? "" })}
+                  searchFn={async (q) => {
+                    const results = await customerService.searchLink("Purchase Order", q, "Sales Order")
+                    return { items: results }
+                  }}
+                  validate={async (v) => {
+                    await customerService.validateLink("Purchase Order", v)
+                  }}
+                  docType="Purchase Order"
+                  placeholder="Select purchase order…"
+                  clearIconMode="hover"
+                  disabled={!isFieldEditable("inter_company_order_reference")}
+                />
+              </Field>
+              <div>
+                <label className={labelClass}>Project</label>
+                <LinkSearchField
+                  value={form.project ?? ""}
+                  onChange={(v) => update({ project: v ?? "" })}
+                  searchFn={async (q) => {
+                    const results = await customerService.searchLink("Project", q, "Sales Order")
+                    return { items: results }
+                  }}
+                  validate={async (v) => {
+                    await customerService.validateLink("Project", v)
+                  }}
+                  docType="Project"
+                  placeholder="Select project…"
+                  clearIconMode="hover"
+                  disabled={!isFieldEditable("project")}
+                />
+              </div>
+              <div>
+                <label className={labelClass}>Source</label>
+                <LinkSearchField
+                  value={form.source ?? ""}
+                  onChange={(v) => update({ source: v ?? "" })}
+                  searchFn={async (q) => {
+                    const results = await customerService.searchLink("Lead Source", q, "Sales Order")
+                    return { items: results }
+                  }}
+                  docType="Lead Source"
+                  placeholder="Select source…"
+                  validate={async (v) => {
+                    await customerService.validateLink("Lead Source", v)
+                  }}
+                  clearIconMode="hover"
+                  disabled={!isFieldEditable("source")}
+                />
+              </div>
+              <div>
+                <label className={labelClass}>Campaign</label>
+                <LinkSearchField
+                  value={form.campaign ?? ""}
+                  onChange={(v) => update({ campaign: v ?? "" })}
+                  searchFn={async (q) => {
+                    const results = await customerService.searchLink("Campaign", q, "Sales Order")
+                    return { items: results }
+                  }}
+                  docType="Campaign"
+                  placeholder="Select campaign…"
+                  validate={async (v) => {
+                    await customerService.validateLink("Campaign", v)
+                  }}
+                  clearIconMode="hover"
+                  disabled={!isFieldEditable("campaign")}
+                />
+              </div>
+            </div>
 
             <CollapsibleSection title="Print Settings">
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -2214,6 +2329,33 @@ export default forwardRef<SalesOrderFormHandle, SalesOrderFormProps>(
                     disabled={!isFieldEditable("letter_head")}
                   />
                 </div>
+                <div>
+                  <label className={labelClass}>Print Heading</label>
+                  <LinkSearchField
+                    value={form.select_print_heading ?? ""}
+                    onChange={(v) => update({ select_print_heading: v ?? "" })}
+                    searchFn={async (q) => {
+                      const results = await customerService.searchLink("Print Heading", q, "Sales Order")
+                      return { items: results }
+                    }}
+                    docType="Print Heading"
+                    placeholder="Select print heading…"
+                    validate={async (v) => {
+                      await customerService.validateLink("Print Heading", v)
+                    }}
+                    clearIconMode="hover"
+                    disabled={!isFieldEditable("select_print_heading")}
+                  />
+                </div>
+                <div>
+                  <label className={labelClass}>Print Language</label>
+                  <input
+                    type="text"
+                    value={form.language ?? ""}
+                    className={`${inputClass} bg-gray-50`}
+                    readOnly
+                  />
+                </div>
                 <div className="flex items-start gap-2 pt-6">
                   <input
                     type="checkbox"
@@ -2227,19 +2369,10 @@ export default forwardRef<SalesOrderFormHandle, SalesOrderFormProps>(
                     Group Same Items
                   </label>
                 </div>
-                <div>
-                  <label className={labelClass}>Print Language</label>
-                  <input
-                    type="text"
-                    value={form.language ?? ""}
-                    className={`${inputClass} bg-gray-50`}
-                    readOnly
-                  />
-                </div>
               </div>
             </CollapsibleSection>
 
-            <CollapsibleSection title="Additional Info">
+            <CollapsibleSection title="Status">
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 <div>
                   <label className={labelClass}>Status</label>
@@ -2250,78 +2383,134 @@ export default forwardRef<SalesOrderFormHandle, SalesOrderFormProps>(
                     readOnly
                   />
                 </div>
-                <div>
-                  <label className={labelClass}>Project</label>
+                {rule("per_delivered").visible && (
+                  <div>
+                    <label className={labelClass}>% Delivered</label>
+                    <input
+                      type="text"
+                      value={form.per_delivered ?? 0}
+                      className={`${inputClass} bg-gray-50`}
+                      readOnly
+                    />
+                  </div>
+                )}
+                {rule("per_billed").visible && (
+                  <div>
+                    <label className={labelClass}>% Amount Billed</label>
+                    <input
+                      type="text"
+                      value={form.per_billed ?? 0}
+                      className={`${inputClass} bg-gray-50`}
+                      readOnly
+                    />
+                  </div>
+                )}
+              </div>
+            </CollapsibleSection>
+
+            <CollapsibleSection title="Commission">
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                <Field label="Sales Partner" fieldname="sales_partner">
                   <LinkSearchField
-                    value={form.project ?? ""}
-                    onChange={(v) => update({ project: v ?? "" })}
+                    value={form.sales_partner ?? ""}
+                    onChange={(v) => update({ sales_partner: v ?? "" })}
                     searchFn={async (q) => {
-                      const results = await customerService.searchLink("Project", q, "Sales Order")
+                      const results = await customerService.searchLink("Sales Partner", q, "Sales Order")
                       return { items: results }
                     }}
                     validate={async (v) => {
-                      await customerService.validateLink("Project", v)
+                      await customerService.validateLink("Sales Partner", v)
                     }}
-                    docType="Project"
-                    placeholder="Select project…"
+                    docType="Sales Partner"
+                    placeholder="Select sales partner…"
                     clearIconMode="hover"
-                    disabled={!isFieldEditable("project")}
+                    disabled={!isFieldEditable("sales_partner")}
+                  />
+                </Field>
+                <Field label="Commission Rate" fieldname="commission_rate">
+                  <Input
+                    type="number"
+                    min={0}
+                    max={100}
+                    step={0.01}
+                    value={form.commission_rate ?? ""}
+                    onChange={(e) => update({ commission_rate: e.target.value ? Number(e.target.value) : 0 })}
+                    readOnly={!isFieldEditable("commission_rate")}
+                  />
+                </Field>
+                <div>
+                  <label className={labelClass}>Total Commission</label>
+                  <input
+                    type="text"
+                    value={formatCurrency(form.total_commission ?? 0, companyCurrency)}
+                    className={`${inputClass} bg-gray-50`}
+                    readOnly
                   />
                 </div>
-                <div>
-                  <label className={labelClass}>Source</label>
+              </div>
+            </CollapsibleSection>
+
+            <CollapsibleSection title="Sales Team">
+              <ChildTableGrid<SalesOrderSalesTeamRow>
+                title="Sales Team"
+                noTopBorder
+                rows={form.sales_team ?? []}
+                columns={salesTeamColumns}
+                emptyRow={{ sales_person: "", allocated_percentage: 0, allocated_amount: 0, commission_rate: 0, incentives: 0 }}
+                onChange={(rows) => update({ sales_team: rows })}
+                readOnly={!isFieldEditable("sales_team")}
+                minWidth="720px"
+                canAdd={mode === "create" || isFieldEditable("sales_team")}
+              />
+            </CollapsibleSection>
+
+            <CollapsibleSection title="Auto Repeat">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <Field label="Auto Repeat" fieldname="auto_repeat">
                   <LinkSearchField
-                    value={form.source ?? ""}
-                    onChange={(v) => update({ source: v ?? "" })}
+                    value={form.auto_repeat ?? ""}
+                    onChange={(v) => update({ auto_repeat: v ?? "" })}
                     searchFn={async (q) => {
-                      const results = await customerService.searchLink("Lead Source", q, "Sales Order")
+                      const results = await customerService.searchLink("Auto Repeat", q, "Sales Order")
                       return { items: results }
                     }}
-                    docType="Lead Source"
-                    placeholder="Select source…"
                     validate={async (v) => {
-                      await customerService.validateLink("Lead Source", v)
+                      await customerService.validateLink("Auto Repeat", v)
                     }}
+                    docType="Auto Repeat"
+                    placeholder="Select auto repeat…"
                     clearIconMode="hover"
-                    disabled={!isFieldEditable("source")}
+                    disabled={!isFieldEditable("auto_repeat")}
                   />
-                </div>
-                <div>
-                  <label className={labelClass}>Campaign</label>
-                  <LinkSearchField
-                    value={form.campaign ?? ""}
-                    onChange={(v) => update({ campaign: v ?? "" })}
-                    searchFn={async (q) => {
-                      const results = await customerService.searchLink("Campaign", q, "Sales Order")
-                      return { items: results }
-                    }}
-                    docType="Campaign"
-                    placeholder="Select campaign…"
-                    validate={async (v) => {
-                      await customerService.validateLink("Campaign", v)
-                    }}
-                    clearIconMode="hover"
-                    disabled={!isFieldEditable("campaign")}
+                </Field>
+                <Field label="From Date" fieldname="from_date">
+                  <Input
+                    type="date"
+                    value={form.from_date ?? ""}
+                    onChange={(e) => update({ from_date: e.target.value })}
+                    readOnly={!isFieldEditable("from_date")}
                   />
-                </div>
-                <div>
-                  <label className={labelClass}>Cost Center</label>
-                  <LinkSearchField
-                    value={form.cost_center ?? ""}
-                    onChange={(v) => update({ cost_center: v ?? "" })}
-                    searchFn={async (q) => {
-                      const results = await customerService.searchLink("Cost Center", q, "Sales Order")
-                      return { items: results }
-                    }}
-                    validate={async (v) => {
-                      await customerService.validateLink("Cost Center", v)
-                    }}
-                    docType="Cost Center"
-                    placeholder="Select cost center…"
-                    clearIconMode="hover"
-                    disabled={!isFieldEditable("cost_center")}
+                </Field>
+                <Field label="To Date" fieldname="to_date">
+                  <Input
+                    type="date"
+                    value={form.to_date ?? ""}
+                    onChange={(e) => update({ to_date: e.target.value })}
+                    readOnly={!isFieldEditable("to_date")}
                   />
-                </div>
+                </Field>
+                {form.auto_repeat && (
+                  <Field label="Update Auto Repeat Reference" fieldname="update_auto_repeat_reference">
+                    <button
+                      type="button"
+                      onClick={() => update({ update_auto_repeat_reference: 1 })}
+                      disabled={!isFieldEditable("update_auto_repeat_reference")}
+                      className={`${inputClass} bg-primary-600 text-white font-semibold hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed`}
+                    >
+                      Update Auto Repeat Reference
+                    </button>
+                  </Field>
+                )}
               </div>
             </CollapsibleSection>
           </div>
