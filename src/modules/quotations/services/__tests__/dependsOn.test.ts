@@ -45,4 +45,38 @@ describe("dependsOn tokenizer / evaluator", () => {
     expect(evalDependsOn("", c)).toBe(true)
     expect(evalDependsOn("eval:true", c)).toBe(true)
   })
+
+  it("supports && / || operators (were silently dropped)", () => {
+    const c = { order_type: "Sales", skip_delivery_note: 1, docstatus: 0, reserve_stock: 0, a: 1, b: 0 }
+    // && — second operand gates correctly (BUG: parseComparison used to eat
+    // the && as a comparison op and return the left operand's truthiness)
+    expect(evalDependsOn("order_type=='Sales' && !skip_delivery_note", ctx(c))).toBe(false)
+    expect(evalDependsOn("order_type=='Maintenance' && !skip_delivery_note", ctx(c))).toBe(false)
+    expect(evalDependsOn("order_type=='Sales' && !skip_delivery_note", ctx({ ...c, skip_delivery_note: 0 }))).toBe(true)
+    expect(evalDependsOn("a == 1 && b == 2", ctx({ a: 1, b: 3 }))).toBe(false)
+    expect(evalDependsOn("a == 1 && b == 2", ctx({ a: 1, b: 2 }))).toBe(true)
+    // || — second operand is NOT dropped
+    expect(evalDependsOn("docstatus == 0 || reserve_stock", ctx(c))).toBe(true)
+    expect(evalDependsOn("docstatus == 1 || reserve_stock", ctx(c))).toBe(false)
+    expect(evalDependsOn("docstatus == 1 || reserve_stock", ctx({ ...c, reserve_stock: 1 }))).toBe(true)
+    expect(evalDependsOn("a == 1 || b == 2", ctx({ a: 0, b: 0 }))).toBe(false)
+    // mixed && / || with parens
+    expect(evalDependsOn("docstatus == 0 || (docstatus == 1 && reserve_stock)", ctx({ ...c, reserve_stock: 1 }))).toBe(true)
+    expect(evalDependsOn("docstatus == 2 || (docstatus == 1 && reserve_stock)", ctx({ ...c, reserve_stock: 0 }))).toBe(false)
+  })
+
+  it("evaluates negated parenthesised && (per_picked-style rule)", () => {
+    // !(!doc.__islocal && !doc.skip_delivery_note_creation); __islocal is
+    // absent and skip_delivery_note_creation is 0 (falsy) → !(true) → false.
+    const c = ctx({ skip_delivery_note_creation: 0 })
+    expect(evalDependsOn("!(!doc.__islocal && !doc.skip_delivery_note_creation)", c)).toBe(false)
+    expect(evalDependsOn("!(!doc.__islocal && !doc.skip_delivery_note_creation)", ctx({ skip_delivery_note_creation: 1 }))).toBe(true)
+  })
+
+  it("resolves truncated expressions to false (Frappe eval catch → field hidden)", () => {
+    // Frappe's eval_depends_on returns false on a syntax error, hiding the
+    // field. A dangling && now parses consistently instead of leaving tokens.
+    expect(evalDependsOn("a &&", ctx({ a: 1 }))).toBe(false)
+    expect(evalDependsOn("a &&", ctx({ a: 0 }))).toBe(false)
+  })
 })

@@ -304,6 +304,8 @@ export const quotationHandlers = [
         contact_email: "john.baker@example.com",
         company_address: "ADR-COMP-0001",
         company_address_display: "BlessERP Inc.\n500 Commerce Blvd\nOttawa, ON",
+        is_internal_customer: 0,
+        represents_company: "",
         party_type: partyType,
       },
     })

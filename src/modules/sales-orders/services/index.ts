@@ -1,5 +1,6 @@
-import { apiClient, apiFormCall, apiClientWithBody, serverMessagesFromBody, failedNamesFromMessages, ApiError, type AppMessage } from "@/services/api-client"
+import { apiClient, apiFormCall, apiClientWithBody, serverMessagesFromBody, failedNamesFromMessages, serverDownloadTemplate, ApiError, type AppMessage } from "@/services/api-client"
 import { postMethod, postMethodRaw } from "@/services/frappe-client"
+import { API_CONFIG } from "@/config/api.config"
 import { buildTimelineItems, toQuillHtml } from "@/modules/payments/services"
 import type { DocInfo, PaymentActivityItem, PaymentComment } from "@/modules/payments/types"
 import {
@@ -8,6 +9,8 @@ import {
   type SalesOrderDoc,
   type SalesOrderFormData,
   type SalesOrderTax,
+  type SalesOrderStatus,
+  type SalesOrderDocStatus,
 } from "../types"
 
 export type {
@@ -23,6 +26,22 @@ export type {
 } from "../types"
 
 const DOCTYPE = "Sales Order"
+
+/** Columns offered by the list export dialog (server-side data_import template). */
+export const SALES_ORDER_EXPORT_FIELDS: Record<string, string[]> = {
+  "Sales Order": [
+    "name", "title", "customer", "customer_name", "transaction_date", "delivery_date",
+    "company", "currency", "grand_total", "total_taxes_and_charges",
+    "per_delivered", "per_billed", "status", "docstatus",
+  ],
+  items: [
+    "item_code", "item_name", "item_group", "brand", "qty", "rate", "amount",
+    "uom", "warehouse", "delivery_date", "delivered_qty", "billed_amt",
+  ],
+  taxes: [
+    "charge_type", "account_head", "description", "rate", "tax_amount", "total",
+  ],
+}
 
 // ── frappe.request.is_fresh equivalent (request.js:96-110) ──────────────
 // Desk keeps url_history keyed on the serialized args and silently skips an
@@ -109,7 +128,7 @@ export function deskRandomString(length = 10): string {
 
 // ── Light list mapping (ERPNext row → list page shape) ────────────────
 function mapStatus(doc: Record<string, unknown>): SalesOrder["status"] {
-  if (cint(doc.docstatus) === 2) return "cancelled"
+  if (Number(doc.docstatus) === 2) return "cancelled"
   const s = String(doc.status ?? "").toLowerCase()
   if (s === "draft" || s === "on hold") return "draft"
   if (s === "completed" || s === "closed") return "completed"
@@ -118,7 +137,7 @@ function mapStatus(doc: Record<string, unknown>): SalesOrder["status"] {
 }
 
 function mapFulfillment(doc: Record<string, unknown>): SalesOrder["fulfillmentStatus"] {
-  if (cint(doc.docstatus) === 2) return "cancelled"
+  if (Number(doc.docstatus) === 2) return "cancelled"
   const perDelivered = dnum(doc.per_delivered)
   if (perDelivered >= 100) return "fulfilled"
   if (perDelivered > 0) return "partial"
@@ -128,12 +147,15 @@ function mapFulfillment(doc: Record<string, unknown>): SalesOrder["fulfillmentSt
 function mapDoc(doc: Record<string, unknown>): SalesOrder {
   return {
     id: String(doc.name),
+    name: String(doc.name),
     number: String(doc.name),
     customerId: String(doc.customer ?? ""),
     customerName: String(doc.customer_name ?? doc.customer ?? ""),
     issueDate: String(doc.transaction_date ?? ""),
     deliveryDate: String(doc.delivery_date ?? ""),
     status: mapStatus(doc),
+    rawStatus: (String(doc.status ?? "") || "Draft") as SalesOrderStatus,
+    docstatus: (Number(doc.docstatus) ? Math.min(Number(doc.docstatus), 2) : 0) as SalesOrderDocStatus,
     items: (Array.isArray(doc.items) ? doc.items : []).map((i) => {
       const row = i as Record<string, unknown>
       return {
@@ -183,7 +205,7 @@ async function getCount(filters?: unknown[], orFilters?: unknown[]): Promise<num
 
 // ── Desk child row envelope (for new-doc POST / amend clone) ──────────
 interface DeskDocEnvelopeOptions {
-  isNew: boolean
+  isNew?: boolean
   owner?: string
 }
 
@@ -193,7 +215,7 @@ function deskChildRow(
   parentfield: string,
   idx: number,
   parentName: string,
-  opts: DeskDocEnvelopeOptions,
+  opts: DeskDocEnvelopeOptions = { isNew: false },
 ): Record<string, unknown> {
   const out: Record<string, unknown> = {
     docstatus: 0,
@@ -317,6 +339,153 @@ function deskChildRow(
   return out
 }
 
+// ── apply_price_list helpers (TransactionController parity) ───────────
+
+export function buildApplyPriceListArgs(
+  doc: Partial<SalesOrderDoc> & Record<string, unknown>,
+): Record<string, unknown> {
+  const rows = (doc.items ?? []) as unknown as Array<Record<string, unknown>>
+  const item_list: Array<Record<string, unknown>> = []
+  for (const d of rows) {
+    if (!d.item_code) continue
+    item_list.push({
+      doctype: d.doctype ?? "Sales Order Item",
+      name: d.name,
+      child_docname: d.name,
+      item_code: d.item_code,
+      item_group: d.item_group,
+      brand: d.brand,
+      qty: d.qty,
+      stock_qty: d.stock_qty,
+      uom: d.uom,
+      stock_uom: d.stock_uom,
+      parenttype: d.parenttype ?? DOCTYPE,
+      parent: d.parent ?? doc.name,
+      pricing_rules: d.pricing_rules,
+      is_free_item: d.is_free_item,
+      warehouse: d.warehouse,
+      serial_no: d.serial_no,
+      batch_no: d.batch_no,
+      price_list_rate: d.price_list_rate,
+      conversion_factor: d.conversion_factor || 1.0,
+      discount_percentage: d.discount_percentage,
+      discount_amount: d.discount_amount,
+    })
+    // ERPNext quirk kept verbatim: the comma operator in desk's
+    // `if (in_list([...]), d.doctype)` makes this run for every row and
+    // always write into item_list[0].
+    item_list[0]["margin_type"] = d.margin_type
+    item_list[0]["margin_rate_or_amount"] = d.margin_rate_or_amount
+  }
+  return {
+    items: item_list,
+    customer: doc.customer,
+    order_type: doc.order_type,
+    customer_group: doc.customer_group,
+    territory: doc.territory,
+    currency: doc.currency,
+    conversion_rate: doc.conversion_rate,
+    price_list: doc.selling_price_list,
+    price_list_currency: doc.price_list_currency,
+    plc_conversion_rate: doc.plc_conversion_rate,
+    company: doc.company,
+    transaction_date: doc.transaction_date,
+    delivery_date: doc.delivery_date,
+    campaign: doc.campaign,
+    sales_partner: doc.sales_partner,
+    ignore_pricing_rule: doc.ignore_pricing_rule,
+    doctype: DOCTYPE,
+    name: doc.name,
+    update_stock: 0,
+    pos_profile: "",
+    coupon_code: doc.coupon_code,
+    is_internal_customer: doc.is_internal_customer,
+  }
+}
+
+export function buildDeskApplyPriceListDoc(
+  form: Partial<SalesOrderDoc> & Record<string, unknown>,
+  opts: DeskDocEnvelopeOptions = {},
+): Record<string, unknown> {
+  const isNew = !!opts.isNew
+  const rowsOf = (key: string): Array<Record<string, unknown>> =>
+    Array.isArray(form[key]) ? (form[key] as Array<Record<string, unknown>>) : []
+  const doc: Record<string, unknown> = {
+    docstatus: form.docstatus ?? 0,
+    doctype: DOCTYPE,
+    name: form.name ?? "",
+    ...(isNew ? { __islocal: 1, __unsaved: 1 } : {}),
+    ...(opts.owner !== undefined ? { owner: opts.owner } : {}),
+    naming_series: form.naming_series ?? "SAL-ORD-.YYYY.-",
+    transaction_date: form.transaction_date ?? "",
+    order_type: form.order_type ?? "Sales",
+    has_unit_price_items: cint(form.has_unit_price_items),
+    currency: form.currency ?? "",
+    selling_price_list: form.selling_price_list ?? "",
+    price_list_currency: form.price_list_currency ?? "",
+    ignore_pricing_rule: cint(form.ignore_pricing_rule),
+    items: rowsOf("items").map((r, i) => deskChildRow(r, "Sales Order Item", "items", i + 1, form.name ?? "", opts)),
+    taxes: rowsOf("taxes").map((r, i) => deskChildRow(r, "Sales Taxes and Charges", "taxes", i + 1, form.name ?? "", opts)),
+    disable_rounded_total: cint(form.disable_rounded_total),
+    apply_discount_on: form.apply_discount_on ?? "Grand Total",
+    packed_items: rowsOf("packed_items"),
+    pricing_rules: rowsOf("pricing_rules"),
+    payment_schedule: rowsOf("payment_schedule"),
+    group_same_items: cint(form.group_same_items),
+    status: form.status ?? "Draft",
+    customer: form.customer ?? "",
+    customer_name: form.customer_name ?? "",
+    conversion_rate: form.conversion_rate ?? 1,
+    plc_conversion_rate: form.plc_conversion_rate ?? "",
+    company: form.company ?? "",
+    company_address: form.company_address ?? null,
+    company_address_display: form.company_address_display ?? null,
+    taxes_and_charges: form.taxes_and_charges ?? "",
+    base_net_total: dnum(form.base_net_total),
+    net_total: dnum(form.net_total),
+    base_total: dnum(form.base_total),
+    total: dnum(form.total),
+    total_qty: dnum(form.total_qty),
+    grand_total: dnum(form.grand_total),
+    total_taxes_and_charges: dnum(form.total_taxes_and_charges),
+    base_grand_total: dnum(form.base_grand_total),
+    rounded_total: dnum(form.rounded_total),
+    rounding_adjustment: dnum(form.rounding_adjustment),
+    base_rounding_adjustment: dnum(form.base_rounding_adjustment),
+    base_rounded_total: dnum(form.base_rounded_total),
+    in_words: form.in_words ?? "",
+    base_in_words: form.base_in_words ?? "",
+    base_discount_amount: dnum(form.base_discount_amount),
+    customer_address: form.customer_address ?? "",
+    address_display: form.address_display ?? "",
+    shipping_address_name: form.shipping_address_name ?? "",
+    shipping_address: form.shipping_address ?? "",
+    shipping_contact_person: form.shipping_contact_person ?? "",
+    shipping_contact_display: form.shipping_contact_display ?? "",
+    shipping_contact_mobile: form.shipping_contact_mobile ?? "",
+    dispatch_address_name: form.dispatch_address_name ?? "",
+    dispatch_address: form.dispatch_address ?? "",
+    tax_category: form.tax_category ?? "",
+    contact_person: form.contact_person ?? "",
+    contact_display: form.contact_display ?? "",
+    contact_phone: form.contact_phone ?? "",
+    contact_email: form.contact_email ?? "",
+    contact_mobile: form.contact_mobile ?? "",
+    customer_group: form.customer_group ?? "",
+    territory: form.territory ?? "",
+    language: form.language ?? "",
+    company_contact_person: form.company_contact_person ?? "",
+    payment_terms_template: form.payment_terms_template ?? null,
+    delivery_date: form.delivery_date ?? "",
+    po_no: form.po_no ?? "",
+    set_warehouse: form.set_warehouse ?? "",
+    reserve_stock: cint(form.reserve_stock),
+    cost_center: form.cost_center ?? "",
+    project: form.project ?? "",
+  }
+  return doc
+}
+
 export interface SalesOrderPartyDetails {
   customer?: string
   customer_name?: string
@@ -327,6 +496,9 @@ export interface SalesOrderPartyDetails {
   address_display?: string
   shipping_address_name?: string
   shipping_address?: string
+  shipping_contact_person?: string
+  shipping_contact_display?: string
+  shipping_contact_mobile?: string
   dispatch_address_name?: string
   dispatch_address?: string
   contact_person?: string
@@ -381,6 +553,46 @@ export interface EmailTemplateResult {
 export interface GetSalesOrderDocResult {
   doc: SalesOrderDoc
   docinfo: DocInfo
+}
+
+interface DeleteEligibilityRow {
+  name: string
+  docstatus: number
+  amended_from?: string | null
+}
+
+function planBulkDelete(
+  requested: string[],
+  selected: DeleteEligibilityRow[],
+  amendments: Array<{ name: string; amended_from?: string | null }>,
+): { deletable: string[]; failed: string[]; messages: AppMessage[] } {
+  const statusBy = new Map(selected.map((row) => [row.name, row.docstatus]))
+  const childByParent = new Map<string, string>()
+  for (const row of amendments) {
+    if (row.amended_from) childByParent.set(row.amended_from, row.name)
+  }
+
+  const deletable: string[] = []
+  const failed: string[] = []
+  const messages: AppMessage[] = []
+  for (const name of requested) {
+    const linkedAmendment = childByParent.get(name)
+    if (linkedAmendment) {
+      failed.push(name)
+      messages.push({
+        message: `${name} is linked with Sales Order ${linkedAmendment}. Delete that amendment first, then try again.`,
+      })
+    } else if (statusBy.get(name) === 1) {
+      failed.push(name)
+      messages.push({ message: `${name} is already submitted. Cancel it first, then try again.` })
+    } else if (statusBy.has(name)) {
+      deletable.push(name)
+    } else {
+      failed.push(name)
+      messages.push({ message: `${name} was not found.` })
+    }
+  }
+  return { deletable, failed, messages }
 }
 
 export const salesOrderService = {
@@ -540,6 +752,7 @@ export const salesOrderService = {
     cleaned.doctype = DOCTYPE
     cleaned.amended_from = source.name
     cleaned.docstatus = 0
+    cleaned.advance_paid = 0
     return this.saveDoc(cleaned, "Save")
   },
 
@@ -721,6 +934,76 @@ export const salesOrderService = {
     }
   },
 
+  // frappe.desk.search.search_link for the address fields (Address tab).
+  // Byte-parity with ERPNext (sales_common.js setup_queries → queries.js
+  // address_query/company_address_query/dispatch_address_query): the custom
+  // address_query is passed and results are filtered to the linked party.
+  async searchAddressesDesk(
+    query: string,
+    linkDoctype?: string,
+    linkName?: string,
+  ): Promise<Array<{ value: string; label: string; description: string }>> {
+    try {
+      const filters: Record<string, unknown> = {}
+      if (linkDoctype) filters.link_doctype = linkDoctype
+      if (linkName) filters.link_name = linkName
+      const results = await apiFormCall<Array<{ value: string; label?: string; description?: string }>>(
+        "/method/frappe.desk.search.search_link",
+        [
+          ["txt", query],
+          ["doctype", "Address"],
+          ["ignore_user_permissions", "0"],
+          ["reference_doctype", "Sales Order"],
+          ["page_length", "10"],
+          ["query", "frappe.contacts.doctype.address.address.address_query"],
+          ["filters", JSON.stringify(filters)],
+        ],
+        { doctype: "Address" },
+      )
+      return (results ?? []).map((u) => ({
+        value: u.value,
+        label: u.label ?? u.value,
+        description: u.description ?? "",
+      }))
+    } catch {
+      return []
+    }
+  },
+
+  // frappe.desk.search.search_link for the contact fields (Address tab).
+  // Byte-parity with ERPNext contact_query/company_contact_query.
+  async searchContactsDesk(
+    query: string,
+    linkDoctype?: string,
+    linkName?: string,
+  ): Promise<Array<{ value: string; label: string; description: string }>> {
+    try {
+      const filters: Record<string, unknown> = {}
+      if (linkDoctype) filters.link_doctype = linkDoctype
+      if (linkName) filters.link_name = linkName
+      const results = await apiFormCall<Array<{ value: string; label?: string; description?: string }>>(
+        "/method/frappe.desk.search.search_link",
+        [
+          ["txt", query],
+          ["doctype", "Contact"],
+          ["ignore_user_permissions", "0"],
+          ["reference_doctype", "Sales Order"],
+          ["page_length", "10"],
+          ["query", "frappe.contacts.doctype.contact.contact.contact_query"],
+          ["filters", JSON.stringify(filters)],
+        ],
+        { doctype: "Contact" },
+      )
+      return (results ?? []).map((u) => ({
+        value: u.value,
+        label: u.label ?? u.value,
+        description: u.description ?? "",
+      }))
+    } catch {
+      return []
+    }
+  },
+
   // ── Fetch flows (form field fills) ─────────────────────────────────
   async getExchangeRate(fromCurrency: string, toCurrency: string, transactionDate: string): Promise<number> {
     const rate = await apiFormCall<number | string>(
@@ -864,6 +1147,52 @@ export const salesOrderService = {
     }
   },
 
+  /**
+   * Mirror of ERPNext fetch_from: when a Link field with `fetch_from` (e.g.
+   * commission_rate -> sales_partner.commission_rate) gets a value, the link
+   * control fires frappe.model.utils.get_fetch_values and applies the returned
+   * field values (obeying fetch_if_empty). Returns the raw `fetch_values` map.
+   */
+  async getFetchValues(doctype: string, fieldname: string, value: string): Promise<Record<string, unknown>> {
+    try {
+      const res = await apiFormCall<{ fetch_values?: Record<string, unknown> }>(
+        "/method/frappe.model.utils.get_fetch_values",
+        [
+          ["doctype", doctype],
+          ["fieldname", fieldname],
+          ["value", value],
+        ],
+        { doctype },
+      )
+      return res?.fetch_values ?? {}
+    } catch {
+      return {}
+    }
+  },
+
+  /**
+   * Mirror of the ERPNext "Update Auto Repeat Reference" button handler
+   * (sales_common.js update_auto_repeat_reference → frappe.desk.doctype.
+   * auto_repeat.auto_repeat.update_reference). Returns the wire message
+   * ("success" on success).
+   */
+  async updateAutoRepeatReference(docname: string, reference: string): Promise<string> {
+    try {
+      const res = await apiFormCall<unknown>(
+        "/method/frappe.desk.doctype.auto_repeat.auto_repeat.update_reference",
+        [
+          ["doctype", "Auto Repeat"],
+          ["docname", docname],
+          ["reference", reference],
+        ],
+        { doctype: "Auto Repeat" },
+      )
+      return typeof res === "string" ? res : String(res ?? "")
+    } catch {
+      return ""
+    }
+  },
+
   async applyPriceList(
     args: Record<string, unknown>,
     doc?: Record<string, unknown>,
@@ -928,24 +1257,74 @@ export const salesOrderService = {
     }
   },
 
+  // Byte-parity with transaction.js payment_terms_template(): POSTs
+  // erpnext.controllers.accounts_controller.get_payment_terms with
+  // terms_template/posting_date/grand_total/base_grand_total (grand_total
+  // falls back to rounded_total like ERPNext) and returns the bare schedule
+  // array to replace payment_schedule with.
   async getPaymentTerms(
-    templateName: string,
-    doc: Record<string, unknown>,
-  ): Promise<Array<Record<string, unknown>>> {
+    termsTemplate: string,
+    postingDate: string,
+    grandTotal: number,
+    baseGrandTotal: number,
+  ): Promise<Array<Record<string, unknown>> | null> {
     try {
       const result = await apiFormCall<Array<Record<string, unknown>>>(
-        "/method/erpnext.accounts.party.get_payment_terms",
+        "/method/erpnext.controllers.accounts_controller.get_payment_terms",
         [
-          ["terms", templateName],
-          ["posting_date", String(doc.posting_date ?? doc.transaction_date ?? "")],
-          ["grand_total", String(doc.grand_total ?? 0)],
-          ["base_grand_total", String(doc.base_grand_total ?? 0)],
-          ["bill_date", String(doc.bill_date ?? "")],
+          ["terms_template", termsTemplate],
+          ["posting_date", postingDate],
+          ["grand_total", String(grandTotal)],
+          ["base_grand_total", String(baseGrandTotal)],
         ],
       )
-      return Array.isArray(result) ? result : []
+      return Array.isArray(result) ? result : null
     } catch {
-      return []
+      return null
+    }
+  },
+
+  // Byte-parity with transaction.js payment_term(): POSTs
+  // get_payment_term_details for a single row when the Payment Term is
+  // picked, auto-filling description/invoice_portion/payment_amount/due_date.
+  async getPaymentTermDetails(
+    term: string,
+    postingDate: string,
+    grandTotal: number,
+    baseGrandTotal: number,
+  ): Promise<Record<string, unknown> | null> {
+    try {
+      return await apiFormCall<Record<string, unknown>>(
+        "/method/erpnext.controllers.accounts_controller.get_payment_term_details",
+        [
+          ["term", term],
+          ["posting_date", postingDate],
+          ["grand_total", String(grandTotal)],
+          ["base_grand_total", String(baseGrandTotal)],
+        ],
+      )
+    } catch {
+      return null
+    }
+  },
+
+  // Byte-parity with erpnext.utils.get_terms(): renders the Terms and
+  // Conditions template server-side and returns the text for the terms field.
+  async getTermsAndConditions(
+    templateName: string,
+    doc: Record<string, unknown>,
+  ): Promise<string | null> {
+    try {
+      const result = await apiFormCall<string | Record<string, unknown>>(
+        "/method/erpnext.setup.doctype.terms_and_conditions.terms_and_conditions.get_terms_and_conditions",
+        [
+          ["template_name", templateName],
+          ["doc", JSON.stringify(doc)],
+        ],
+      )
+      return typeof result === "string" ? result : null
+    } catch {
+      return null
     }
   },
 
@@ -1111,18 +1490,113 @@ export const salesOrderService = {
     }
   },
 
-  async bulkDelete(names: string[]): Promise<{ failed: string[]; messages: AppMessage[] }> {
+  async bulkDelete(names: string[]): Promise<{ failed: string[]; deleted: string[]; messages: AppMessage[] }> {
+    const requested = Array.from(new Set((names ?? []).filter(Boolean)))
+    if (requested.length === 0) return { failed: [], deleted: [], messages: [] }
+
+    let plan: { deletable: string[]; failed: string[]; messages: AppMessage[] } | null = null
+    try {
+      const fieldsQp = new URLSearchParams()
+      fieldsQp.set("fields", JSON.stringify(["name", "docstatus", "amended_from"]))
+      fieldsQp.set("limit_page_length", "0")
+      const baseUrl = `/resource/${encodeURIComponent(DOCTYPE)}?${fieldsQp.toString()}`
+      const [selected, amendments] = await Promise.all([
+        apiClient<DeleteEligibilityRow[]>(
+          `${baseUrl}&filters=${encodeURIComponent(JSON.stringify([["name", "in", requested]]))}`,
+        ),
+        apiClient<Array<{ name: string; amended_from?: string | null }>>(
+          `${baseUrl}&filters=${encodeURIComponent(JSON.stringify([["amended_from", "in", requested]]))}`,
+        ),
+      ])
+      plan = planBulkDelete(requested, selected ?? [], amendments ?? [])
+    } catch {
+      // Pre-flight unavailable — fall through to server-side reporting below.
+    }
+
+    if (plan) {
+      if (plan.deletable.length === 0) {
+        return { failed: plan.failed, deleted: [], messages: plan.messages }
+      }
+      const result = await postMethodRaw<{ message?: { undeleted_items?: string[] } | string[] } & Record<string, unknown>>(
+        "frappe.desk.reportview.delete_items",
+        { doctype: DOCTYPE, items: JSON.stringify(plan.deletable) },
+      )
+      const msg = result.message
+      const serverMessages = serverMessagesFromBody(result)
+      const undeleted = Array.isArray(msg) ? msg : Array.isArray(msg?.undeleted_items) ? msg.undeleted_items : []
+      const deleted = plan.deletable.filter((name) => !undeleted.includes(name))
+      const serverBlocked = plan.deletable.filter((name) => undeleted.includes(name))
+      return {
+        failed: [...plan.failed, ...serverBlocked],
+        deleted,
+        messages: [...plan.messages, ...serverMessages],
+      }
+    }
+
     const result = await postMethodRaw<{ message?: { undeleted_items?: string[] } | string[] } & Record<string, unknown>>(
       "frappe.desk.reportview.delete_items",
-      { doctype: DOCTYPE, items: JSON.stringify(names) },
+      { doctype: DOCTYPE, items: JSON.stringify(requested) },
     )
     const msg = result.message
     const messages = serverMessagesFromBody(result)
-    if (Array.isArray(msg)) return { failed: msg.length > 0 ? msg : failedNamesFromMessages(names, messages), messages }
-    const undeleted = Array.isArray(msg?.undeleted_items) ? msg.undeleted_items : []
-    return {
-      failed: undeleted.length > 0 ? undeleted : failedNamesFromMessages(names, messages),
-      messages,
+    const undeleted = Array.isArray(msg) ? msg : Array.isArray(msg?.undeleted_items) ? msg.undeleted_items : []
+    const failed = undeleted.length > 0 ? undeleted : failedNamesFromMessages(requested, messages)
+    return { failed, deleted: requested.filter((name) => !failed.includes(name)), messages }
+  },
+
+  // ── Export (server-side via data_import.download_template) ──────────
+  async exportRecords(options?: {
+    fileType?: "CSV" | "Excel"
+    recordMode?: "all" | "by_filter" | "5_records" | "blank_template"
+    fields?: Record<string, string[]>
+    filters?: unknown[]
+  }): Promise<Blob> {
+    return serverDownloadTemplate({
+      doctype: DOCTYPE,
+      fileType: options?.fileType ?? "CSV",
+      recordMode: options?.recordMode ?? "by_filter",
+      fields: options?.fields && Object.keys(options.fields).length > 0
+        ? options.fields
+        : SALES_ORDER_EXPORT_FIELDS,
+      filters: options?.filters,
+    })
+  },
+
+  // ── Bulk print (multi-PDF URL) ─────────────────────────────────────
+  buildMultiPdfUrl(
+    names: string[],
+    options: {
+      printFormat?: string
+      letterhead?: string
+      pageSize?: string
+      customSize?: { height: number; width: number }
+    } = {},
+  ): string {
+    const pdfOptions: Record<string, string> = {}
+    if (options.customSize && options.customSize.height > 0 && options.customSize.width > 0) {
+      pdfOptions["page-height"] = String(options.customSize.height)
+      pdfOptions["page-width"] = String(options.customSize.width)
+    } else {
+      pdfOptions["page-size"] = options.pageSize ?? "A4"
+    }
+    const params = new URLSearchParams()
+    params.set("doctype", DOCTYPE)
+    params.set("name", JSON.stringify(names))
+    params.set("format", options.printFormat ?? "Standard")
+    params.set("no_letterhead", options.letterhead ? "0" : "1")
+    if (options.letterhead) params.set("letterhead", options.letterhead)
+    params.set("options", JSON.stringify(pdfOptions))
+    return `${API_CONFIG.baseUrl}/method/frappe.utils.print_format.download_multi_pdf?${params.toString()}`
+  },
+
+  async getPrintFormats(): Promise<string[]> {
+    try {
+      const raw = await apiClient<Array<{ name: string }>>(
+        `/resource/Print Format?filters=${JSON.stringify([["doc_type", "=", DOCTYPE], ["disabled", "=", 0]])}&fields=["name"]&limit_page_length=100`
+      )
+      return raw.map((f) => f.name)
+    } catch {
+      return ["Standard"]
     }
   },
 

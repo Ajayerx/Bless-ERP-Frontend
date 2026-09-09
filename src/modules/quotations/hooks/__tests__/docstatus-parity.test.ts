@@ -9,7 +9,6 @@ import {
   type QuotationFieldMeta,
 } from "../useVisibilityRules"
 import { evalDependsOn } from "../../services/dependsOn"
-import type { Quotation } from "../../types"
 
 /**
  * ERPNext form-display parity oracle.
@@ -78,14 +77,13 @@ function oracleStatus(
   if (status === "Write" && meta.setOnlyOnce && !isLocal) status = "Read"
 
   // Hide-if-null (base_control.get_status) — read-only + null → hidden,
-  // unless the fieldtype is exempt or it's a child-table grid. This only
-  // applies on submitted/cancelled docs: `this.doc.docstatus` is falsy on
-  // drafts (0), so null-hiding never fires for docstatus 0.
+  // unless the fieldtype is exempt or it's a child-table grid. base_control
+  // calls is_null() at EVERY docstatus (there is no docstatus guard in
+  // get_status), so an empty Read field disappears on drafts too.
   const fieldtype = meta.fieldtype ?? ""
   const value = getField(doc, meta.fieldname)
   const isGrid = GRID_TYPES.has(fieldtype)
   if (
-    docstatus > 0 &&
     status === "Read" &&
     !isGrid &&
     !HIDE_IF_NULL_EXEMPT_TYPES.has(fieldtype) &&

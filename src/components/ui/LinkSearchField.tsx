@@ -97,8 +97,13 @@ export default function LinkSearchField({
     if (!value || (selectedLabel && selectedLabel !== value) || !fetchedRef.current) return
     const match = items.find((item) => item.value === value)
     if (match) {
-      setSelectedLabel(match.label || match.value)
-      setQuery(match.label || match.value)
+      const label = match.label || match.value
+      setSelectedLabel(label)
+      setQuery(label)
+      // Record the value→label mapping so blur treats the displayed label as
+      // an already-known name instead of re-validating it (validateLink only
+      // resolves names, so validating the title would fail and clear the field).
+      lastValidatedRef.current = { value, label }
     }
   }
 
@@ -111,6 +116,7 @@ export default function LinkSearchField({
   }
 
   const doSearch = useCallback(async (q: string) => {
+    const term = queryRef.current.trim()
     const cached = cacheRef.current.get(q)
     if (cached) {
       showResults(cached)
@@ -119,15 +125,15 @@ export default function LinkSearchField({
     setLoading(true)
     try {
       const res = await searchFnRef.current(q)
-      if (queryRef.current !== q) return
+      if (queryRef.current.trim() !== term) return
       cachePut(q, res.items)
       showResults(res.items)
       applyValueLabel(res.items)
     } catch {
-      if (queryRef.current !== q) return
+      if (queryRef.current.trim() !== term) return
       showResults([])
     } finally {
-      if (queryRef.current === q) setLoading(false)
+      if (queryRef.current.trim() === term) setLoading(false)
     }
   }, [value, selectedLabel])
 
@@ -298,7 +304,12 @@ export default function LinkSearchField({
     // one tap away. Cache makes repeat opens instant; typing filters further.
     if (!fetchedRef.current) fetchedRef.current = true
     setOpen(true)
-    doSearch(queryRef.current.trim())
+    // When the field is showing a resolved label (title of the linked doc,
+    // e.g. "Cost and Freight" for incoterm "CFR"), a name-only search for that
+    // text would come back empty. Search the empty term so the full list shows.
+    const text = queryRef.current.trim()
+    const resolved = lastValidatedRef.current?.label ?? ""
+    doSearch(text && text === resolved ? "" : text)
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {

@@ -4,6 +4,24 @@ import { http, HttpResponse, delay } from "msw"
 // Mirrors the calls the Payment Entry form fires on open (validate_link,
 // get_value, get_dimensions, get_exchange_rate, route_history).
 
+// Stored commission_rate per Sales Partner (the value fetch_from copies into
+// the Sales Order's Commission Rate field verbatim).
+const salesPartnerCommissionRate: Record<string, number> = {
+  "ABC Sales Agency": 5,
+  "Northern Distributors": 3.5,
+  "Pacific Sales Group": 7,
+}
+
+// Stored commission_rate per Sales Person (the value the Sales Team child
+// table's commission_rate field fetch_from "sales_person.commission_rate"
+// copies into the row verbatim).
+const salesPersonCommissionRate: Record<string, number> = {
+  "John Smith": 4,
+  "Jane Doe": 5.5,
+  "Bob Johnson": 3,
+  "Alice Brown": 6,
+}
+
 export const frappeClientHandlers = [
   // ── POST /api/method/frappe.client.validate_link ──────────────────
   http.post("/api/method/frappe.client.validate_link", async ({ request }) => {
@@ -42,6 +60,36 @@ export const frappeClientHandlers = [
     }
 
     return HttpResponse.json({ message })
+  }),
+
+  // ── POST /api/method/frappe.model.utils.get_fetch_values ──────────
+  // Mirrors fetch_from: sales_partner.commission_rate (sales_order.json) and
+  // the Sales Team child table's fetch_from: sales_person.commission_rate
+  // (sales_team.json). Selecting a Sales Partner / Sales Person returns the
+  // stored commission_rate verbatim (same unit ERPNext stores/copies), exactly
+  // like the link control's fetch_from handling.
+  http.post("/api/method/frappe.model.utils.get_fetch_values", async ({ request }) => {
+    await delay(60)
+    const fd = await request.formData().catch(() => new FormData())
+    const doctype = String(fd.get("doctype") ?? "")
+    const fieldname = String(fd.get("fieldname") ?? "")
+    const value = String(fd.get("value") ?? "")
+
+    const fetch_values: Record<string, unknown> = {}
+    if (doctype === "Sales Order" && fieldname === "sales_partner") {
+      const rate = salesPartnerCommissionRate[value]
+      if (rate !== undefined) {
+        fetch_values.commission_rate = rate
+      }
+    }
+    if (doctype === "Sales Team" && fieldname === "sales_person") {
+      const rate = salesPersonCommissionRate[value]
+      if (rate !== undefined) {
+        fetch_values.commission_rate = rate
+      }
+    }
+
+    return HttpResponse.json({ message: { fetch_values } })
   }),
 
   // ── GET /api/method/frappe.contacts...get_address_display ─────────

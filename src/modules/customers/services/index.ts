@@ -186,7 +186,7 @@ export async function searchLink(doctype: string, query: string, referenceDoctyp
   qp.set("doctype", doctype)
   qp.set("txt", query)
   if (referenceDoctype) qp.set("reference_doctype", referenceDoctype)
-  if (ignoreUserPermissions) qp.set("ignore_user_permissions", "1")
+  qp.set("ignore_user_permissions", ignoreUserPermissions ? "1" : "0")
   if (filters) qp.set("filters", JSON.stringify(filters))
   if (customQuery) qp.set("query", customQuery)
   qp.set("page_length", "10")

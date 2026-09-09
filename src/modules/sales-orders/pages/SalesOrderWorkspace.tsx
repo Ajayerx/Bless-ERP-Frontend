@@ -85,6 +85,7 @@ function normalizeMappedDoc(doc: SalesOrderMappedDoc): SalesOrderDoc {
     doctype: "Sales Order",
     docstatus: 0,
     status: "Draft",
+    advance_paid: 0,
     items: stripNames(doc.items) as SalesOrderDoc["items"],
     taxes: stripNames(doc.taxes) as SalesOrderDoc["taxes"],
     payment_schedule: stripNames(doc.payment_schedule) as SalesOrderDoc["payment_schedule"],

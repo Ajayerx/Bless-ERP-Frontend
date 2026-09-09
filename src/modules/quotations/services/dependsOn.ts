@@ -65,9 +65,9 @@ function tokenize(src: string): Token[] {
       i = j
       continue
     }
-    // operators: == != >= <= > < and or not in
+    // operators: == != >= <= > < && || and or not in
     const two = src.slice(i, i + 2)
-    if (two === "==" || two === "!=" || two === ">=" || two === "<=") {
+    if (two === "==" || two === "!=" || two === ">=" || two === "<=" || two === "&&" || two === "||") {
       tokens.push({ kind: "op", value: two })
       i += 2
       continue
@@ -152,13 +152,16 @@ class Parser {
 
   parseExpression(): boolean {
     const value = this.parseOr()
+    if (this.peek().kind !== "eof") {
+      throw new Error(`Unparsed tokens remaining: ${JSON.stringify(this.peek())}`)
+    }
     return isTruthy(value)
   }
 
   private parseOr(): boolean {
     let left = this.parseAnd()
     let tok = this.peek()
-    while (tok.kind === "ident" && tok.value === "or") {
+    while ((tok.kind === "ident" && tok.value === "or") || (tok.kind === "op" && tok.value === "||")) {
       this.next()
       const right = this.parseAnd()
       left = left || right
@@ -170,7 +173,7 @@ class Parser {
   private parseAnd(): boolean {
     let left = this.parseNot()
     let tok = this.peek()
-    while (tok.kind === "ident" && tok.value === "and") {
+    while ((tok.kind === "ident" && tok.value === "and") || (tok.kind === "op" && tok.value === "&&")) {
       this.next()
       const right = this.parseNot()
       left = left && right
@@ -217,7 +220,7 @@ class Parser {
         const matched = members.some((m) => String(m) === String(left ?? ""))
         return op.value === "in" ? matched : !matched
       }
-      if (op.kind === "op") {
+      if (op.kind === "op" && ["==", "!=", ">", "<", ">=", "<="].includes(op.value)) {
         this.next()
         const right = valueOf(this.next(), this.ctx)
         const l = left

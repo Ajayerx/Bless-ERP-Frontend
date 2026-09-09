@@ -522,11 +522,6 @@ export default function InvoiceForm({
   const applyDiscountOnOptions = ["Grand Total", "Net Total"];
   const isOpeningOptions = ["No", "Yes"];
   const currentCompany = formData.company || companyDefaults?.company;
-  const currencies = useLazyOptions<string[]>(
-    "sales-invoice:currencies",
-    invoiceService.lookups.currencies,
-    [],
-  );
   const priceLists = useLazyOptions<string[]>(
     "sales-invoice:price-lists",
     invoiceService.lookups.priceLists,
@@ -1595,13 +1590,21 @@ export default function InvoiceForm({
                     <div className="space-y-3">
                       <div>
                         <label className={labelClass}>Currency *</label>
-                        <Combobox
-                          name="currency"
+                        <LinkSearchField
                           value={formData.currency ?? companyDefaults?.currency ?? ""}
-                          options={currencies}
-                          onChange={handleSelectChange}
+                          onChange={(v) => handleSelectChange("currency", v ?? "")}
+                          searchFn={(q) =>
+                            invoiceService.searchLink("Currency", q, { reference_doctype: "Sales Invoice" })
+                          }
+                          validate={async (v) => {
+                            const doc = await invoiceService.validateLink("Currency", v, [])
+                            if (!doc || Object.keys(doc).length === 0) {
+                              throw new Error("Invalid Currency")
+                            }
+                          }}
+                          placeholder="Select currency…"
+                          clearIconMode="hover"
                           disabled={fieldLocked("currency")}
-                                                    error={fieldErrors?.currency}
                         />
                       </div>
                       {showConversionRate && (
@@ -1933,6 +1936,7 @@ export default function InvoiceForm({
                   onChange={(v) => handleSelectChange("incoterm", v ?? "")}
                   searchFn={(q) => invoiceService.searchSalesLink("Incoterm", q)}
                   readOnly={isReadOnly}
+                  fetchLabelOnMount
                 />
               </div>
             </div>

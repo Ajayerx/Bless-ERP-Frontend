@@ -20,13 +20,16 @@ import {
   type ReactNode,
 } from "react"
 import { useNavigate } from "react-router-dom"
-import { CollapsibleSection, Input, LinkSearchField, useToast } from "@/components/ui"
+import { CollapsibleSection, DateInput, Input, LinkSearchField, useToast } from "@/components/ui"
 import { Combobox, inputClass, labelClass } from "@/components/ui/form-fields"
 import ChildTableGrid, { type GridColumn } from "@/components/ui/ChildTableGrid"
+import { getLinkFilters } from "@/config/link-filters.config"
 import { useCompany } from "@/context/CompanyContext"
 import { useLazyOptions } from "@/services/lookup-cache"
 import {
   salesOrderService,
+  buildApplyPriceListArgs,
+  buildDeskApplyPriceListDoc,
   deskRandomString,
   type SalesOrderPartyDetails,
 } from "@/modules/sales-orders/services"
@@ -48,6 +51,8 @@ import ItemisedTaxBreakup from "@/modules/invoices/components/ItemisedTaxBreakup
 import SalesTaxesChargesTable from "@/modules/invoices/components/SalesTaxesChargesTable"
 import { moneyInWords } from "@/modules/payments/utils/moneyInWords"
 import { quotationService } from "@/modules/quotations/services"
+import { ScanBarcode } from "lucide-react"
+import type { AccountingDimension } from "@/services"
 import type { Product } from "@/services"
 import type {
   SalesOrderDoc,
@@ -67,6 +72,26 @@ import {
 import { formatCurrency, formatFixed } from "@/lib/utils"
 
 const ORDER_TYPE_OPTIONS = ["Sales", "Maintenance", "Shopping Cart"] as const
+
+const round2 = (value: number): number => Math.round(value * 100) / 100
+
+// ERPNext parity (sales_common.js calculate_contribution / calculate_incentive):
+// each Sales Team row's allocated_amount = amount_eligible * allocated_percentage / 100,
+// and incentives = allocated_amount * commission_rate / 100 (only once the row has an
+// allocated_amount, matching frappe's `if (row.allocated_amount)` guard). Rows without
+// an allocated_percentage are left untouched.
+const recomputeSalesTeamRows = (
+  rows: SalesOrderSalesTeamRow[],
+  amountEligible: number,
+): SalesOrderSalesTeamRow[] =>
+  rows.map((row) => {
+    if (!row.allocated_percentage) return row
+    const allocated_amount = round2((amountEligible * row.allocated_percentage) / 100)
+    const incentives = allocated_amount
+      ? round2((allocated_amount * (row.commission_rate ?? 0)) / 100)
+      : (row.incentives ?? 0)
+    return { ...row, allocated_amount, incentives }
+  })
 
 type SalesOrderFormTab = "details" | "address" | "terms" | "more_info"
 
@@ -200,6 +225,7 @@ export default forwardRef<SalesOrderFormHandle, SalesOrderFormProps>(
       rounding_adjustment: 0,
       rounded_total: 0,
       in_words: "",
+      advance_paid: 0,
       per_delivered: 0,
       per_billed: 0,
       disable_rounded_total: 0,
@@ -217,14 +243,10 @@ export default forwardRef<SalesOrderFormHandle, SalesOrderFormProps>(
     )
     const [currencyFraction, setCurrencyFraction] = useState<number | null>(null)
     const [stockReservationEnabled, setStockReservationEnabled] = useState<boolean>(true)
+    const [dimensions, setDimensions] = useState<AccountingDimension[]>([])
     const baselineRef = useRef<SalesOrderFormData>(baseline)
     const [activeTab, setActiveTab] = useState<SalesOrderFormTab>("details")
 
-    const currencies = useLazyOptions<string[]>(
-      "sales-order:currencies",
-      salesOrderService.lookups.currencies,
-      [],
-    )
     const priceLists = useLazyOptions<string[]>(
       "sales-order:price-lists",
       salesOrderService.lookups.priceLists,
@@ -268,27 +290,177 @@ export default forwardRef<SalesOrderFormHandle, SalesOrderFormProps>(
       formRef.current = form
     }, [form])
 
-    // Accounting dimensions → item cost_center once per mount (desk
-    // setup_accounting_dimension_triggers parity).
+    const inApplyPriceList = useRef(false)
+    const companyAddressTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+    const defaultsAppliedForCompany = useRef<string | null>(null)
+
+    // Accounting dimensions → store dimension list + populate header & item
+    // defaults once per mount (desk setup_accounting_dimension_triggers parity).
     useEffect(() => {
       quotationService.getAccountingDimensions().then((dims) => {
+        // Store all configured dimensions for dynamic rendering
+        if (dims.dimensionFilters?.length) {
+          setDimensions(
+            dims.dimensionFilters.map((d) => ({
+              fieldname: d.fieldname,
+              document_type: d.document_type,
+              label: d.label,
+            })),
+          )
+        }
+
         const company = formRef.current.company || defaultCompany
         const companyDims = dims.defaultDimensionsMap?.[company]
-        if (!companyDims?.cost_center) return
+        if (!companyDims) return
+
+        // Auto-populate header-level cost_center and project from defaults
+        // (InvoiceForm parity — sets both header and item-level defaults).
         setForm((prev) => {
-          const items = prev.items ?? []
+          const patch: Record<string, unknown> = {}
           let changed = false
-          const next = items.map((it) => {
-            if (!it.cost_center) {
-              changed = true
+
+          if (companyDims.cost_center && !prev.cost_center) {
+            patch.cost_center = companyDims.cost_center
+            changed = true
+          }
+          if (companyDims.project && !prev.project) {
+            patch.project = companyDims.project
+            changed = true
+          }
+
+          const items = prev.items ?? []
+          const nextItems = items.map((it) => {
+            if (!it.cost_center && companyDims.cost_center) {
               return { ...it, cost_center: companyDims.cost_center }
             }
             return it
           })
-          return changed ? { ...prev, items: next } : prev
+          if (nextItems.some((it, i) => it !== items[i])) {
+            patch.items = nextItems
+            changed = true
+          }
+
+          return changed ? { ...prev, ...patch } : prev
         })
       })
       // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [])
+
+    // Desk TransactionController.apply_price_list(item, reset_plc_conversion)
+    // (transaction.js:2018-2072): guard → mutex → call → apply parent/children.
+    const runApplyPriceList = (
+      docOverride?: Partial<SalesOrderDoc>,
+      _item?: SalesOrderItemForm | null,
+      resetPlcConversion = false,
+    ) => {
+      const base: Partial<SalesOrderDoc> = { ...(docOverride ?? formRef.current) }
+      if (!resetPlcConversion) {
+        base.plc_conversion_rate = undefined
+      }
+      const args = buildApplyPriceListArgs(
+        base as Partial<SalesOrderDoc> & Record<string, unknown>,
+      )
+      const wireDoc = buildDeskApplyPriceListDoc(base as Partial<SalesOrderDoc> & Record<string, unknown>, {
+        isNew: mode === "create" && !initialData,
+      })
+      const itemCount = Array.isArray(args.items) ? (args.items as unknown[]).length : 0
+      if (!itemCount && !args.price_list) return
+      if (inApplyPriceList.current) return
+      inApplyPriceList.current = true
+      salesOrderService
+        .applyPriceList(args, wireDoc)
+        .then((res) => {
+          if (!res) return
+          const parent = res.parent || {}
+          const patch: SalesOrderFormData = {}
+          if (parent.price_list_currency)
+            patch.price_list_currency = String(parent.price_list_currency)
+          const plcRate = Number(parent.plc_conversion_rate)
+          if (!Number.isNaN(plcRate) && plcRate > 0) patch.plc_conversion_rate = plcRate
+          setForm((prev) => (Object.keys(patch).length ? { ...prev, ...patch } : prev))
+          const children = res.children ?? []
+          if (children.length > 0) {
+            setForm((prev) => {
+              const items = [...(prev.items ?? [])]
+              for (const child of children) {
+                const c = child as Record<string, unknown>
+                const idx = items.findIndex(
+                  (it) =>
+                    (!!c.child_docname && !!it.name && it.name === c.child_docname) ||
+                    (!c.child_docname && !!it.item_code && it.item_code === c.item_code),
+                )
+                if (idx < 0) continue
+                const row: SalesOrderItemForm = { ...items[idx] }
+                for (const [key, value] of Object.entries(c)) {
+                  if (
+                    key === "doctype" ||
+                    key === "name" ||
+                    key === "free_item_data" ||
+                    key === "child_docname" ||
+                    key === "item_code"
+                  ) {
+                    continue
+                  }
+                  ;(row as unknown as Record<string, unknown>)[key] = value
+                }
+                if (c.price_list_rate !== undefined) row.rate = Number(c.price_list_rate)
+                const discounted =
+                  (row.rate || 0) - ((row.rate || 0) * (row.discount_percentage || 0)) / 100
+                row.amount = Math.round(discounted * (row.qty || 0) * 100) / 100
+                items[idx] = row
+              }
+              return { ...prev, items }
+            })
+          }
+        })
+        .finally(() => {
+          inApplyPriceList.current = false
+        })
+    }
+
+    // ── company() trigger chain (sales_common.js parity) ───────────────
+    // validate_link on the Company value + debounced default address; on a
+    // fresh new-doc also price list defaults and default taxes.
+    useEffect(() => {
+      const company = form.company || defaultCompany
+      if (!company) return
+      if (defaultsAppliedForCompany.current === company) return
+      defaultsAppliedForCompany.current = company
+
+      salesOrderService.validateLink("Company", company, []).catch(() => undefined)
+
+      if (companyAddressTimer.current) clearTimeout(companyAddressTimer.current)
+      companyAddressTimer.current = setTimeout(() => {
+        salesOrderService
+          .getDefaultCompanyAddress(company, formRef.current.company_address || "")
+          .then((addr) => {
+            setForm((prev) => ({ ...prev, company_address: addr ?? "" }))
+          })
+      }, 2000)
+
+      if (mode === "create" && !initialData) {
+        runApplyPriceList()
+
+        salesOrderService.getDefaultTaxesAndCharges(company, "").then((res) => {
+          setForm((prev) => {
+            if (!res) return prev
+            if (!res.taxes_and_charges && res.taxes.length === 0) return prev
+            if ((prev.taxes ?? []).length > 0) return prev
+            const patch: SalesOrderFormData = {
+              taxes_and_charges: res.taxes_and_charges || undefined,
+            }
+            if (res.taxes.length > 0) patch.taxes = res.taxes as unknown as SalesOrderTax[]
+            return { ...prev, ...patch }
+          })
+        })
+      }
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [mode, form.company, initialData])
+
+    useEffect(() => {
+      return () => {
+        if (companyAddressTimer.current) clearTimeout(companyAddressTimer.current)
+      }
     }, [])
 
     const isDirty = () => JSON.stringify(form) !== JSON.stringify(baselineRef.current)
@@ -345,9 +517,12 @@ export default forwardRef<SalesOrderFormHandle, SalesOrderFormProps>(
           "customer_address", "address_display", "contact_person",
           "contact_display", "contact_mobile", "contact_phone", "contact_email",
           "shipping_address_name", "shipping_address", "currency",
+          "shipping_contact_person", "shipping_contact_display", "shipping_contact_mobile",
           "conversion_rate", "selling_price_list", "price_list_currency",
           "plc_conversion_rate", "company_address", "company_address_display",
           "company_contact_person",
+          // ERPNext fetch_from: customer.is_internal_customer / represents_company
+          "is_internal_customer", "represents_company",
         ])
         for (const [key, value] of Object.entries(details)) {
           if (!known.has(key)) continue
@@ -379,13 +554,23 @@ export default forwardRef<SalesOrderFormHandle, SalesOrderFormProps>(
       }
       if (formRef.current.customer !== party) return // stale response guard
       update(patch)
+      // Desk customer()/party_name(): get_party_details callback → apply_price_list().
+      runApplyPriceList({ ...formRef.current, ...patch })
     }
 
     // ── Currency change → get_exchange_rate ──────────────────────────
+    // Desk currency(): fetch rate → set conversion_rate → conversion_rate()
+    // trigger fires apply_price_list().
     const handleCurrencyChange = async (currency: string) => {
       update({ currency })
       if (currency === companyCurrency) {
         update({ conversion_rate: 1, price_list_currency: companyCurrency, plc_conversion_rate: 1 })
+        runApplyPriceList({
+          ...formRef.current,
+          currency,
+          conversion_rate: 1,
+          price_list_currency: companyCurrency,
+        })
         return
       }
       try {
@@ -394,13 +579,20 @@ export default forwardRef<SalesOrderFormHandle, SalesOrderFormProps>(
           companyCurrency,
           form.transaction_date || todayISO(),
         )
+        const effectiveRate = rate || form.conversion_rate || 1
         setForm((prev) => ({
           ...prev,
           currency,
-          conversion_rate: rate || prev.conversion_rate || 1,
+          conversion_rate: rate || prev.conversion_rate,
           price_list_currency: currency,
-          plc_conversion_rate: rate || prev.plc_conversion_rate || 1,
+          plc_conversion_rate: rate || prev.plc_conversion_rate,
         }))
+        runApplyPriceList({
+          ...formRef.current,
+          currency,
+          conversion_rate: effectiveRate,
+          price_list_currency: currency,
+        })
       } catch {
         // keep prior conversion rate on failure
       }
@@ -420,7 +612,7 @@ export default forwardRef<SalesOrderFormHandle, SalesOrderFormProps>(
     const handleContactSelect = async (v?: string) => {
       update({ contact_person: v ?? "" })
       if (!v) {
-        update({ contact_display: "", contact_mobile: "", contact_email: "" })
+        update({ contact_display: "", contact_mobile: "", contact_phone: "", contact_email: "" })
         return
       }
       customerService.validateLink("Contact", v).then(() => {
@@ -428,7 +620,24 @@ export default forwardRef<SalesOrderFormHandle, SalesOrderFormProps>(
           update({
             contact_display: details.contact_display ?? "",
             contact_mobile: details.contact_mobile ?? "",
+            contact_phone: details.contact_phone ?? "",
             contact_email: details.contact_email ?? "",
+          })
+        })
+      }).catch(() => undefined)
+    }
+
+    const handleShippingContactSelect = async (v?: string) => {
+      update({ shipping_contact_person: v ?? "" })
+      if (!v) {
+        update({ shipping_contact_display: "", shipping_contact_mobile: "" })
+        return
+      }
+      customerService.validateLink("Contact", v).then(() => {
+        quotationService.getContactDetails(v).then((details) => {
+          update({
+            shipping_contact_display: details.contact_display ?? "",
+            shipping_contact_mobile: details.contact_mobile ?? "",
           })
         })
       }).catch(() => undefined)
@@ -617,6 +826,23 @@ export default forwardRef<SalesOrderFormHandle, SalesOrderFormProps>(
       await runItemCodeFlow(idx, product.item_code)
     }
 
+    // Scan Barcode → get_item_details; replaces an empty row or appends.
+    const handleScanBarcode = async (barcode: string) => {
+      const value = (barcode ?? "").trim()
+      if (!value) return
+      if (blockIfMissingParty()) return
+      const items = [...(formRef.current.items ?? [])]
+      let idx = items.findIndex((i) => !i.item_code && !i.item_name)
+      if (idx < 0) {
+        items.push(createEmptyItem())
+        idx = items.length - 1
+      }
+      update({ items })
+      await runItemCodeFlow(idx, value)
+      const row = formRef.current.items?.[idx]
+      if (row?.warehouse) update({ last_scanned_warehouse: row.warehouse })
+    }
+
     const lineItemsForModal: LineItemForm[] = (form.items ?? []).map((i, idx) => ({
       id: String(idx),
       productId: i.item_code || "",
@@ -778,8 +1004,86 @@ export default forwardRef<SalesOrderFormHandle, SalesOrderFormProps>(
     const base_rounding_adjustment = Math.round((base_rounded_total - base_grand_total) * 100) / 100
     const base_discount_amount = Math.round((form.discount_amount ?? 0) * conversion_rate * 100) / 100
 
+    // ── Commission (ERPNext calculate_commission parity) ──────────────
+    // amount_eligible_for_commission = Σ item.base_net_amount over items with
+    // grant_commission; total_commission = amount_eligible * rate / 100.
+    const amountEligibleForCommission = useMemo(() => {
+      const conv = form.conversion_rate ?? 1
+      return (form.items ?? []).reduce(
+        (sum, item) =>
+          item.grant_commission
+            ? sum + (item.base_net_amount ?? item.base_amount ?? round2((item.amount ?? 0) * conv))
+            : sum,
+        0,
+      )
+    }, [form.items, form.conversion_rate])
+
+    const totalCommission = useMemo(
+      () => round2((amountEligibleForCommission * (form.commission_rate ?? 0)) / 100),
+      [amountEligibleForCommission, form.commission_rate],
+    )
+
+    // Keep Sales Team allocated_amount / incentives live whenever the eligible
+    // amount moves (it is derived from the items grid / exchange rate).
+    useEffect(() => {
+      setForm((prev) => {
+        const rows = prev.sales_team ?? []
+        if (!rows.some((r) => r.allocated_percentage)) return prev
+        const next = recomputeSalesTeamRows(rows, amountEligibleForCommission)
+        return JSON.stringify(next) === JSON.stringify(rows) ? prev : { ...prev, sales_team: next }
+      })
+    }, [amountEligibleForCommission])
+
     const handleTaxChange = (rows: EditableTaxRow[]) => {
       update({ taxes: editableToSalesOrderTaxes(rows) })
+    }
+
+    // ERPNext fetch_from parity: picking a Sales Partner hits
+    // frappe.model.utils.get_fetch_values and copies commission_rate over. The
+    // field carries fetch_if_empty=1, so it is only applied when the rate is
+    // still empty — a manually-entered rate is never overwritten. Clearing the
+    // partner leaves the rate untouched (ERPNext does the same).
+    const handleSalesPartnerChange = async (value: string | undefined) => {
+      update({ sales_partner: value ?? "" })
+      if (!value) return
+      const fetchValues = await salesOrderService.getFetchValues("Sales Order", "sales_partner", value)
+      const fetched = Number(fetchValues?.commission_rate)
+      const currentRate = form.commission_rate ?? 0
+      if (!Number.isNaN(fetched) && !currentRate && fetched !== currentRate) {
+        update({ commission_rate: fetched })
+      }
+    }
+
+    // ERPNext sales_common.js: commission_rate > 100 is clamped to 100 and
+    // "Commission Rate cannot be greater than 100" is thrown.
+    const handleCommissionRateChange = (value: number | undefined) => {
+      const raw = value ?? 0
+      if (raw > 100) {
+        addToast("Commission Rate cannot be greater than 100", "warning")
+        update({ commission_rate: 100 })
+        return
+      }
+      update({ commission_rate: raw })
+    }
+
+    // ERPNext sales_common.js update_auto_repeat_reference parity: posts the
+    // Auto Repeat + this Sales Order name and alerts on the result ("success" →
+    // green alert, anything else → error).
+    const handleUpdateAutoRepeatReference = async () => {
+      if (!form.auto_repeat) return
+      try {
+        const result = await salesOrderService.updateAutoRepeatReference(
+          form.auto_repeat,
+          form.name ?? "",
+        )
+        if (result === "success") {
+          addToast("Auto repeat document updated", "success")
+        } else {
+          addToast("An error occurred during the update process", "error")
+        }
+      } catch {
+        addToast("An error occurred during the update process", "error")
+      }
     }
 
     const discountBase = (applyOn: "Grand Total" | "Net Total"): number =>
@@ -827,28 +1131,115 @@ export default forwardRef<SalesOrderFormHandle, SalesOrderFormProps>(
       }
     }
 
-    const handlePaymentTermsSelect = async (template: string) => {
+    const handlePaymentTermsSelect = async (template: string, postingDate?: string) => {
+      // Byte-parity with transaction.js payment_terms_template(): fetch the
+      // full Payment Schedule from get_payment_terms (amounts based on the
+      // rounded total, like ERPNext) and replace the rows.
       update({ payment_terms_template: template })
       if (!template) return
       try {
         const result = await salesOrderService.getPaymentTerms(
           template,
-          {
-            transaction_date: form.transaction_date || todayISO(),
-            grand_total: taxState.grand_total,
-            base_grand_total,
-            company: form.company || defaultCompany,
-            customer: form.customer || "",
-            currency: form.currency || companyCurrency,
-          },
+          postingDate || form.transaction_date || todayISO(),
+          rounded_total || taxState.grand_total,
+          base_rounded_total || base_grand_total,
         )
-        if (result.length > 0) {
-          update({
-            payment_schedule: result as unknown as SalesOrderPaymentScheduleRow[],
-          })
+        if (result) {
+          const rows: SalesOrderPaymentScheduleRow[] = result.map((s) => ({
+            payment_term: String(s.payment_term ?? ""),
+            description: String(s.description ?? ""),
+            due_date: String(s.due_date ?? "").slice(0, 10),
+            invoice_portion: Number(s.invoice_portion ?? 0) || 0,
+            payment_amount: Number(s.payment_amount ?? 0) || 0,
+            base_payment_amount:
+              s.base_payment_amount != null ? Number(s.base_payment_amount) || 0 : undefined,
+            due_date_based_on:
+              s.due_date_based_on != null ? String(s.due_date_based_on) : undefined,
+            credit_days: s.credit_days != null ? Number(s.credit_days) : undefined,
+            credit_months: s.credit_months != null ? Number(s.credit_months) : undefined,
+            mode_of_payment: s.mode_of_payment != null ? String(s.mode_of_payment) : undefined,
+          }))
+          update({ payment_schedule: rows })
         }
       } catch {
         // payment terms fill is best-effort
+      }
+    }
+
+    const handlePaymentTermSelect = async (row: SalesOrderPaymentScheduleRow, term: string) => {
+      // Byte-parity with transaction.js payment_term(): picking a Payment
+      // Term in the schedule grid auto-fills the row's schedule fields.
+      if (!term) return
+      try {
+        const details = await salesOrderService.getPaymentTermDetails(
+          term,
+          form.transaction_date || todayISO(),
+          rounded_total || taxState.grand_total,
+          base_rounded_total || base_grand_total,
+        )
+        if (!details) return
+        update({
+          payment_schedule: (form.payment_schedule ?? []).map((r) =>
+            r === row
+              ? {
+                  ...r,
+                  payment_term: term,
+                  description: (details.description as string | undefined) ?? r.description,
+                  due_date: String(details.due_date ?? "").slice(0, 10) || r.due_date,
+                  invoice_portion:
+                    details.invoice_portion != null
+                      ? Number(details.invoice_portion)
+                      : r.invoice_portion,
+                  payment_amount:
+                    details.payment_amount != null ? Number(details.payment_amount) : r.payment_amount,
+                  base_payment_amount:
+                    details.base_payment_amount != null
+                      ? Number(details.base_payment_amount)
+                      : r.base_payment_amount,
+                  due_date_based_on:
+                    details.due_date_based_on != null
+                      ? String(details.due_date_based_on)
+                      : r.due_date_based_on,
+                  credit_days:
+                    details.credit_days != null ? Number(details.credit_days) : r.credit_days,
+                  credit_months:
+                    details.credit_months != null ? Number(details.credit_months) : r.credit_months,
+                  mode_of_payment:
+                    details.mode_of_payment != null
+                      ? String(details.mode_of_payment)
+                      : r.mode_of_payment,
+                }
+              : r,
+          ),
+        })
+      } catch {
+        // payment term detail fill is best-effort
+      }
+    }
+
+    const handleTermsSelect = async (template: string) => {
+      // Byte-parity with erpnext.utils.get_terms(): selecting a Terms
+      // template renders it server-side and fills the terms field. Clearing
+      // the template leaves the rendered terms intact (ERPNext no-ops).
+      update({ tc_name: template })
+      if (!template) return
+      try {
+        const doc: Record<string, unknown> = {
+          customer: form.customer,
+          customer_name: form.customer_name,
+          company: form.company || defaultCompany,
+          transaction_date: form.transaction_date || todayISO(),
+          currency: form.currency || companyCurrency,
+          conversion_rate,
+          grand_total: taxState.grand_total,
+          base_grand_total,
+          rounded_total,
+          base_rounded_total,
+        }
+        const rendered = await salesOrderService.getTermsAndConditions(template, doc)
+        if (rendered != null) update({ terms: rendered })
+      } catch {
+        // terms fill is best-effort
       }
     }
 
@@ -857,7 +1248,7 @@ export default forwardRef<SalesOrderFormHandle, SalesOrderFormProps>(
     const itemColumns: GridColumn<SalesOrderItemForm>[] = [
       {
         key: "item_code",
-        label: "Item",
+        label: "Item Code",
         type: "link",
         docType: "Item",
         searchFn: async (q) => {
@@ -871,38 +1262,11 @@ export default forwardRef<SalesOrderFormHandle, SalesOrderFormProps>(
           }
         },
         placeholder: "Search item…",
-        weight: 2.2,
         indicator: (row) => {
           if (!row.item_code) return undefined
-          if (!row.qty && form.has_unit_price_items) return "yellow"
           const stockAvail = (row.stock_qty ?? 0) - (row.delivered_qty ?? 0)
-          return stockAvail <= (row.actual_qty ?? 0) ? "green" : "orange"
+          return stockAvail <= (row.actual_qty ?? 0) ? "green" : "red"
         },
-      },
-      { key: "qty", label: "Quantity", type: "number", align: "right", weight: 1 },
-      {
-        key: "warehouse",
-        label: "Source Warehouse",
-        type: "link",
-        docType: "Warehouse",
-        searchFn: async (q) => {
-          const results = await salesOrderService.searchWarehouses(q, form.company).catch(() => [])
-          return {
-            items: results.map((r) => ({ value: r.value, label: r.label, description: r.description })),
-          }
-        },
-        placeholder: "Source Warehouse…",
-        weight: 2,
-      },
-      {
-        key: "rate",
-        label: `Rate (${currencyLabel})`,
-        type: "number",
-        align: "right",
-        weight: 1.2,
-        placeholder: "0",
-        prefix: "$",
-        formatter: (row) => formatCurrency(row.rate ?? 0, currencyLabel),
       },
       {
         key: "delivery_date",
@@ -910,12 +1274,21 @@ export default forwardRef<SalesOrderFormHandle, SalesOrderFormProps>(
         type: "date",
         weight: 1.4,
       },
+      { key: "qty", label: "Quantity", type: "number", align: "right" },
+      {
+        key: "rate",
+        label: `Rate (${currencyLabel})`,
+        type: "number",
+        align: "right",
+        placeholder: "0",
+        prefix: "$",
+        formatter: (row) => formatCurrency(row.rate ?? 0, currencyLabel),
+      },
       {
         key: "amount",
         label: `Amount (${currencyLabel})`,
         type: "readonly",
         align: "right",
-        weight: 1.4,
         formatter: (row) => formatCurrency(row.amount ?? 0, currencyLabel),
       },
     ]
@@ -923,79 +1296,131 @@ export default forwardRef<SalesOrderFormHandle, SalesOrderFormProps>(
     const readOnlyItemColumns: GridColumn<SalesOrderItemForm>[] = [
       {
         key: "item_code",
-        label: "Item",
+        label: "Item Code",
         type: "link",
-        weight: 2.2,
         indicator: (row) => {
           if (!row.item_code) return undefined
-          if (!row.qty && form.has_unit_price_items) return "yellow"
           const stockAvail = (row.stock_qty ?? 0) - (row.delivered_qty ?? 0)
-          return stockAvail <= (row.actual_qty ?? 0) ? "green" : "orange"
+          return stockAvail <= (row.actual_qty ?? 0) ? "green" : "red"
         },
       },
+      { key: "delivery_date", label: "Delivery Date", type: "date" },
       {
         key: "qty",
         label: "Quantity",
         type: "number",
         align: "right",
-        weight: 1,
         formatter: (row) => formatFixed(row.qty ?? 0, 3),
       },
-      { key: "warehouse", label: "Source Warehouse", type: "readonly", weight: 2 },
       {
         key: "rate",
         label: `Rate (${currencyLabel})`,
         type: "number",
         align: "right",
-        weight: 1.2,
         formatter: (row) => formatCurrency(row.rate ?? 0, currencyLabel),
       },
-      { key: "delivery_date", label: "Delivery Date", type: "date", weight: 1.4 },
       {
         key: "amount",
         label: `Amount (${currencyLabel})`,
         type: "readonly",
         align: "right",
-        weight: 1.4,
         formatter: (row) => formatCurrency(row.amount ?? 0, currencyLabel),
       },
+      // ERPNext v15 sales_order_item.json: warehouse is in_list_view — shown in
+      // the read-only grid too (blank for drop-ship rows without a warehouse).
+      { key: "warehouse", label: "Source Warehouse", type: "readonly" },
     ]
 
     const paymentScheduleColumns: GridColumn<SalesOrderPaymentScheduleRow>[] = [
-      { key: "payment_term", label: "Payment Term", type: "text", weight: 2 },
-      { key: "description", label: "Description", type: "text", weight: 3 },
+      {
+        key: "payment_term",
+        label: "Payment Term",
+        type: "link",
+        docType: "Payment Term",
+        searchFn: async (q) => {
+          const results = await customerService.searchLink("Payment Term", q, "Sales Order")
+          return { items: results }
+        },
+        onSelect: (row, value) => void handlePaymentTermSelect(row, value),
+      },
+      { key: "description", label: "Description", type: "text" },
       { key: "due_date", label: "Due Date", type: "date" },
-      { key: "invoice_portion", label: "Invoice Portion", type: "number", align: "right" },
+      {
+        key: "invoice_portion",
+        label: "Invoice Portion",
+        type: "number",
+        align: "right",
+        formatter: (row) => `${row.invoice_portion ?? 0}%`,
+      },
       {
         key: "payment_amount",
         label: "Payment Amount",
         type: "number",
         align: "right",
+        formatter: (row) => formatCurrency(row.payment_amount ?? 0, currencyLabel),
       },
     ]
 
     const pricingRuleColumns: GridColumn<SalesOrderPricingRuleRow>[] = [
-      { key: "pricing_rule", label: "Pricing Rule", type: "readonly", weight: 2 },
+      { key: "pricing_rule", label: "Pricing Rule", type: "readonly" },
       {
         key: "rule_applied",
         label: "Applied",
         type: "readonly",
-        weight: 1,
         formatter: (row) => (row.rule_applied ? "Yes" : "No"),
       },
     ]
 
+    // ERPNext sales_team.json parity: sales_person is a required Link to
+    // Sales Person; allocated_amount is read-only currency; commission_rate is
+    // read-only data fetched from the Sales Person (fetch_from
+    // "sales_person.commission_rate", fetch_if_empty=1); incentives is editable.
     const salesTeamColumns: GridColumn<SalesOrderSalesTeamRow>[] = [
-      { key: "sales_person", label: "Sales Person", type: "text", weight: 2 },
+      {
+        key: "sales_person",
+        label: "Sales Person",
+        type: "link",
+        docType: "Sales Person",
+        searchFn: async (q) => ({
+          items: await customerService.searchLink(
+            "Sales Person",
+            q,
+            "Sales Team",
+            getLinkFilters("Sales Team", "sales_person")
+          ),
+        }),
+      },
       { key: "allocated_percentage", label: "Contribution (%)", type: "number", align: "right" },
-      { key: "allocated_amount", label: "Contribution Amount", type: "number", align: "right" },
-      { key: "commission_rate", label: "Commission Rate (%)", type: "number", align: "right" },
+      {
+        key: "allocated_amount",
+        label: "Contribution to Net Total",
+        type: "readonly",
+        align: "right",
+        formatter: (row) =>
+          row.allocated_amount
+            ? formatCurrency(row.allocated_amount, currencyLabel)
+            : <span className="text-muted">Contribution to Net Total</span>,
+      },
+      {
+        key: "commission_rate",
+        label: "Commission Rate",
+        type: "readonly",
+        align: "right",
+        formatter: (row) =>
+          row.commission_rate
+            ? String(row.commission_rate)
+            : <span className="text-muted">Commission Rate</span>,
+      },
       { key: "incentives", label: "Incentives", type: "number", align: "right" },
     ]
 
     const handleSave = async (action?: "Save" | "Update" | "Submit"): Promise<string | undefined> => {
       const doc: Record<string, unknown> = {
         ...form,
+        // Flatten accounting_dimensions into top-level fields (ERPNext parity —
+        // custom dimensions like department/branch are stored as top-level doctype
+        // fields, not nested under an accounting_dimensions key).
+        ...(form.accounting_dimensions ?? {}),
         doctype: "Sales Order",
         items: (form.items ?? []).map(({ name: _n, ...rest }) => rest),
         taxes: (form.taxes ?? []).map(({ name: _n, ...rest }) => rest),
@@ -1018,6 +1443,8 @@ export default forwardRef<SalesOrderFormHandle, SalesOrderFormProps>(
         rounded_total,
         base_rounding_adjustment,
         base_rounded_total,
+        amount_eligible_for_commission: amountEligibleForCommission,
+        total_commission: totalCommission,
       }
       if (mode === "edit" && initialData?.name) {
         doc.name = initialData.name
@@ -1182,8 +1609,7 @@ export default forwardRef<SalesOrderFormHandle, SalesOrderFormProps>(
                     {headerLocked ? (
                       <input type="date" value={form.transaction_date} readOnly className={inputClass} />
                     ) : (
-                      <Input
-                        type="date"
+                      <DateInput
                         value={form.transaction_date}
                         onChange={(e) => {
                           const transactionDate = e.target.value
@@ -1192,30 +1618,30 @@ export default forwardRef<SalesOrderFormHandle, SalesOrderFormProps>(
                             delivery_date: "",
                           }))
                           update({ transaction_date: transactionDate, delivery_date: "", items })
+                          if (form.payment_terms_template && transactionDate) {
+                            // Byte-parity with transaction.js recalculate_terms():
+                            // re-fetch the Payment Schedule on date change.
+                            void handlePaymentTermsSelect(form.payment_terms_template, transactionDate)
+                          }
                         }}
                         readOnly={rule("transaction_date").readOnly}
                       />
                     )}
                   </Field>
                   <Field label="Delivery Date *" fieldname="delivery_date">
-                    {headerLocked ? (
-                      <input type="date" value={form.delivery_date ?? ""} readOnly className={inputClass} />
-                    ) : (
-                      <Input
-                        type="date"
-                        value={form.delivery_date ?? ""}
-                        min={form.transaction_date || ""}
-                        onChange={(e) => {
-                          const deliveryDate = e.target.value
-                          const items = (formRef.current.items ?? []).map((row) => ({
-                            ...row,
-                            delivery_date: deliveryDate || row.delivery_date,
-                          }))
-                          update({ delivery_date: deliveryDate, items })
-                        }}
-                        readOnly={rule("delivery_date").readOnly}
-                      />
-                    )}
+                    <DateInput
+                      value={form.delivery_date ?? ""}
+                      min={form.transaction_date || ""}
+                      onChange={(e) => {
+                        const deliveryDate = e.target.value
+                        const items = (formRef.current.items ?? []).map((row) => ({
+                          ...row,
+                          delivery_date: deliveryDate || row.delivery_date,
+                        }))
+                        update({ delivery_date: deliveryDate, items })
+                      }}
+                      readOnly={!isFieldEditable("delivery_date")}
+                    />
                   </Field>
                 </div>
                 {/* Col 3 */}
@@ -1252,8 +1678,7 @@ export default forwardRef<SalesOrderFormHandle, SalesOrderFormProps>(
                     />
                   </Field>
                   <Field label="Customer's Purchase Order Date" fieldname="po_date">
-                    <Input
-                      type="date"
+                    <DateInput
                       value={form.po_date ?? ""}
                       onChange={(e) => update({ po_date: e.target.value })}
                       readOnly={!isFieldEditable("po_date")}
@@ -1277,51 +1702,122 @@ export default forwardRef<SalesOrderFormHandle, SalesOrderFormProps>(
             </div>
 
             {/* ===== Accounting Dimensions ===== */}
-            {form.customer && (
-              <CollapsibleSection
-                title="Accounting Dimensions"
-                defaultOpen={!!(form.cost_center || form.project)}
-              >
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                  <div>
-                    <label className={labelClass}>Cost Center</label>
-                    <LinkSearchField
-                      value={form.cost_center ?? ""}
-                      onChange={(v) => update({ cost_center: v ?? "" })}
-                      searchFn={async (q) => {
-                        const results = await customerService.searchLink("Cost Center", q, "Sales Order")
-                        return { items: results }
-                      }}
-                      validate={async (v) => {
-                        await customerService.validateLink("Cost Center", v)
-                      }}
-                      docType="Cost Center"
-                      placeholder="Select cost center…"
-                      clearIconMode="hover"
-                      disabled={!isFieldEditable("cost_center")}
-                    />
-                  </div>
-                  <div>
-                    <label className={labelClass}>Project</label>
-                    <LinkSearchField
-                      value={form.project ?? ""}
-                      onChange={(v) => update({ project: v ?? "" })}
-                      searchFn={async (q) => {
-                        const results = await customerService.searchLink("Project", q, "Sales Order")
-                        return { items: results }
-                      }}
-                      validate={async (v) => {
-                        await customerService.validateLink("Project", v)
-                      }}
-                      docType="Project"
-                      placeholder="Select project…"
-                      clearIconMode="hover"
-                      disabled={!isFieldEditable("project")}
-                    />
-                  </div>
-                </div>
-              </CollapsibleSection>
-            )}
+            {(() => {
+              const readDim = (fn: string): string =>
+                ((form as unknown as Record<string, unknown>)[fn] as string) ?? ""
+              const hasDimValue =
+                !!form.cost_center ||
+                !!form.project ||
+                (dimensions.length > 0 &&
+                  dimensions.some(
+                    (d) => !!readDim(d.fieldname) || !!form.accounting_dimensions?.[d.fieldname],
+                  ))
+              // ERPNext parity: on submitted/cancelled orders the collapsible section
+              // is hidden entirely when no dimension holds a value.
+              if (docstatus > 0 && !hasDimValue) return null
+              return (
+                <CollapsibleSection title="Accounting Dimensions" defaultOpen={hasDimValue}>
+                  {dimensions.length > 0 ? (
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                      {dimensions.map((d) => {
+                        const fieldname = d.fieldname
+                        const docType = d.document_type
+                        const label =
+                          docType === "Cost Center"
+                            ? "Cost Center"
+                            : docType === "Project"
+                              ? "Project"
+                              : d.label || docType
+                        // Cost Center and Project are top-level fields; all other
+                        // dimensions go into accounting_dimensions record.
+                        const isBuiltin = fieldname === "cost_center" || fieldname === "project"
+                        // Loaded docs carry dims as top-level fields (flattening happens
+                        // only on save); fall back to the nested map for in-draft edits.
+                        const currentValue = isBuiltin
+                          ? readDim(fieldname)
+                          : readDim(fieldname) || (form.accounting_dimensions?.[fieldname] ?? "")
+                        const handleDimChange = (v?: string) => {
+                          if (isBuiltin) {
+                            update({ [fieldname]: v ?? "" } as SalesOrderFormData)
+                          } else {
+                            update({
+                              accounting_dimensions: {
+                                ...(form.accounting_dimensions ?? {}),
+                                [fieldname]: v ?? "",
+                              },
+                            })
+                          }
+                        }
+                        if (isBuiltin && !rule(fieldname).visible) return null
+                        return (
+                          <div key={fieldname}>
+                            <label className={labelClass}>{label}</label>
+                            <LinkSearchField
+                              value={currentValue}
+                              onChange={handleDimChange}
+                              searchFn={async (q) => {
+                                const results = await customerService.searchLink(docType, q, "Sales Order")
+                                return { items: results }
+                              }}
+                              validate={async (v) => {
+                                await customerService.validateLink(docType, v)
+                              }}
+                              docType={docType}
+                              placeholder={`Select ${label.toLowerCase()}…`}
+                              clearIconMode="hover"
+                              disabled={!isFieldEditable(fieldname)}
+                            />
+                          </div>
+                        )
+                      })}
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                      {rule("cost_center").visible && (
+                        <div>
+                          <label className={labelClass}>Cost Center</label>
+                          <LinkSearchField
+                            value={form.cost_center ?? ""}
+                            onChange={(v) => update({ cost_center: v ?? "" })}
+                            searchFn={async (q) => {
+                              const results = await customerService.searchLink("Cost Center", q, "Sales Order")
+                              return { items: results }
+                            }}
+                            validate={async (v) => {
+                              await customerService.validateLink("Cost Center", v)
+                            }}
+                            docType="Cost Center"
+                            placeholder="Select cost center…"
+                            clearIconMode="hover"
+                            disabled={!isFieldEditable("cost_center")}
+                          />
+                        </div>
+                      )}
+                      {rule("project").visible && (
+                        <div>
+                          <label className={labelClass}>Project</label>
+                          <LinkSearchField
+                            value={form.project ?? ""}
+                            onChange={(v) => update({ project: v ?? "" })}
+                            searchFn={async (q) => {
+                              const results = await customerService.searchLink("Project", q, "Sales Order")
+                              return { items: results }
+                            }}
+                            validate={async (v) => {
+                              await customerService.validateLink("Project", v)
+                            }}
+                            docType="Project"
+                            placeholder="Select project…"
+                            clearIconMode="hover"
+                            disabled={!isFieldEditable("project")}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </CollapsibleSection>
+              )
+            })()}
 
             {/* ===== Currency and Price List ===== */}
             <CollapsibleSection title="Currency and Price List">
@@ -1337,11 +1833,20 @@ export default forwardRef<SalesOrderFormHandle, SalesOrderFormProps>(
                     <div className="space-y-3">
                       <div>
                         <label className={labelClass}>Currency *</label>
-                        <Combobox
-                          name="currency"
+                        <LinkSearchField
                           value={form.currency || companyCurrency}
-                          options={currencies}
-                          onChange={(_name, val) => void handleCurrencyChange(val)}
+                          onChange={(v) => {
+                            if (v) void handleCurrencyChange(v)
+                          }}
+                          searchFn={async (q) => ({
+                            items: await customerService.searchLink("Currency", q, "Sales Order"),
+                          })}
+                          validate={async (v) => {
+                            await customerService.validateLink("Currency", v)
+                          }}
+                          docType="Currency"
+                          placeholder="Select currency…"
+                          clearIconMode="hover"
                           disabled={rule("currency").readOnly}
                         />
                       </div>
@@ -1356,6 +1861,7 @@ export default forwardRef<SalesOrderFormHandle, SalesOrderFormProps>(
                             onChange={(e) => {
                               const v = parseFloat(e.target.value) || 1
                               update({ conversion_rate: v })
+                              runApplyPriceList({ ...formRef.current, conversion_rate: v })
                             }}
                             readOnly={rule("conversion_rate").readOnly}
                             className={inputClass}
@@ -1373,7 +1879,7 @@ export default forwardRef<SalesOrderFormHandle, SalesOrderFormProps>(
                           name="selling_price_list"
                           value={form.selling_price_list || defaultPriceList}
                           options={priceLists}
-                          onChange={(_name, val) => update({ selling_price_list: val })}
+                          onChange={(_name, val) => { update({ selling_price_list: val }); runApplyPriceList({ ...formRef.current, selling_price_list: val }) }}
                           disabled={rule("selling_price_list").readOnly}
                         />
                       </div>
@@ -1398,23 +1904,77 @@ export default forwardRef<SalesOrderFormHandle, SalesOrderFormProps>(
                               onChange={(e) => {
                                 const v = parseFloat(e.target.value) || 1
                                 update({ plc_conversion_rate: v })
+                                runApplyPriceList(
+                                  { ...formRef.current, plc_conversion_rate: v },
+                                  null,
+                                  true,
+                                )
                               }}
                               readOnly={rule("plc_conversion_rate").readOnly}
                               className={inputClass}
                             />
+                            <p className="text-xs text-muted mt-1">
+                              1 {effectivePlcCurrency} = {form.plc_conversion_rate ?? 1}{" "}
+                              {companyCurrency}
+                            </p>
                           </div>
                         </>
                       )}
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          id="ignorePricingRule"
+                          checked={!!form.ignore_pricing_rule}
+                          onChange={(e) => update({ ignore_pricing_rule: e.target.checked ? 1 : 0 })}
+                          disabled={!isFieldEditable("ignore_pricing_rule")}
+                          className="h-4 w-4 rounded border-border"
+                        />
+                        <label htmlFor="ignorePricingRule" className="text-sm text-body">
+                          Ignore Pricing Rule
+                        </label>
+                      </div>
                     </div>
                   </div>
                 )
               })()}
             </CollapsibleSection>
 
-            {/* ===== Items (Set Source Warehouse) ===== */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 pb-4 border-b border-border">
-              <div>
-                <label className={labelClass}>Set Source Warehouse</label>
+            {/* ===== Items ===== */}
+            <div className="space-y-3 pb-4 border-b border-border">
+              <h3 className="text-base font-bold text-heading">Items</h3>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                {isFieldEditable("scan_barcode") || !!form.scan_barcode ? (
+                  <div>
+                    <label className={labelClass}>Scan Barcode</label>
+                    {isFieldEditable("scan_barcode") ? (
+                      <div className="relative">
+                        <ScanBarcode size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
+                        <input
+                          type="text"
+                          placeholder="Scan Barcode…"
+                          className="w-full pl-9 pr-3 py-2 text-sm border border-border rounded-[10px] focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 transition-all bg-white"
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              const val = (e.target as HTMLInputElement).value
+                              ;(e.target as HTMLInputElement).value = ""
+                              void handleScanBarcode(val)
+                            }
+                          }}
+                        />
+                      </div>
+                    ) : (
+                      <input
+                        type="text"
+                        value={form.scan_barcode}
+                        readOnly
+                        className={`${inputClass} bg-gray-50`}
+                      />
+                    )}
+                  </div>
+                ) : null}
+                {rule("set_warehouse").visible && <div>
+                  <label className={labelClass}>Set Source Warehouse</label>
                 <LinkSearchField
                   value={form.set_warehouse ?? ""}
                   onChange={(v) => update({ set_warehouse: v ?? "" })}
@@ -1430,10 +1990,10 @@ export default forwardRef<SalesOrderFormHandle, SalesOrderFormProps>(
                   clearIconMode="hover"
                   disabled={!isFieldEditable("set_warehouse")}
                 />
-              </div>
+              </div>}
               <div className="flex items-end pb-2">
-                <div className="flex items-center gap-2">
-                  {stockReservationEnabled && (
+                {stockReservationEnabled && rule("reserve_stock").visible && (
+                  <div className="flex items-center gap-2">
                     <input
                       type="checkbox"
                       id="reserveStock"
@@ -1442,16 +2002,14 @@ export default forwardRef<SalesOrderFormHandle, SalesOrderFormProps>(
                       disabled={!isFieldEditable("reserve_stock")}
                       className="h-4 w-4 rounded border-border"
                     />
-                  )}
-                  <label htmlFor="reserveStock" className="text-sm text-body">
-                    Reserve Stock
-                  </label>
-                </div>
+                    <label htmlFor="reserveStock" className="text-sm text-body">
+                      Reserve Stock
+                    </label>
+                  </div>
+                )}
               </div>
-            </div>
+              </div>
 
-            {/* ===== Items ===== */}
-            <div className="space-y-3 pb-4 border-b border-border">
               <ChildTableGrid<SalesOrderItemForm>
                 title="Items"
                 description={!isFieldEditable("items") ? undefined : "Click a row to edit its fields."}
@@ -1620,6 +2178,7 @@ export default forwardRef<SalesOrderFormHandle, SalesOrderFormProps>(
                     docType="Incoterm"
                     placeholder="Select incoterm…"
                     clearIconMode="hover"
+                    fetchLabelOnMount
                     disabled={!isFieldEditable("incoterm")}
                   />
                 </Field>
@@ -1690,6 +2249,12 @@ export default forwardRef<SalesOrderFormHandle, SalesOrderFormProps>(
                   form.in_words || moneyInWords(rounded_total, soCurrency)
                 const baseInWordsDisplay =
                   form.base_in_words || moneyInWords(base_rounded_total, companyCurrency)
+                // ERPNext parity: in_words has no depends_on — visibility is driven by the
+                // stored value on submitted/cancelled docs and by the computed words on drafts.
+                const showInWords =
+                  docstatus > 0 ? !!form.in_words?.trim() : inWordsDisplay.trim().length > 0
+                const showBaseInWords =
+                  docstatus > 0 ? !!form.base_in_words?.trim() : baseInWordsDisplay.trim().length > 0
                 return (
                   <div className="mt-3 lg:w-1/2 lg:ml-auto">
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -1730,14 +2295,14 @@ export default forwardRef<SalesOrderFormHandle, SalesOrderFormProps>(
                               />
                             </div>
                           )}
-                          {rule("base_in_words").visible && (
+                          {showBaseInWords && (
                             <div>
                               <label className={labelClass}>In Words ({companyCurrency})</label>
-                              <input
-                                type="text"
+                              <textarea
                                 value={baseInWordsDisplay}
-                                className={`${inputClass} bg-gray-50 font-bold`}
+                                rows={2}
                                 readOnly
+                                className={`${inputClass} bg-gray-50 font-bold resize-none`}
                               />
                             </div>
                           )}
@@ -1783,34 +2348,47 @@ export default forwardRef<SalesOrderFormHandle, SalesOrderFormProps>(
                             />
                           </div>
                         )}
-                        <div className="flex items-center gap-2">
-                          <input
-                            type="checkbox"
-                            id="disableRoundedTotal"
-                            checked={!!form.disable_rounded_total}
-                            onChange={(e) =>
-                              update({ disable_rounded_total: e.target.checked ? 1 : 0 })
-                            }
-                            disabled={!isFieldEditable("disable_rounded_total")}
-                            className="h-4 w-4 rounded border-border"
-                          />
-                          <label htmlFor="disableRoundedTotal" className="text-sm text-body">
-                            Disable Rounded Total
-                          </label>
-                        </div>
-                        {rule("in_words").visible && (
+                        {showInWords && (
                           <div>
                             <label className={labelClass}>In Words ({soCurrency})</label>
-                            <input
-                              type="text"
+                            <textarea
                               value={inWordsDisplay}
-                              className={`${inputClass} bg-gray-50 font-bold`}
+                              rows={2}
                               readOnly
+                              className={`${inputClass} bg-gray-50 font-bold resize-none`}
                             />
                           </div>
                         )}
                       </div>
                     </div>
+                    {rule("advance_paid").visible && (
+                      <div className="mt-3">
+                        <label className={labelClass}>Advance Paid ({soCurrency})</label>
+                        <input
+                          type="text"
+                          value={formatCurrency(Number(form.advance_paid ?? 0) || 0, soCurrency)}
+                          className={`${inputClass} bg-gray-50`}
+                          readOnly
+                        />
+                      </div>
+                    )}
+                    {rule("disable_rounded_total").visible && (
+                      <div className="mt-3 flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          id="disableRoundedTotal"
+                          checked={!!form.disable_rounded_total}
+                          onChange={(e) =>
+                            update({ disable_rounded_total: e.target.checked ? 1 : 0 })
+                          }
+                          disabled={!isFieldEditable("disable_rounded_total")}
+                          className="h-4 w-4 rounded border-border"
+                        />
+                        <label htmlFor="disableRoundedTotal" className="text-sm text-body">
+                          Disable Rounded Total
+                        </label>
+                      </div>
+                    )}
                   </div>
                 )
               })()}
@@ -1917,461 +2495,423 @@ export default forwardRef<SalesOrderFormHandle, SalesOrderFormProps>(
         {activeTab === "address" && (
           <div className="space-y-4">
             {/* Billing Address */}
-            <div className="border-b border-border last:border-b-0">
-              <div className="py-3 text-base font-bold text-heading">Billing Address</div>
-              <div className="pb-4 space-y-3">
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                  <div className="space-y-3">
-                    <div>
-                      <label className={labelClass}>Customer Address</label>
-                      <LinkSearchField
-                        value={form.customer_address ?? ""}
-                        onChange={(v) => void handleAddressSelect("customer_address", "address_display")(v)}
-                        searchFn={async (q) => {
-                          const results = await customerService.searchLink(
-                            "Address",
-                            q,
-                            "Sales Order",
-                            form.customer ? { link_name: form.customer } : undefined,
-                          )
-                          return { items: results }
-                        }}
-                        placeholder="Select address…"
-                        suppressExternalLabelFetch
-                        clearIconMode="hover"
-                        disabled={!isFieldEditable("customer_address")}
-                      />
-                    </div>
-                    {form.address_display && (
-                      <div>
-                        <label className={labelClass}>Address</label>
-                        <div className={`${inputClass} bg-gray-50 whitespace-pre-line min-h-[76px] py-2.5`}>
-                          {normalizeDisplayText(form.address_display)}
+            {(rule("customer_address").visible ||
+              rule("address_display").visible ||
+              rule("territory").visible ||
+              rule("contact_person").visible ||
+              rule("contact_display").visible ||
+              rule("contact_phone").visible ||
+              rule("contact_mobile").visible) && (
+              <div className="border-b border-border last:border-b-0">
+                <div className="py-3 text-base font-bold text-heading">Billing Address</div>
+                <div className="pb-4 space-y-3">
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    <div className="space-y-3">
+                      {rule("customer_address").visible && (
+                        <div>
+                          <label className={labelClass}>Customer Address</label>
+                          <LinkSearchField
+                            value={form.customer_address ?? ""}
+                            onChange={(v) => void handleAddressSelect("customer_address", "address_display")(v)}
+                            searchFn={async (q) => {
+                              if (!form.customer) return { items: [] }
+                              const results = await salesOrderService.searchAddressesDesk(
+                                q,
+                                "Customer",
+                                form.customer,
+                              )
+                              return { items: results }
+                            }}
+                            placeholder="Select address…"
+                            suppressExternalLabelFetch
+                            clearIconMode="hover"
+                            disabled={!isFieldEditable("customer_address")}
+                          />
                         </div>
-                      </div>
-                    )}
+                      )}
+                      {rule("address_display").visible && form.address_display && (
+                        <div>
+                          <label className={labelClass}>Address</label>
+                          <div className={`${inputClass} bg-gray-50 whitespace-pre-line min-h-[76px] py-2.5`}>
+                            {normalizeDisplayText(form.address_display)}
+                          </div>
+                        </div>
+                      )}
+                      {rule("territory").visible && (
+                        <Field label="Territory" fieldname="territory">
+                          <LinkSearchField
+                            value={form.territory ?? ""}
+                            onChange={(v) => update({ territory: v ?? "" })}
+                            searchFn={async (q) => {
+                              const results = await customerService.searchLink("Territory", q, "Sales Order")
+                              return { items: results }
+                            }}
+                            validate={async (v) => {
+                              await customerService.validateLink("Territory", v)
+                            }}
+                            docType="Territory"
+                            placeholder="Select territory…"
+                            clearIconMode="hover"
+                            disabled={!isFieldEditable("territory")}
+                          />
+                        </Field>
+                      )}
+                    </div>
+                    <div className="space-y-3">
+                      {rule("contact_person").visible && (
+                        <div>
+                          <label className={labelClass}>Contact Person</label>
+                          <LinkSearchField
+                            value={form.contact_person ?? ""}
+                            onChange={(v) => void handleContactSelect(v ?? "")}
+                            searchFn={async (q) => {
+                              if (!form.customer) return { items: [] }
+                              const results = await salesOrderService.searchContactsDesk(
+                                q,
+                                "Customer",
+                                form.customer,
+                              )
+                              return { items: results }
+                            }}
+                            placeholder="Select contact…"
+                            suppressExternalLabelFetch
+                            displayLabel={form.contact_display}
+                            clearIconMode="hover"
+                            disabled={!isFieldEditable("contact_person")}
+                          />
+                        </div>
+                      )}
+                      {rule("contact_display").visible && form.contact_display && (
+                        <div>
+                          <label className={labelClass}>Contact</label>
+                          <div className={`${inputClass} bg-gray-50 whitespace-pre-line py-2.5`}>
+                            {normalizeDisplayText(form.contact_display)}
+                          </div>
+                        </div>
+                      )}
+                      {rule("contact_phone").visible && form.contact_phone && (
+                        <div>
+                          <label className={labelClass}>Phone</label>
+                          <input
+                            type="text"
+                            value={form.contact_phone}
+                            className={`${inputClass} bg-gray-50`}
+                            readOnly
+                          />
+                        </div>
+                      )}
+                      {rule("contact_mobile").visible && form.contact_mobile && (
+                        <div>
+                          <label className={labelClass}>Mobile No</label>
+                          <input
+                            type="text"
+                            value={form.contact_mobile ?? ""}
+                            className={`${inputClass} bg-gray-50`}
+                            readOnly
+                          />
+                        </div>
+                      )}
+                    </div>
                   </div>
-                  <div className="space-y-3">
-                    <div>
-                      <label className={labelClass}>Contact Person</label>
-                      <LinkSearchField
-                        value={form.contact_person ?? ""}
-                        onChange={(v) => void handleContactSelect(v ?? "")}
-                        searchFn={async (q) => {
-                          const results = await customerService.searchLink(
-                            "Contact",
-                            q,
-                            "Sales Order",
-                            form.customer ? { link_name: form.customer } : undefined,
-                          )
-                          return { items: results }
-                        }}
-                        placeholder="Select contact…"
-                        suppressExternalLabelFetch
-                        displayLabel={form.contact_display}
-                        clearIconMode="hover"
-                        disabled={!isFieldEditable("contact_person")}
-                      />
-                    </div>
-                    {form.contact_display && (
-                      <div>
-                        <label className={labelClass}>Contact</label>
-                        <div className={`${inputClass} bg-gray-50 whitespace-pre-line py-2.5`}>
-                          {normalizeDisplayText(form.contact_display)}
+                </div>
+              </div>
+            )}
+
+            {/* Shipping Address */}
+            {(rule("shipping_address_name").visible ||
+              rule("shipping_address").visible ||
+              rule("shipping_contact_person").visible ||
+              rule("shipping_contact_display").visible ||
+              rule("shipping_contact_mobile").visible ||
+              rule("dispatch_address_name").visible ||
+              rule("dispatch_address").visible) && (
+              <div className="border-b border-border last:border-b-0">
+                <div className="py-3 text-base font-bold text-heading">Shipping Address</div>
+                <div className="pb-4 space-y-3">
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    <div className="space-y-3">
+                      {rule("shipping_address_name").visible && (
+                        <div>
+                          <label className={labelClass}>Shipping Address Name</label>
+                          <LinkSearchField
+                            value={form.shipping_address_name ?? ""}
+                            onChange={(v) => void handleAddressSelect("shipping_address_name", "shipping_address")(v)}
+                            searchFn={async (q) => {
+                              if (!form.customer) return { items: [] }
+                              const results = await salesOrderService.searchAddressesDesk(
+                                q,
+                                "Customer",
+                                form.customer,
+                              )
+                              return { items: results }
+                            }}
+                            placeholder="Select address…"
+                            suppressExternalLabelFetch
+                            clearIconMode="hover"
+                            disabled={!isFieldEditable("shipping_address_name")}
+                          />
                         </div>
-                      </div>
-                    )}
-                    {form.contact_person && (
+                      )}
+                      {rule("shipping_address").visible && form.shipping_address && (
+                        <div>
+                          <label className={labelClass}>Shipping Address</label>
+                          <div className={`${inputClass} bg-gray-50 whitespace-pre-line min-h-[76px] py-2.5`}>
+                            {normalizeDisplayText(form.shipping_address)}
+                          </div>
+                        </div>
+                      )}
+                      {rule("shipping_contact_person").visible && (
+                        <div>
+                          <label className={labelClass}>Shipping Contact Person</label>
+                          <LinkSearchField
+                            value={form.shipping_contact_person ?? ""}
+                            onChange={(v) => void handleShippingContactSelect(v ?? "")}
+                            searchFn={async (q) => {
+                              if (!form.customer) return { items: [] }
+                              const results = await salesOrderService.searchContactsDesk(
+                                q,
+                                "Customer",
+                                form.customer,
+                              )
+                              return { items: results }
+                            }}
+                            placeholder="Select contact…"
+                            suppressExternalLabelFetch
+                            displayLabel={form.shipping_contact_display}
+                            clearIconMode="hover"
+                            disabled={!isFieldEditable("shipping_contact_person")}
+                          />
+                        </div>
+                      )}
+                      {rule("shipping_contact_display").visible && form.shipping_contact_display && (
+                        <div>
+                          <label className={labelClass}>Shipping Contact</label>
+                          <div className={`${inputClass} bg-gray-50 whitespace-pre-line py-2.5`}>
+                            {normalizeDisplayText(form.shipping_contact_display)}
+                          </div>
+                        </div>
+                      )}
+                      {rule("shipping_contact_mobile").visible && form.shipping_contact_mobile && (
+                        <div>
+                          <label className={labelClass}>Shipping Contact Mobile No</label>
+                          <input
+                            type="text"
+                            value={form.shipping_contact_mobile}
+                            className={`${inputClass} bg-gray-50`}
+                            readOnly
+                          />
+                        </div>
+                      )}
+                    </div>
+                    <div className="space-y-3">
+                      {rule("dispatch_address_name").visible && (
+                        <div>
+                          <label className={labelClass}>Dispatch Address Name</label>
+                          <LinkSearchField
+                            value={form.dispatch_address_name ?? ""}
+                            onChange={(v) => void handleAddressSelect("dispatch_address_name", "dispatch_address")(v)}
+                            searchFn={async (q) => {
+                              // Byte-parity with queries.js dispatch_address_query:
+                              // Company-linked addresses, unfiltered for drop-ship.
+                              const isDropShip =
+                                (form.items ?? []).some((i) => i.delivered_by_supplier)
+                              if (!isDropShip && !form.company) return { items: [] }
+                              const results = await salesOrderService.searchAddressesDesk(
+                                q,
+                                isDropShip ? undefined : "Company",
+                                isDropShip ? undefined : form.company || undefined,
+                              )
+                              return { items: results }
+                            }}
+                            placeholder="Select address…"
+                            suppressExternalLabelFetch
+                            clearIconMode="hover"
+                            disabled={!isFieldEditable("dispatch_address_name")}
+                          />
+                        </div>
+                      )}
+                      {rule("dispatch_address").visible && form.dispatch_address && (
+                        <div>
+                          <label className={labelClass}>Dispatch Address</label>
+                          <div className={`${inputClass} bg-gray-50 whitespace-pre-line min-h-[76px] py-2.5`}>
+                            {normalizeDisplayText(form.dispatch_address)}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Company Address */}
+            {(rule("company_address").visible ||
+              rule("company_address_display").visible ||
+              rule("company_contact_person").visible) && (
+              <div className="border-b border-border last:border-b-0">
+                <div className="py-3 text-base font-bold text-heading">Company Address</div>
+                <div className="pb-4 space-y-3">
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    <div className="space-y-3">
+                      {rule("company_address").visible && (
+                        <div>
+                          <label className={labelClass}>Company Address Name</label>
+                          <LinkSearchField
+                            value={form.company_address ?? ""}
+                            onChange={(v) => void handleAddressSelect("company_address", "company_address_display")(v)}
+                            searchFn={async (q) => {
+                              // Byte-parity with queries.js company_address_query:
+                              // Company-linked addresses, unfiltered for drop-ship.
+                              const isDropShip =
+                                (form.items ?? []).some((i) => i.delivered_by_supplier)
+                              if (!isDropShip && !form.company) return { items: [] }
+                              const results = await salesOrderService.searchAddressesDesk(
+                                q,
+                                isDropShip ? undefined : "Company",
+                                isDropShip ? undefined : form.company || undefined,
+                              )
+                              return { items: results }
+                            }}
+                            placeholder="Select address…"
+                            suppressExternalLabelFetch
+                            clearIconMode="hover"
+                            disabled={!isFieldEditable("company_address")}
+                          />
+                        </div>
+                      )}
+                      {rule("company_address_display").visible && form.company_address_display && (
+                        <div>
+                          <label className={labelClass}>Company Address</label>
+                          <div className={`${inputClass} bg-gray-50 whitespace-pre-line min-h-[76px] py-2.5`}>
+                            {normalizeDisplayText(form.company_address_display)}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                    {rule("company_contact_person").visible && (
                       <div>
-                        <label className={labelClass}>Mobile No</label>
-                        <input
-                          type="text"
-                          value={form.contact_mobile ?? ""}
-                          className={`${inputClass} bg-gray-50`}
-                          readOnly
+                        <label className={labelClass}>Company Contact Person</label>
+                        <LinkSearchField
+                          value={form.company_contact_person ?? ""}
+                          onChange={(v) => update({ company_contact_person: v ?? "" })}
+                          searchFn={async (q) => {
+                            if (!form.company) return { items: [] }
+                            const results = await salesOrderService.searchContactsDesk(
+                              q,
+                              "Company",
+                              form.company,
+                            )
+                            return { items: results }
+                          }}
+                          placeholder="Select contact…"
+                          validate={async (v) => {
+                            await customerService.validateLink("Contact", v)
+                          }}
+                          suppressExternalLabelFetch
+                          clearIconMode="hover"
+                          disabled={!isFieldEditable("company_contact_person")}
                         />
                       </div>
                     )}
                   </div>
                 </div>
               </div>
-            </div>
-
-            {/* Shipping Address */}
-            <div className="border-b border-border last:border-b-0">
-              <div className="py-3 text-base font-bold text-heading">Shipping Address</div>
-              <div className="pb-4 space-y-3">
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                  <div className="space-y-3">
-                    <div>
-                      <label className={labelClass}>Shipping Address</label>
-                      <LinkSearchField
-                        value={form.shipping_address_name ?? ""}
-                        onChange={(v) => void handleAddressSelect("shipping_address_name", "shipping_address")(v)}
-                        searchFn={async (q) => {
-                          const results = await customerService.searchLink(
-                            "Address",
-                            q,
-                            "Sales Order",
-                            form.customer ? { link_name: form.customer } : undefined,
-                          )
-                          return { items: results }
-                        }}
-                        placeholder="Select address…"
-                        suppressExternalLabelFetch
-                        clearIconMode="hover"
-                        disabled={!isFieldEditable("shipping_address_name")}
-                      />
-                    </div>
-                  </div>
-                  <div className="space-y-3">
-                    {form.shipping_address && (
-                      <div>
-                        <label className={labelClass}>Shipping Address</label>
-                        <div className={`${inputClass} bg-gray-50 whitespace-pre-line min-h-[76px] py-2.5`}>
-                          {normalizeDisplayText(form.shipping_address)}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Company Address */}
-            <div className="border-b border-border last:border-b-0">
-              <div className="py-3 text-base font-bold text-heading">Company Address</div>
-              <div className="pb-4 space-y-3">
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                  <div className="space-y-3">
-                    <div>
-                      <label className={labelClass}>Company Address Name</label>
-                      <LinkSearchField
-                        value={form.company_address ?? ""}
-                        onChange={(v) => void handleAddressSelect("company_address", "company_address_display")(v)}
-                        searchFn={async (q) => {
-                          const results = await customerService.searchLink(
-                            "Address",
-                            q,
-                            "Sales Order",
-                            form.company ? { link_name: form.company } : undefined,
-                          )
-                          return { items: results }
-                        }}
-                        placeholder="Select address…"
-                        suppressExternalLabelFetch
-                        clearIconMode="hover"
-                        disabled={!isFieldEditable("company_address")}
-                      />
-                    </div>
-                    {form.company_address_display && (
-                      <div>
-                        <label className={labelClass}>Company Address</label>
-                        <div className={`${inputClass} bg-gray-50 whitespace-pre-line min-h-[76px] py-2.5`}>
-                          {normalizeDisplayText(form.company_address_display)}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                  <div>
-                    <label className={labelClass}>Company Contact Person</label>
-                    <LinkSearchField
-                      value={form.company_contact_person ?? ""}
-                      onChange={(v) => update({ company_contact_person: v ?? "" })}
-                      searchFn={async (q) => {
-                        const results = await customerService.searchLink(
-                          "Contact",
-                          q,
-                          "Sales Order",
-                          form.company ? { link_name: form.company } : undefined,
-                        )
-                        return { items: results }
-                      }}
-                      placeholder="Select contact…"
-                      validate={async (v) => {
-                        await customerService.validateLink("Contact", v)
-                      }}
-                      suppressExternalLabelFetch
-                      clearIconMode="hover"
-                      disabled={!isFieldEditable("company_contact_person")}
-                    />
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Territory */}
-            <div className="border-b border-border last:border-b-0">
-              <div className="py-3 text-base font-bold text-heading">Territory</div>
-              <div className="pb-4 max-w-sm space-y-3">
-                <Field label="Territory" fieldname="territory">
-                  <LinkSearchField
-                    value={form.territory ?? ""}
-                    onChange={(v) => update({ territory: v ?? "" })}
-                    searchFn={async (q) => {
-                      const results = await customerService.searchLink("Territory", q, "Sales Order")
-                      return { items: results }
-                    }}
-                    validate={async (v) => {
-                      await customerService.validateLink("Territory", v)
-                    }}
-                    docType="Territory"
-                    placeholder="Select territory…"
-                    clearIconMode="hover"
-                    disabled={!isFieldEditable("territory")}
-                  />
-                </Field>
-                <Field label="Dispatch Address" fieldname="dispatch_address_name">
-                  <LinkSearchField
-                    value={form.dispatch_address_name ?? ""}
-                    onChange={(v) => void handleAddressSelect("dispatch_address_name", "dispatch_address")(v)}
-                    searchFn={async (q) => {
-                      const results = await customerService.searchLink(
-                        "Address",
-                        q,
-                        "Sales Order",
-                        form.customer ? { link_name: form.customer } : undefined,
-                      )
-                      return { items: results }
-                    }}
-                    placeholder="Select address…"
-                    suppressExternalLabelFetch
-                    clearIconMode="hover"
-                    disabled={!isFieldEditable("dispatch_address_name")}
-                  />
-                </Field>
-                {form.dispatch_address && (
-                  <div>
-                    <label className={labelClass}>Dispatch Address</label>
-                    <div className={`${inputClass} bg-gray-50 whitespace-pre-line min-h-[76px] py-2.5`}>
-                      {normalizeDisplayText(form.dispatch_address)}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
+            )}
           </div>
         )}
 
         {activeTab === "terms" && (
           <div className="space-y-4">
-            <div className="pb-4 border-b border-border space-y-3">
-              <h3 className="text-base font-bold text-heading">Payment Terms</h3>
-              <div className="max-w-sm">
-                <label className={labelClass}>Payment Terms Template</label>
-                <LinkSearchField
-                  value={form.payment_terms_template ?? ""}
-                  onChange={(v) => void handlePaymentTermsSelect(v ?? "")}
-                  searchFn={async (q) => {
-                    const results = await customerService.searchLink(
-                      "Payment Terms Template",
-                      q,
-                      "Sales Order",
-                    )
-                    return { items: results }
-                  }}
-                  docType="Payment Terms Template"
-                  placeholder="Select template…"
-                  validate={async (v) => {
-                    await customerService.validateLink("Payment Terms Template", v)
-                  }}
-                  clearIconMode="hover"
-                  disabled={!isFieldEditable("payment_terms_template")}
+            {(rule("payment_terms_template").visible || (form.payment_schedule?.length ?? 0) > 0) && (
+              <div className="pb-4 border-b border-border space-y-3">
+                <h3 className="text-base font-bold text-heading">Payment Terms</h3>
+                {rule("payment_terms_template").visible && (
+                  <div className="max-w-sm">
+                    <label className={labelClass}>Payment Terms Template</label>
+                    <LinkSearchField
+                      value={form.payment_terms_template ?? ""}
+                      onChange={(v) => void handlePaymentTermsSelect(v ?? "")}
+                      searchFn={async (q) => {
+                        const results = await customerService.searchLink(
+                          "Payment Terms Template",
+                          q,
+                          "Sales Order",
+                        )
+                        return { items: results }
+                      }}
+                      docType="Payment Terms Template"
+                      placeholder="Select template…"
+                      validate={async (v) => {
+                        await customerService.validateLink("Payment Terms Template", v)
+                      }}
+                      clearIconMode="hover"
+                      disabled={!isFieldEditable("payment_terms_template")}
+                    />
+                  </div>
+                )}
+                <ChildTableGrid<SalesOrderPaymentScheduleRow>
+                  title="Payment Schedule"
+                  titleClassName="text-xs font-semibold text-muted"
+                  noTopBorder
+                  rows={form.payment_schedule ?? []}
+                  columns={paymentScheduleColumns}
+                  emptyRow={{ payment_term: "", description: "", due_date: "", invoice_portion: 0, payment_amount: 0 }}
+                  onChange={(rows) => update({ payment_schedule: rows })}
+                  readOnly={!isFieldEditable("payment_schedule")}
+                  minWidth="720px"
                 />
               </div>
-              <ChildTableGrid<SalesOrderPaymentScheduleRow>
-                title="Payment Schedule"
-                titleClassName="text-xs font-semibold text-muted"
-                noTopBorder
-                rows={form.payment_schedule ?? []}
-                columns={paymentScheduleColumns}
-                emptyRow={{ payment_term: "", description: "", due_date: "", invoice_portion: 0, payment_amount: 0 }}
-                onChange={(rows) => update({ payment_schedule: rows })}
-                readOnly={!isFieldEditable("payment_schedule")}
-                minWidth="720px"
-              />
-            </div>
+            )}
 
-            <div className="pb-4 border-b border-border space-y-3">
-              <h3 className="text-base font-bold text-heading">Terms and Conditions</h3>
-              <div className="max-w-sm">
-                <label className={labelClass}>Terms</label>
-                <LinkSearchField
-                  value={form.tc_name ?? ""}
-                  onChange={(v) => update({ tc_name: v ?? "", terms: "" })}
-                  searchFn={async (q) => {
-                    const results = await customerService.searchLink(
-                      "Terms and Conditions",
-                      q,
-                      "Sales Order",
-                      { disabled: 0 },
-                    )
-                    return { items: results }
-                  }}
-                  docType="Terms and Conditions"
-                  placeholder="Select terms…"
-                  validate={async (v) => {
-                    await customerService.validateLink("Terms and Conditions", v)
-                  }}
-                  clearIconMode="hover"
-                  disabled={!isFieldEditable("tc_name")}
-                />
+            {(rule("tc_name").visible || rule("terms").visible) && (
+              <div className="pb-4 border-b border-border space-y-3">
+                <h3 className="text-base font-bold text-heading">Terms and Conditions</h3>
+                {rule("tc_name").visible && (
+                  <div className="max-w-sm">
+                    <label className={labelClass}>Terms</label>
+                    <LinkSearchField
+                      value={form.tc_name ?? ""}
+                      onChange={(v) => void handleTermsSelect(v ?? "")}
+                      searchFn={async (q) => {
+                        const results = await customerService.searchLink(
+                          "Terms and Conditions",
+                          q,
+                          "Sales Order",
+                          { disabled: 0 },
+                        )
+                        return { items: results }
+                      }}
+                      docType="Terms and Conditions"
+                      placeholder="Select terms…"
+                      validate={async (v) => {
+                        await customerService.validateLink("Terms and Conditions", v)
+                      }}
+                      clearIconMode="hover"
+                      disabled={!isFieldEditable("tc_name")}
+                    />
+                  </div>
+                )}
+                {rule("terms").visible && (
+                  <div>
+                    <label className={labelClass}>Terms and Conditions Details</label>
+                    <textarea
+                      rows={4}
+                      value={form.terms ?? ""}
+                      onChange={(e) => update({ terms: e.target.value })}
+                      readOnly={!isFieldEditable("terms")}
+                      className={inputClass}
+                      placeholder="Enter terms, conditions, or other notes…"
+                    />
+                  </div>
+                )}
               </div>
-              <div>
-                <label className={labelClass}>Terms and Conditions Details</label>
-                <textarea
-                  rows={4}
-                  value={form.terms ?? ""}
-                  onChange={(e) => update({ terms: e.target.value })}
-                  readOnly={!isFieldEditable("terms")}
-                  className={inputClass}
-                  placeholder="Enter terms, conditions, or other notes…"
-                />
-              </div>
-            </div>
+            )}
           </div>
         )}
 
         {activeTab === "more_info" && (
           <div className="space-y-4">
-            {/* Top-level (ERPNext More Info: inter_company_order_reference, project, source, campaign) */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 pb-4 border-b border-border">
-              <Field label="Inter Company Order Reference" fieldname="inter_company_order_reference">
-                <LinkSearchField
-                  value={form.inter_company_order_reference ?? ""}
-                  onChange={(v) => update({ inter_company_order_reference: v ?? "" })}
-                  searchFn={async (q) => {
-                    const results = await customerService.searchLink("Purchase Order", q, "Sales Order")
-                    return { items: results }
-                  }}
-                  validate={async (v) => {
-                    await customerService.validateLink("Purchase Order", v)
-                  }}
-                  docType="Purchase Order"
-                  placeholder="Select purchase order…"
-                  clearIconMode="hover"
-                  disabled={!isFieldEditable("inter_company_order_reference")}
-                />
-              </Field>
-              <div>
-                <label className={labelClass}>Project</label>
-                <LinkSearchField
-                  value={form.project ?? ""}
-                  onChange={(v) => update({ project: v ?? "" })}
-                  searchFn={async (q) => {
-                    const results = await customerService.searchLink("Project", q, "Sales Order")
-                    return { items: results }
-                  }}
-                  validate={async (v) => {
-                    await customerService.validateLink("Project", v)
-                  }}
-                  docType="Project"
-                  placeholder="Select project…"
-                  clearIconMode="hover"
-                  disabled={!isFieldEditable("project")}
-                />
-              </div>
-              <div>
-                <label className={labelClass}>Source</label>
-                <LinkSearchField
-                  value={form.source ?? ""}
-                  onChange={(v) => update({ source: v ?? "" })}
-                  searchFn={async (q) => {
-                    const results = await customerService.searchLink("Lead Source", q, "Sales Order")
-                    return { items: results }
-                  }}
-                  docType="Lead Source"
-                  placeholder="Select source…"
-                  validate={async (v) => {
-                    await customerService.validateLink("Lead Source", v)
-                  }}
-                  clearIconMode="hover"
-                  disabled={!isFieldEditable("source")}
-                />
-              </div>
-              <div>
-                <label className={labelClass}>Campaign</label>
-                <LinkSearchField
-                  value={form.campaign ?? ""}
-                  onChange={(v) => update({ campaign: v ?? "" })}
-                  searchFn={async (q) => {
-                    const results = await customerService.searchLink("Campaign", q, "Sales Order")
-                    return { items: results }
-                  }}
-                  docType="Campaign"
-                  placeholder="Select campaign…"
-                  validate={async (v) => {
-                    await customerService.validateLink("Campaign", v)
-                  }}
-                  clearIconMode="hover"
-                  disabled={!isFieldEditable("campaign")}
-                />
-              </div>
-            </div>
-
-            <CollapsibleSection title="Print Settings">
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                <div>
-                  <label className={labelClass}>Letter Head</label>
-                  <LinkSearchField
-                    value={form.letter_head ?? ""}
-                    onChange={(v) => update({ letter_head: v ?? "" })}
-                    searchFn={async (q) => {
-                      const results = await customerService.searchLink("Letter Head", q, "Sales Order")
-                      return { items: results }
-                    }}
-                    docType="Letter Head"
-                    placeholder="Select letter head…"
-                    validate={async (v) => {
-                      await customerService.validateLink("Letter Head", v)
-                    }}
-                    clearIconMode="hover"
-                    disabled={!isFieldEditable("letter_head")}
-                  />
-                </div>
-                <div>
-                  <label className={labelClass}>Print Heading</label>
-                  <LinkSearchField
-                    value={form.select_print_heading ?? ""}
-                    onChange={(v) => update({ select_print_heading: v ?? "" })}
-                    searchFn={async (q) => {
-                      const results = await customerService.searchLink("Print Heading", q, "Sales Order")
-                      return { items: results }
-                    }}
-                    docType="Print Heading"
-                    placeholder="Select print heading…"
-                    validate={async (v) => {
-                      await customerService.validateLink("Print Heading", v)
-                    }}
-                    clearIconMode="hover"
-                    disabled={!isFieldEditable("select_print_heading")}
-                  />
-                </div>
-                <div>
-                  <label className={labelClass}>Print Language</label>
-                  <input
-                    type="text"
-                    value={form.language ?? ""}
-                    className={`${inputClass} bg-gray-50`}
-                    readOnly
-                  />
-                </div>
-                <div className="flex items-start gap-2 pt-6">
-                  <input
-                    type="checkbox"
-                    id="groupSameItems"
-                    checked={!!form.group_same_items}
-                    onChange={(e) => update({ group_same_items: e.target.checked ? 1 : 0 })}
-                    disabled={!isFieldEditable("group_same_items")}
-                    className="h-4 w-4 rounded border-border"
-                  />
-                  <label htmlFor="groupSameItems" className="text-sm text-body">
-                    Group Same Items
-                  </label>
-                </div>
-              </div>
-            </CollapsibleSection>
-
+            {/* ── Status (ERPNext: status, per_delivered, per_billed, per_picked) ── */}
             <CollapsibleSection title="Status">
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 <div>
@@ -2405,51 +2945,85 @@ export default forwardRef<SalesOrderFormHandle, SalesOrderFormProps>(
                     />
                   </div>
                 )}
+                {rule("per_picked").visible && (
+                  <div>
+                    <label className={labelClass}>% Picked</label>
+                    <input
+                      type="text"
+                      value={form.per_picked ?? 0}
+                      className={`${inputClass} bg-gray-50`}
+                      readOnly
+                    />
+                  </div>
+                )}
               </div>
             </CollapsibleSection>
 
+            {/* ── Commission (ERPNext: sales_partner [left col], amount_eligible_for_commission, commission_rate, total_commission [right col]) ── */}
             <CollapsibleSection title="Commission">
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-                <Field label="Sales Partner" fieldname="sales_partner">
-                  <LinkSearchField
-                    value={form.sales_partner ?? ""}
-                    onChange={(v) => update({ sales_partner: v ?? "" })}
-                    searchFn={async (q) => {
-                      const results = await customerService.searchLink("Sales Partner", q, "Sales Order")
-                      return { items: results }
-                    }}
-                    validate={async (v) => {
-                      await customerService.validateLink("Sales Partner", v)
-                    }}
-                    docType="Sales Partner"
-                    placeholder="Select sales partner…"
-                    clearIconMode="hover"
-                    disabled={!isFieldEditable("sales_partner")}
-                  />
-                </Field>
-                <Field label="Commission Rate" fieldname="commission_rate">
-                  <Input
-                    type="number"
-                    min={0}
-                    max={100}
-                    step={0.01}
-                    value={form.commission_rate ?? ""}
-                    onChange={(e) => update({ commission_rate: e.target.value ? Number(e.target.value) : 0 })}
-                    readOnly={!isFieldEditable("commission_rate")}
-                  />
-                </Field>
-                <div>
-                  <label className={labelClass}>Total Commission</label>
-                  <input
-                    type="text"
-                    value={formatCurrency(form.total_commission ?? 0, companyCurrency)}
-                    className={`${inputClass} bg-gray-50`}
-                    readOnly
-                  />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {rule("sales_partner").visible && (
+                  <div>
+                    <Field label="Sales Partner" fieldname="sales_partner">
+                      <LinkSearchField
+                        value={form.sales_partner ?? ""}
+                        onChange={handleSalesPartnerChange}
+                        searchFn={async (q) => {
+                          const results = await customerService.searchLink("Sales Partner", q, "Sales Order")
+                          return { items: results }
+                        }}
+                        validate={async (v) => {
+                          await customerService.validateLink("Sales Partner", v)
+                        }}
+                        docType="Sales Partner"
+                        placeholder="Select sales partner…"
+                        clearIconMode="hover"
+                        disabled={!isFieldEditable("sales_partner")}
+                      />
+                    </Field>
+                  </div>
+                )}
+                <div className="space-y-4 sm:col-start-2">
+                  {rule("amount_eligible_for_commission").visible && (
+                    <Field label="Amount Eligible for Commission" fieldname="amount_eligible_for_commission">
+                      <input
+                        type="text"
+                        value={formatCurrency(amountEligibleForCommission, companyCurrency)}
+                        className={`${inputClass} bg-gray-50`}
+                        readOnly
+                      />
+                    </Field>
+                  )}
+                  {rule("commission_rate").visible && (
+                    <Field label="Commission Rate" fieldname="commission_rate">
+                      <Input
+                        type="number"
+                        min={0}
+                        max={100}
+                        step={0.01}
+                        value={form.commission_rate ?? ""}
+                        onChange={(e) =>
+                          handleCommissionRateChange(e.target.value ? Number(e.target.value) : 0)
+                        }
+                        readOnly={!isFieldEditable("commission_rate")}
+                      />
+                    </Field>
+                  )}
+                  {rule("total_commission").visible && (
+                    <Field label="Total Commission" fieldname="total_commission">
+                      <input
+                        type="text"
+                        value={formatCurrency(totalCommission, companyCurrency)}
+                        className={`${inputClass} bg-gray-50`}
+                        readOnly
+                      />
+                    </Field>
+                  )}
                 </div>
               </div>
             </CollapsibleSection>
 
+            {/* ── Sales Team (ERPNext: sales_team child table) ── */}
             <CollapsibleSection title="Sales Team">
               <ChildTableGrid<SalesOrderSalesTeamRow>
                 title="Sales Team"
@@ -2457,60 +3031,266 @@ export default forwardRef<SalesOrderFormHandle, SalesOrderFormProps>(
                 rows={form.sales_team ?? []}
                 columns={salesTeamColumns}
                 emptyRow={{ sales_person: "", allocated_percentage: 0, allocated_amount: 0, commission_rate: 0, incentives: 0 }}
-                onChange={(rows) => update({ sales_team: rows })}
+                onChange={(rows) => {
+                  const prevRows = form.sales_team ?? []
+                  update({ sales_team: recomputeSalesTeamRows(rows, amountEligibleForCommission) })
+                  // sales_team.json fetch_from parity: the row's commission_rate
+                  // is fetched from sales_person.commission_rate (fetch_if_empty=1),
+                  // so selecting a Sales Person copies that person's rate in, but
+                  // only when the row is still empty — a rate already set (e.g. from
+                  // a previous person) is never overwritten, exactly like ERPNext.
+                  rows.forEach((row, i) => {
+                    const before = prevRows[i]
+                    if (!before || row.sales_person === before.sales_person) return
+                    const person = row.sales_person
+                    if (!person) return
+                    void salesOrderService
+                      .getFetchValues("Sales Team", "sales_person", person)
+                      .then((fetchValues) => {
+                        const fetched = Number(fetchValues?.commission_rate)
+                        if (Number.isNaN(fetched)) return
+                        const cur = formRef.current.sales_team?.[i]
+                        if (!cur) return
+                        if (cur.commission_rate && cur.commission_rate !== 0) return
+                        update({
+                          sales_team: recomputeSalesTeamRows(
+                            (formRef.current.sales_team ?? []).map((r, j) =>
+                              j === i ? { ...r, commission_rate: fetched } : r,
+                            ),
+                            amountEligibleForCommission,
+                          ),
+                        })
+                      })
+                  })
+                }}
                 readOnly={!isFieldEditable("sales_team")}
                 minWidth="720px"
                 canAdd={mode === "create" || isFieldEditable("sales_team")}
               />
             </CollapsibleSection>
 
+            {/* ── Loyalty Points (hidden section in ERPNext) ── */}
+            {(rule("loyalty_points").visible || rule("loyalty_amount").visible) && (
+              <CollapsibleSection title="Loyalty Points">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <Field label="Loyalty Points" fieldname="loyalty_points">
+                    <input
+                      type="text"
+                      value={form.loyalty_points ?? 0}
+                      className={`${inputClass} bg-gray-50`}
+                      readOnly
+                    />
+                  </Field>
+                  <Field label="Loyalty Amount" fieldname="loyalty_amount">
+                    <input
+                      type="text"
+                      value={formatCurrency(form.loyalty_amount ?? 0, companyCurrency)}
+                      className={`${inputClass} bg-gray-50`}
+                      readOnly
+                    />
+                  </Field>
+                </div>
+              </CollapsibleSection>
+            )}
+
+            {/* ── Auto Repeat (ERPNext: auto_repeat, from_date, to_date, update_auto_repeat_reference) ── */}
+            {/* ── Auto Repeat Section (ERPNext: from_date, to_date | auto_repeat, update_auto_repeat_reference) ── */}
             <CollapsibleSection title="Auto Repeat">
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                <Field label="Auto Repeat" fieldname="auto_repeat">
-                  <LinkSearchField
-                    value={form.auto_repeat ?? ""}
-                    onChange={(v) => update({ auto_repeat: v ?? "" })}
-                    searchFn={async (q) => {
-                      const results = await customerService.searchLink("Auto Repeat", q, "Sales Order")
-                      return { items: results }
-                    }}
-                    validate={async (v) => {
-                      await customerService.validateLink("Auto Repeat", v)
-                    }}
-                    docType="Auto Repeat"
-                    placeholder="Select auto repeat…"
-                    clearIconMode="hover"
-                    disabled={!isFieldEditable("auto_repeat")}
-                  />
-                </Field>
-                <Field label="From Date" fieldname="from_date">
-                  <Input
-                    type="date"
-                    value={form.from_date ?? ""}
-                    onChange={(e) => update({ from_date: e.target.value })}
-                    readOnly={!isFieldEditable("from_date")}
-                  />
-                </Field>
-                <Field label="To Date" fieldname="to_date">
-                  <Input
-                    type="date"
-                    value={form.to_date ?? ""}
-                    onChange={(e) => update({ to_date: e.target.value })}
-                    readOnly={!isFieldEditable("to_date")}
-                  />
-                </Field>
-                {form.auto_repeat && (
-                  <Field label="Update Auto Repeat Reference" fieldname="update_auto_repeat_reference">
-                    <button
-                      type="button"
-                      onClick={() => update({ update_auto_repeat_reference: 1 })}
-                      disabled={!isFieldEditable("update_auto_repeat_reference")}
-                      className={`${inputClass} bg-primary-600 text-white font-semibold hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed`}
-                    >
-                      Update Auto Repeat Reference
-                    </button>
+                <div className="space-y-4">
+                  <Field label="From Date" fieldname="from_date">
+                    <DateInput
+                      value={form.from_date ?? ""}
+                      onChange={(e) => update({ from_date: e.target.value })}
+                      readOnly={!isFieldEditable("from_date")}
+                    />
                   </Field>
-                )}
+                  <Field label="To Date" fieldname="to_date">
+                    <DateInput
+                      value={form.to_date ?? ""}
+                      onChange={(e) => update({ to_date: e.target.value })}
+                      readOnly={!isFieldEditable("to_date")}
+                    />
+                  </Field>
+                </div>
+                <div className="space-y-4">
+                  <Field label="Auto Repeat" fieldname="auto_repeat">
+                    <LinkSearchField
+                      value={form.auto_repeat ?? ""}
+                      onChange={(v) => update({ auto_repeat: v ?? "" })}
+                      searchFn={async (q) => {
+                        const results = await customerService.searchLink("Auto Repeat", q, "Sales Order")
+                        return { items: results }
+                      }}
+                      validate={async (v) => {
+                        await customerService.validateLink("Auto Repeat", v)
+                      }}
+                      docType="Auto Repeat"
+                      placeholder="Select auto repeat…"
+                      clearIconMode="hover"
+                      disabled={!isFieldEditable("auto_repeat")}
+                    />
+                  </Field>
+                  {form.auto_repeat && (
+                    <Field label="Update Auto Repeat Reference" fieldname="update_auto_repeat_reference">
+                      <button
+                        type="button"
+                        onClick={handleUpdateAutoRepeatReference}
+                        disabled={!isFieldEditable("update_auto_repeat_reference")}
+                        className={`${inputClass} bg-primary-600 text-white font-semibold hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed`}
+                      >
+                        Update Auto Repeat Reference
+                      </button>
+                    </Field>
+                  )}
+                </div>
+              </div>
+            </CollapsibleSection>
+
+            {/* ── Print Settings (ERPNext column order: letter_head, group_same_items | select_print_heading, language) ── */}
+            <CollapsibleSection title="Print Settings">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <div className="space-y-4">
+                  <div>
+                    <label className={labelClass}>Letter Head</label>
+                    <LinkSearchField
+                      value={form.letter_head ?? ""}
+                      onChange={(v) => update({ letter_head: v ?? "" })}
+                      searchFn={async (q) => {
+                        const results = await customerService.searchLink("Letter Head", q, "Sales Order")
+                        return { items: results }
+                      }}
+                      docType="Letter Head"
+                      placeholder="Select letter head…"
+                      validate={async (v) => {
+                        await customerService.validateLink("Letter Head", v)
+                      }}
+                      clearIconMode="hover"
+                      disabled={!isFieldEditable("letter_head")}
+                    />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="groupSameItems"
+                      checked={!!form.group_same_items}
+                      onChange={(e) => update({ group_same_items: e.target.checked ? 1 : 0 })}
+                      disabled={!isFieldEditable("group_same_items")}
+                      className="h-4 w-4 rounded border-border"
+                    />
+                    <label htmlFor="groupSameItems" className="text-sm text-body">
+                      Group Same Items
+                    </label>
+                  </div>
+                </div>
+                <div className="space-y-4">
+                  <div>
+                    <label className={labelClass}>Print Heading</label>
+                    <LinkSearchField
+                      value={form.select_print_heading ?? ""}
+                      onChange={(v) => update({ select_print_heading: v ?? "" })}
+                      searchFn={async (q) => {
+                        const results = await customerService.searchLink("Print Heading", q, "Sales Order")
+                        return { items: results }
+                      }}
+                      docType="Print Heading"
+                      placeholder="Select print heading…"
+                      validate={async (v) => {
+                        await customerService.validateLink("Print Heading", v)
+                      }}
+                      clearIconMode="hover"
+                      disabled={!isFieldEditable("select_print_heading")}
+                    />
+                  </div>
+                  <div>
+                    <label className={labelClass}>Print Language</label>
+                    <input
+                      type="text"
+                      value={form.language ?? ""}
+                      className={`${inputClass} bg-gray-50`}
+                      readOnly
+                    />
+                  </div>
+                </div>
+              </div>
+            </CollapsibleSection>
+
+            {/* ── Additional Info (new ERPNext layout: is_internal_customer | source, campaign) ── */}
+            <CollapsibleSection title="Additional Info">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="isInternalCustomer"
+                      checked={!!form.is_internal_customer}
+                      onChange={(e) => update({ is_internal_customer: e.target.checked ? 1 : 0 })}
+                      disabled={!isFieldEditable("is_internal_customer") || rule("is_internal_customer").readOnly}
+                      className="h-4 w-4 rounded border-border"
+                    />
+                    <label htmlFor="isInternalCustomer" className="text-sm text-body">
+                      Is Internal Customer
+                    </label>
+                  </div>
+                  {form.represents_company && (
+                    <div>
+                      <label className={labelClass}>Represents Company</label>
+                      <input
+                        type="text"
+                        value={form.represents_company}
+                        className={`${inputClass} bg-gray-50`}
+                        readOnly
+                      />
+                    </div>
+                  )}
+                </div>
+                <div className="space-y-4">
+                  <Field label="Source" fieldname="source">
+                    <LinkSearchField
+                      value={form.source ?? ""}
+                      onChange={(v) => update({ source: v ?? "" })}
+                      searchFn={async (q) => {
+                        const results = await customerService.searchLink("Lead Source", q, "Sales Order")
+                        return { items: results }
+                      }}
+                      validate={async (v) => {
+                        await customerService.validateLink("Lead Source", v)
+                      }}
+                      docType="Lead Source"
+                      placeholder="Select source…"
+                      clearIconMode="hover"
+                      disabled={!isFieldEditable("source")}
+                    />
+                  </Field>
+                  {form.inter_company_order_reference && (
+                    <div>
+                      <label className={labelClass}>Inter Company Order Reference</label>
+                      <input
+                        type="text"
+                        value={form.inter_company_order_reference}
+                        className={`${inputClass} bg-gray-50`}
+                        readOnly
+                      />
+                    </div>
+                  )}
+                  <Field label="Campaign" fieldname="campaign">
+                    <LinkSearchField
+                      value={form.campaign ?? ""}
+                      onChange={(v) => update({ campaign: v ?? "" })}
+                      searchFn={async (q) => {
+                        const results = await customerService.searchLink("Campaign", q, "Sales Order")
+                        return { items: results }
+                      }}
+                      validate={async (v) => {
+                        await customerService.validateLink("Campaign", v)
+                      }}
+                      docType="Campaign"
+                      placeholder="Select campaign…"
+                      clearIconMode="hover"
+                      disabled={!isFieldEditable("campaign")}
+                    />
+                  </Field>
+                </div>
               </div>
             </CollapsibleSection>
           </div>

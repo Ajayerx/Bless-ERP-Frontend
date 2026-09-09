@@ -6,6 +6,7 @@ export { Avatar } from "./avatar"
 export { default as FitText } from "./FitText"
 export { Input } from "./input"
 export type { InputProps } from "./input"
+export { DateInput, openNativeDatePicker } from "./date-input"
 export {
   Dialog,
   DialogTrigger,

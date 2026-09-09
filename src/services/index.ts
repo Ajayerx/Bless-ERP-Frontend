@@ -61,8 +61,8 @@ export type { BankAccount, BankAccountListResponse, BankAccountFormData } from "
 export { journalEntryService } from "@/modules/journal_entries/services"
 export type { JournalEntry, JournalEntryListResponse, JournalEntryFormData } from "@/modules/journal_entries/services"
 
-export { salesOrderService } from "@/modules/sales-orders/services"
-export type { SalesOrder, SalesOrderItem, SalesOrderListResponse } from "@/modules/sales-orders/services"
+export { salesOrderService, SALES_ORDER_EXPORT_FIELDS } from "@/modules/sales-orders/services"
+export type { SalesOrder, SalesOrderItem, SalesOrderListResponse, SalesOrderStatus, SalesOrderDocStatus, SalesOrderDoc } from "@/modules/sales-orders/services"
 
 export { quotationService, QUOTATION_EXPORT_FIELDS } from "@/modules/quotations/services"
 export type { Quotation, QuotationItem, QuotationFormData, QuotationListResponse } from "@/modules/quotations/services"

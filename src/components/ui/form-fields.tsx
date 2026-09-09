@@ -21,6 +21,7 @@ export function LinkField({
   placeholder = "Select…",
   readOnly = false,
   validateValue,
+  fetchLabelOnMount = false,
 }: {
   doctype: string;
   value: string | undefined;
@@ -29,6 +30,7 @@ export function LinkField({
   placeholder?: string;
   readOnly?: boolean;
   validateValue?: (value: string) => Promise<void>;
+  fetchLabelOnMount?: boolean;
 }) {
   return (
     <LinkSearchField
@@ -38,6 +40,7 @@ export function LinkField({
       validate={validateValue ?? (async () => {})}
       placeholder={placeholder}
       readOnly={readOnly}
+      fetchLabelOnMount={fetchLabelOnMount}
     />
   );
 }

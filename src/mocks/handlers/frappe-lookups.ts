@@ -158,6 +158,7 @@ export const salesOrders = [
   { name: "SAL-ORD-2026-0003", customer: "CUST-0005", customer_name: "Red Maple Imports", transaction_date: "2026-07-06", delivery_date: "2026-07-20", grand_total: 4150.00, status: "To Deliver and Bill", docstatus: 1, per_delivered: 0, per_billed: 0, owner: "admin@blesserp.com", creation: "2026-07-06T09:00:00", modified: "2026-07-06T09:00:00", modified_by: "admin@blesserp.com" },
   { name: "SAL-ORD-2026-0004", customer: "CUST-0006", customer_name: "Pacific Coast Distributors", transaction_date: "2026-07-07", delivery_date: "2026-07-21", grand_total: 6780.00, status: "Completed", docstatus: 1, per_delivered: 100, per_billed: 100, owner: "admin@blesserp.com", creation: "2026-07-07T10:00:00", modified: "2026-07-07T10:00:00", modified_by: "admin@blesserp.com" },
   { name: "SAL-ORD-2026-0005", customer: "CUST-0009", customer_name: "Golden Harvest Organic", transaction_date: "2026-07-10", delivery_date: "2026-07-24", grand_total: 4300.00, status: "Draft", docstatus: 0, per_delivered: 0, per_billed: 0, owner: "admin@blesserp.com", creation: "2026-07-10T10:45:00", modified: "2026-07-10T10:45:00", modified_by: "admin@blesserp.com" },
+  { name: "SAL-ORD-2026-0006", customer: "CUST-0004", customer_name: "Great Lakes Trading", transaction_date: "2026-07-08", delivery_date: "2026-07-22", grand_total: 860.00, status: "Cancelled", docstatus: 2, per_delivered: 0, per_billed: 0, owner: "admin@blesserp.com", creation: "2026-07-08T12:00:00", modified: "2026-07-12T09:30:00", modified_by: "admin@blesserp.com" },
 ]
 
 // ── Draft Purchase Orders ────────────────────────────────────────────
@@ -203,7 +204,7 @@ const linkOptions: Record<string, string[]> = {
   "Sales Taxes and Charges Template": ["Canada GST/QST - BE", "Zero Rated - BE", "Exempt - BE"],
   "Terms and Conditions": ["Standard Terms and Conditions", "Net 30 Standard", "Custom Shipping Terms"],
   "Shipping Rule": ["Standard Shipping", "Express Shipping"],
-  "Incoterm": ["EXW", "FOB", "CIF", "DAP", "DDP"],
+  "Incoterm": ["CFR", "CIF", "CIP", "CPT", "DAP", "DDP", "DPU", "EXW", "FAS", "FCA", "FOB"],
   "Campaign": ["Summer Sale 2026", "Q3 Promo", "Loyalty Rewards"],
   "Competitor": ["Competitor A", "Competitor B", "Competitor C"],
   "Lost Reason": ["Supplier gave a better price", "No follow-up from us", "Product not available in required quantity", "Customer doesn't respond", "Other"],

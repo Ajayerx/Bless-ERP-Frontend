@@ -16,12 +16,19 @@ export interface SalesOrderItem {
 
 export interface SalesOrder {
   id: string
+  /** ERPNext document name (e.g. "SAL-ORD-2026-00001") — syncs with `id`. */
+  name: string
   number: string
   customerId: string
   customerName: string
   issueDate: string
   deliveryDate: string
+  /** Simplified badge status (kept for existing consumers). */
   status: "draft" | "confirmed" | "completed" | "cancelled"
+  /** Raw ERPNext status literal (Draft / On Hold / To Deliver and Bill / …). */
+  rawStatus: SalesOrderStatus
+  /** Docstatus drives list actions: 0 draft, 1 submitted, 2 cancelled. */
+  docstatus: SalesOrderDocStatus
   items: SalesOrderItem[]
   total: number
   perDelivered?: number
@@ -75,6 +82,7 @@ export interface SalesOrderItemForm {
   amount: number
   base_rate?: number
   base_amount?: number
+  base_net_amount?: number
   discount_percentage: number
   discount_amount?: number
   margin_type?: "Percentage" | "Amount"
@@ -142,6 +150,17 @@ export interface SalesOrderPaymentScheduleRow {
   invoice_portion: number
   payment_amount: number
   base_payment_amount?: number
+  due_date_based_on?: string
+  credit_days?: number
+  credit_months?: number
+  discount_date?: string
+  discount?: number
+  discount_type?: string
+  discount_validity?: number
+  discount_validity_based_on?: string
+  mode_of_payment?: string
+  outstanding?: number
+  paid_amount?: number
   idx?: number
 }
 
@@ -195,6 +214,10 @@ export interface SalesOrderDoc {
   amended_from?: string
   cost_center?: string
   project?: string
+  /** Dynamic accounting dimensions (e.g. department, branch) — stored as
+   *  key/value pairs where keys are ERPNext fieldnames from the Accounting
+   *  Dimension doctype. Rendered in the Accounting Dimensions section. */
+  accounting_dimensions?: Record<string, string>
 
   currency: string
   conversion_rate: number
@@ -253,6 +276,9 @@ export interface SalesOrderDoc {
   contact_email?: string
   shipping_address_name?: string
   shipping_address?: string
+  shipping_contact_person?: string
+  shipping_contact_display?: string
+  shipping_contact_mobile?: string
   dispatch_address_name?: string
   dispatch_address?: string
   company_address?: string
@@ -298,8 +324,8 @@ export interface SalesOrderDoc {
   represents_company?: string
   ignore_default_payment_terms_template?: number
   source?: string
-  inter_company_order_reference?: string
   campaign?: string
+  inter_company_order_reference?: string
   party_account_currency?: string
 
   _assign?: string

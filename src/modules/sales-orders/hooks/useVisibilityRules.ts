@@ -175,6 +175,10 @@ export const SALES_ORDER_FIELD_META: SalesOrderFieldMeta[] = [
   { fieldname: "contact_email", hidden: true, readOnly: true, fieldtype: "Data" },
   { fieldname: "shipping_address_name", fieldtype: "Link" },
   { fieldname: "shipping_address", readOnly: true, allowOnSubmit: true, fieldtype: "Small Text" },
+  { fieldname: "shipping_contact_person", fieldtype: "Link" },
+  { fieldname: "shipping_contact_display", readOnly: true, fieldtype: "Small Text" },
+  { fieldname: "shipping_contact_mobile", readOnly: true, fieldtype: "Small Text" },
+  { fieldname: "shipping_contact_email", hidden: true, readOnly: true, fieldtype: "Data" },
   { fieldname: "dispatch_address_name", allowOnSubmit: true, fieldtype: "Link" },
   { fieldname: "dispatch_address", dependsOn: "dispatch_address_name", readOnly: true, allowOnSubmit: true, fieldtype: "Small Text" },
   { fieldname: "company_address", fieldtype: "Link" },
@@ -209,8 +213,10 @@ export const SALES_ORDER_FIELD_META: SalesOrderFieldMeta[] = [
   { fieldname: "loyalty_points", hidden: true, readOnly: true, fieldtype: "Int" },
   { fieldname: "loyalty_amount", hidden: true, readOnly: true, fieldtype: "Currency" },
   { fieldname: "auto_repeat", fieldtype: "Link" },
-  { fieldname: "from_date", dependsOn: "eval: doc.auto_repeat", allowOnSubmit: true, fieldtype: "Date" },
-  { fieldname: "to_date", dependsOn: "eval: doc.auto_repeat", allowOnSubmit: true, fieldtype: "Date" },
+  // ERPNext v14: from_date/to_date carry no depends_on (always visible in the
+  // section); only update_auto_repeat_reference is gated on doc.auto_repeat.
+  { fieldname: "from_date", allowOnSubmit: true, fieldtype: "Date" },
+  { fieldname: "to_date", allowOnSubmit: true, fieldtype: "Date" },
   { fieldname: "update_auto_repeat_reference", dependsOn: "eval: doc.auto_repeat", allowOnSubmit: true, fieldtype: "Button" },
   { fieldname: "letter_head", allowOnSubmit: true, fieldtype: "Link" },
   { fieldname: "group_same_items", allowOnSubmit: true, fieldtype: "Check" },
@@ -233,6 +239,12 @@ export const SALES_ORDER_EMPTY_HIDE_EXEMPT = new Set([
   "packed_items",
   "sales_team",
   "payment_schedule",
+  // Section-placeholder + action fields carry no value of their own; they are
+  // visibility-driven by depends_on alone (mirrors base_control's exemption of
+  // Section Breaks / Buttons from the null-hide in get_status).
+  "packing_list",
+  "sales_team_section_break",
+  "section_break1",
 ])
 
 function buildDefaultRules(): SalesOrderFieldRule[] {

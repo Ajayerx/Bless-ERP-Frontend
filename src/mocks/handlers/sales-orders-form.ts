@@ -78,6 +78,10 @@ export function fullDoc(row: Record<string, unknown>): Record<string, unknown> {
     tax_category: String(row.tax_category ?? "Standard"),
     taxes_and_charges: String(row.taxes_and_charges ?? "Canada GST/QST - BE"),
     apply_discount_on: String(row.apply_discount_on ?? "Grand Total"),
+    sales_partner: String(row.sales_partner ?? ""),
+    amount_eligible_for_commission: Number(row.amount_eligible_for_commission ?? 0),
+    commission_rate: Number(row.commission_rate ?? 0),
+    total_commission: Number(row.total_commission ?? 0),
     items: Array.isArray(row.items) ? row.items : quotationItems.map((i) => ({ ...i, doctype: "Sales Order Item", parentfield: "items", parenttype: "Sales Order" })),
     taxes: Array.isArray(row.taxes) ? row.taxes : quotationTaxes.map((t) => ({ ...t, doctype: "Sales Taxes and Charges", parentfield: "taxes", parenttype: "Sales Order" })),
     payment_schedule: Array.isArray(row.payment_schedule) ? row.payment_schedule : paymentScheduleRows.map((p) => ({ ...p, doctype: "Payment Schedule", parentfield: "payment_schedule", parenttype: "Sales Order" })),
@@ -101,6 +105,71 @@ export function fullDoc(row: Record<string, unknown>): Record<string, unknown> {
 function safeJson<T>(val: string | null, fallback: T): T {
   if (!val) return fallback
   try { return JSON.parse(val) } catch { return fallback }
+}
+
+// Server-side SellingController.calculate_commission / calculate_contribution
+// parity: recompute commission + Sales Team amounts from the item grid on save
+// (mirrors sales_common.js calculate_commission + calculate_incentive).
+function applyCommission(doc: Record<string, unknown>): Record<string, unknown> {
+  const round2 = (n: number): number => Math.round(n * 100) / 100
+  const items = Array.isArray(doc.items) ? (doc.items as Record<string, unknown>[]) : []
+  const conv = Number(doc.conversion_rate ?? 1) || 1
+  const amountEligible = items.reduce(
+    (sum, item) =>
+      Number(item.grant_commission)
+        ? sum + Number(item.base_net_amount ?? item.base_amount ?? round2(Number(item.amount ?? 0) * conv))
+        : sum,
+    0,
+  )
+  const rate = Number(doc.commission_rate ?? 0) || 0
+  const totalCommission = round2((amountEligible * rate) / 100)
+  const salesTeam = Array.isArray(doc.sales_team) ? (doc.sales_team as Record<string, unknown>[]) : []
+  // selling_controller.py calculate_contribution parity: allocated_amount is
+  // recomputed for every row (flt(eligible * pct / 100)), and incentives only
+  // when the row has a commission_rate (flt(allocated_amount * rate / 100)).
+  const nextSalesTeam = salesTeam.map((row) => {
+    const pct = Number(row.allocated_percentage ?? 0) || 0
+    const cr = Number(row.commission_rate ?? 0) || 0
+    const allocatedAmount = round2((amountEligible * pct) / 100)
+    const incentives = cr ? round2((allocatedAmount * cr) / 100) : (row.incentives ?? 0)
+    return { ...row, allocated_amount: allocatedAmount, incentives }
+  })
+  return {
+    ...doc,
+    amount_eligible_for_commission: amountEligible,
+    total_commission: totalCommission,
+    sales_team: nextSalesTeam,
+  }
+}
+
+// selling_controller.py calculate_contribution parity: when a Sales Team
+// exists, the total of all allocated_percentage rows must equal 100.
+// Throws (like ERPNext's frappe.throw) otherwise.
+function validateSalesTeamAllocation(doc: Record<string, unknown>): void {
+  const salesTeam = Array.isArray(doc.sales_team) ? (doc.sales_team as Record<string, unknown>[]) : []
+  if (salesTeam.length === 0) return
+  const total = salesTeam.reduce((sum, r) => sum + (Number(r.allocated_percentage ?? 0) || 0), 0)
+  if (Math.abs(total - 100) > 0.01) {
+    const err = new Error("Total allocated percentage for sales team should be 100")
+    ;(err as Error & { exc_type?: string }).exc_type = "ValidationError"
+    throw err
+  }
+}
+
+// frappe.model.throw → ValidationError envelope: a 417 with the human reason
+// in _server_messages, which the desk savedocs error path surfaces verbatim.
+function validationErrorResponse(message: string) {
+  return HttpResponse.json(
+    {
+      message,
+      exc_type: "ValidationError",
+      exc: `ValidationError\n\tat validate (Sales Order)\n\tMessage: ${message}`,
+      _server_messages: JSON.stringify([
+        { message, title: "Message", indicator: "red", raise_exception: 1 },
+      ]),
+    },
+    { status: 417 },
+  )
 }
 
 function formFields(request: Request): Promise<Record<string, string>> {
@@ -146,6 +215,16 @@ export const salesOrderFormHandlers = [
     const incoming = safeJson<Record<string, unknown>>(fields.doc ?? "", {})
     if (incoming.doctype && String(incoming.doctype) !== "Sales Order") return passthrough()
 
+    // selling_controller.py calculate_contribution parity: Sales Team rows
+    // must total 100% allocated — otherwise ERPNext blocks the save.
+    try {
+      validateSalesTeamAllocation(incoming)
+    } catch (err) {
+      return validationErrorResponse((err as Error).message)
+    }
+
+    const payload = applyCommission(incoming)
+
     const action = (fields.action ?? "Save") as "Save" | "Submit" | "Update"
 
     let doc: Record<string, unknown>
@@ -157,13 +236,13 @@ export const salesOrderFormHandlers = [
       const name = `SAL-ORD-2026-${String(Number(store.length) + 1000 + docCounter)}`
       const newRow: Record<string, unknown> = {
         name,
-        customer: incoming.customer ?? "",
-        customer_name: incoming.customer_name ?? "",
-        transaction_date: incoming.transaction_date ?? new Date().toISOString().slice(0, 10),
-        delivery_date: incoming.delivery_date ?? "",
-        company: incoming.company ?? "BlessERP Inc.",
-        currency: incoming.currency ?? "CAD",
-        grand_total: incoming.grand_total ?? 0,
+        customer: payload.customer ?? "",
+        customer_name: payload.customer_name ?? "",
+        transaction_date: payload.transaction_date ?? new Date().toISOString().slice(0, 10),
+        delivery_date: payload.delivery_date ?? "",
+        company: payload.company ?? "BlessERP Inc.",
+        currency: payload.currency ?? "CAD",
+        grand_total: payload.grand_total ?? 0,
         status: action === "Submit" ? "To Deliver and Bill" : "Draft",
         docstatus: action === "Submit" ? 1 : 0,
         per_delivered: 0,
@@ -172,7 +251,7 @@ export const salesOrderFormHandlers = [
         creation: nowStamp(),
         modified: nowStamp(),
         modified_by: "admin@blesserp.com",
-        ...incoming,
+        ...payload,
       }
       store = [newRow, ...store]
       // Keep the shared list pseudo-array in sync so the REST /resource/Sales Order
@@ -183,11 +262,11 @@ export const salesOrderFormHandlers = [
       doc = fullDoc(newRow)
     } else {
       const row = store[idx]
-      const merged = { ...row, ...incoming }
+      const merged = { ...row, ...payload }
       if (action === "Submit") {
         merged.docstatus = 1
         merged.status = "To Deliver and Bill"
-      } else if (incoming.docstatus === 2) {
+      } else if (payload.docstatus === 2) {
         merged.docstatus = 2
         merged.status = "Cancelled"
       } else {
@@ -234,6 +313,56 @@ export const salesOrderFormHandlers = [
     const fields = await formFields(request)
     void fields
     return HttpResponse.json({ message: { conversion_factor: 1 } })
+  }),
+
+  // ── Terms tab: payment terms template → payment schedule ───────────
+  http.post("/api/method/erpnext.controllers.accounts_controller.get_payment_terms", async () => {
+    await delay(150)
+    return HttpResponse.json({
+      message: paymentScheduleRows.map((p) => ({ ...p })),
+    })
+  }),
+
+  http.post("/api/method/erpnext.controllers.accounts_controller.get_payment_term_details", async ({ request }) => {
+    await delay(150)
+    const fields = await formFields(request)
+    const term = String(fields.term ?? "")
+    return HttpResponse.json({
+      message: {
+        payment_term: term,
+        description: `Payment due ${term}`,
+        due_date: new Date().toISOString().slice(0, 10),
+        invoice_portion: 50,
+        payment_amount: 1000,
+        base_payment_amount: 1000,
+        due_date_based_on: "Day(s) after invoice date",
+        credit_days: 30,
+        mode_of_payment: "",
+        discount_date_based_on: "",
+        discount: 0,
+        discount_type: "",
+        discount_validity: 0,
+        discount_validity_based_on: "",
+      },
+    })
+  }),
+
+  http.post("/api/method/erpnext.setup.doctype.terms_and_conditions.terms_and_conditions.get_terms_and_conditions", async ({ request }) => {
+    await delay(150)
+    const fields = await formFields(request)
+    const templateName = String(fields.template_name ?? "")
+    void templateName
+    return HttpResponse.json({
+      message: "<p>All goods are sold subject to the standard Terms and Conditions.</p>",
+    })
+  }),
+
+  // ── Auto Repeat: update Auto Repeat reference (Update Auto Repeat Reference button) ──
+  http.post("/api/method/frappe.desk.doctype.auto_repeat.auto_repeat.update_reference", async ({ request }) => {
+    await delay(150)
+    const fields = await formFields(request)
+    void fields
+    return HttpResponse.json({ message: "success" })
   }),
 
   // ── Stock reservation: create / cancel ────────────────────────────

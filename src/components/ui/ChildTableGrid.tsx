@@ -222,6 +222,7 @@ export default function ChildTableGrid<T extends object>({
                               col.indicator(row) === "green" && "bg-green-500",
                               col.indicator(row) === "orange" && "bg-orange-500",
                               col.indicator(row) === "yellow" && "bg-yellow-500",
+                              col.indicator(row) === "red" && "bg-red-500",
                             )}
                           />
                         )}

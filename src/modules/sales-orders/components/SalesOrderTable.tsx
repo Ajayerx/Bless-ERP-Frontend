@@ -1,16 +1,48 @@
 "use client"
 
-import { ShoppingCart } from "lucide-react"
+import {
+  ShoppingCart,
+  CheckCircle2,
+  Clock,
+  FileText,
+  XCircle,
+  Send,
+  RotateCcw,
+  Trash2,
+  Download,
+  Printer,
+  UserRound,
+  Tag,
+  PauseCircle,
+  Package,
+  Truck,
+  Lock,
+} from "lucide-react"
 import DataTable, { type Column } from "@/components/ui/DataTable"
-import { Card, CardContent, Badge , FilterPills } from "@/components/ui"
-import { type SalesOrder, type SalesOrderListResponse } from "@/services"
+import { Card, CardContent, Badge, FilterPills, ListBulkActions } from "@/components/ui"
+import { type SalesOrder, type SalesOrderListResponse, type SalesOrderStatus } from "@/services"
 import { formatCurrency, formatDate } from "@/lib/utils"
 
-const statusVariant: Record<string, "success" | "warning" | "danger" | "info" | "default"> = {
-  draft: "warning",
-  confirmed: "info",
-  completed: "success",
-  cancelled: "default",
+const statusVariant: Record<SalesOrderStatus, "success" | "warning" | "danger" | "info" | "default"> = {
+  Draft: "warning",
+  "On Hold": "warning",
+  "To Deliver and Bill": "warning",
+  "To Bill": "warning",
+  "To Deliver": "warning",
+  Completed: "success",
+  Cancelled: "default",
+  Closed: "default",
+}
+
+const statusIcon: Record<SalesOrderStatus, React.ReactNode> = {
+  Draft: <Clock size={14} />,
+  "On Hold": <PauseCircle size={14} />,
+  "To Deliver and Bill": <Package size={14} />,
+  "To Bill": <FileText size={14} />,
+  "To Deliver": <Truck size={14} />,
+  Completed: <CheckCircle2 size={14} />,
+  Cancelled: <XCircle size={14} />,
+  Closed: <Lock size={14} />,
 }
 
 const fulfillmentVariant: Record<string, "success" | "warning" | "info" | "danger"> = {
@@ -20,72 +52,149 @@ const fulfillmentVariant: Record<string, "success" | "warning" | "info" | "dange
   cancelled: "danger",
 }
 
-const columns: Column<SalesOrder>[] = [
-  {
-    key: "number",
-    header: "Order",
-    render: (so) => (
-      <div className="flex items-center gap-3">
-        <div className="w-9 h-9 rounded-[10px] bg-purple-50 text-purple-600 flex items-center justify-center shrink-0">
-          <ShoppingCart size={16} />
+function buildColumns(actions: {
+  onSubmitSingle: (name: string) => void
+  onCancelSingle: (name: string) => void
+  onDeleteSingle: (name: string) => void
+  onAmendSingle: (name: string) => void
+}): Column<SalesOrder>[] {
+  return [
+    {
+      key: "number",
+      header: "Order",
+      width: "w-[30%]",
+      title: (so) => `Order: ${so.number} · ${so.customerName}`,
+      render: (so) => (
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="w-9 h-9 rounded-[10px] bg-purple-50 text-purple-600 flex items-center justify-center shrink-0">
+            <ShoppingCart size={16} />
+          </div>
+          <div className="min-w-0">
+            <p className="font-semibold text-heading truncate">{so.number}</p>
+            <p className="text-xs text-muted truncate">{so.customerName}</p>
+          </div>
         </div>
-        <div>
-          <p className="font-semibold text-heading">{so.number}</p>
-          <p className="text-xs text-muted">{so.customerName}</p>
+      ),
+    },
+    {
+      key: "total",
+      header: "Amount",
+      align: "right",
+      width: "w-[18%]",
+      title: (so) => `Amount: ${formatCurrency(so.total)}`,
+      render: (so) => <span className="font-semibold tabular-nums text-heading">{formatCurrency(so.total)}</span>,
+    },
+    {
+      key: "deliveryDate",
+      header: "Delivery",
+      width: "w-[18%]",
+      render: (so) => <span className="text-sm text-muted">{formatDate(so.deliveryDate)}</span>,
+    },
+    {
+      key: "status",
+      header: "Status",
+      width: "w-[22%]",
+      render: (so) => (
+        <Badge variant={statusVariant[so.rawStatus] ?? "info"} className="gap-1">
+          {statusIcon[so.rawStatus]}
+          {so.rawStatus}
+        </Badge>
+      ),
+    },
+
+    {
+      key: "actions",
+      header: "",
+      width: "w-[12%]",
+      noTruncate: true,
+      render: (so) => (
+        <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+          {so.docstatus === 0 && (
+            <>
+              <button
+                onClick={() => actions.onSubmitSingle(so.name)}
+                className="p-1.5 text-primary-600 hover:bg-primary-50 rounded-lg transition-colors"
+                title="Submit"
+              >
+                <Send size={13} />
+              </button>
+              <button
+                onClick={() => actions.onDeleteSingle(so.name)}
+                className="p-1.5 text-danger-600 hover:bg-danger-50 rounded-lg transition-colors"
+                title="Delete"
+              >
+                <Trash2 size={13} />
+              </button>
+            </>
+          )}
+          {so.docstatus === 1 && (
+            <button
+              onClick={() => actions.onCancelSingle(so.name)}
+              className="p-1.5 text-danger-600 hover:bg-danger-50 rounded-lg transition-colors"
+              title="Cancel"
+            >
+              <XCircle size={13} />
+            </button>
+          )}
+          {so.docstatus === 2 && (
+            <>
+              <button
+                onClick={() => actions.onAmendSingle(so.name)}
+                className="p-1.5 text-muted hover:bg-gray-100 rounded-lg transition-colors"
+                title="Amend"
+              >
+                <RotateCcw size={13} />
+              </button>
+              <button
+                onClick={() => actions.onDeleteSingle(so.name)}
+                className="p-1.5 text-danger-600 hover:bg-danger-50 rounded-lg transition-colors"
+                title="Delete"
+              >
+                <Trash2 size={13} />
+              </button>
+            </>
+          )}
         </div>
-      </div>
-    ),
-  },
-  {
-    key: "total",
-    header: "Amount",
-    className: "text-right",
-    render: (so) => <span className="font-semibold tabular-nums text-heading">{formatCurrency(so.total)}</span>,
-  },
-  {
-    key: "deliveryDate",
-    header: "Delivery",
-    render: (so) => <span className="text-sm text-muted">{formatDate(so.deliveryDate)}</span>,
-  },
-  {
-    key: "status",
-    header: "Status",
-    render: (so) => <Badge variant={statusVariant[so.status] ?? "info"}>{so.status.charAt(0).toUpperCase() + so.status.slice(1)}</Badge>,
-  },
-  {
-    key: "perDelivered",
-    header: "Delivered",
-    className: "text-right",
-    render: (so) => <span className="text-sm tabular-nums text-muted">{so.perDelivered ?? 0}%</span>,
-  },
-  {
-    key: "perBilled",
-    header: "Billed",
-    className: "text-right",
-    render: (so) => <span className="text-sm tabular-nums text-muted">{so.perBilled ?? 0}%</span>,
-  },
-  {
-    key: "fulfillmentStatus",
-    header: "Fulfillment",
-    render: (so) => (
-      <Badge variant={fulfillmentVariant[so.fulfillmentStatus] ?? "info"}>
-        {so.fulfillmentStatus.charAt(0).toUpperCase() + so.fulfillmentStatus.slice(1)}
-      </Badge>
-    ),
-  },
-]
+      ),
+    },
+  ]
+}
 
 interface SalesOrderTableProps {
   data: SalesOrderListResponse | null
   loading: boolean
   search: string
   onSearch: (q: string) => void
-  page: number
-  onPageChange: (page: number) => void
+  paginationMode?: "pages" | "loadMore"
+  currentPageLength?: number
+  onPageLengthChange?: (size: number) => void
+  onLoadMore?: () => void
   filters: readonly string[]
   activeFilter: string
   onFilterChange: (filter: string) => void
   onRowClick?: (so: SalesOrder) => void
+  selectable?: boolean
+  selectedKeys?: Set<string>
+  onSelectionChange?: (keys: Set<string>) => void
+  hasActiveFilters?: boolean
+  hasDraftSelected: boolean
+  hasSubmittedSelected: boolean
+  hasCancelledSelected: boolean
+  hasClosedSelected: boolean
+  onSubmitSingle: (name: string) => void
+  onCancelSingle: (name: string) => void
+  onDeleteSingle: (name: string) => void
+  onAmendSingle: (name: string) => void
+  onBulkSubmit: () => void
+  onBulkCancel: () => void
+  onBulkAmend: () => void
+  onBulkDelete: () => void
+  onBulkClose: () => void
+  onBulkExport: () => void
+  onBulkPrint: () => void
+  onBulkAssign: () => void
+  onBulkClearAssign: () => void
+  onBulkAddTags: () => void
 }
 
 export default function SalesOrderTable({
@@ -93,13 +202,57 @@ export default function SalesOrderTable({
   loading,
   search,
   onSearch,
-  page,
-  onPageChange,
+  paginationMode,
+  currentPageLength,
+  onPageLengthChange,
+  onLoadMore,
   filters,
   activeFilter,
   onFilterChange,
   onRowClick,
+  selectable,
+  selectedKeys,
+  onSelectionChange,
+  hasActiveFilters,
+  hasDraftSelected,
+  hasSubmittedSelected,
+  hasCancelledSelected,
+  hasClosedSelected,
+  onSubmitSingle,
+  onCancelSingle,
+  onDeleteSingle,
+  onAmendSingle,
+  onBulkSubmit,
+  onBulkCancel,
+  onBulkAmend,
+  onBulkDelete,
+  onBulkClose,
+  onBulkExport,
+  onBulkPrint,
+  onBulkAssign,
+  onBulkClearAssign,
+  onBulkAddTags,
 }: SalesOrderTableProps) {
+  const bulkToolbar = (
+    <ListBulkActions
+      count={selectedKeys?.size ?? 0}
+      noun="sales orders"
+      fallback={null}
+      items={[
+        { label: "Submit", icon: <Send size={14} />, show: hasDraftSelected, onClick: onBulkSubmit },
+        { label: "Cancel", icon: <XCircle size={14} />, show: hasSubmittedSelected, danger: true, onClick: onBulkCancel },
+        { label: "Amend", icon: <RotateCcw size={14} />, show: hasCancelledSelected, onClick: onBulkAmend },
+        { label: "Delete", icon: <Trash2 size={14} />, show: hasDraftSelected || hasCancelledSelected, danger: true, onClick: onBulkDelete },
+        { label: "Close", icon: <Lock size={14} />, show: hasSubmittedSelected && !hasClosedSelected, onClick: onBulkClose },
+        { label: "Export", icon: <Download size={14} />, separatorBefore: true, onClick: onBulkExport },
+        { label: "Print", icon: <Printer size={14} />, onClick: onBulkPrint },
+        { label: "Assign to...", icon: <UserRound size={14} />, onClick: onBulkAssign },
+        { label: "Clear Assignment", icon: <UserRound size={14} />, onClick: onBulkClearAssign },
+        { label: "Add Tags", icon: <Tag size={14} />, onClick: onBulkAddTags },
+      ]}
+    />
+  )
+
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -136,26 +289,40 @@ export default function SalesOrderTable({
       <FilterPills
         options={filters}
         value={activeFilter}
-        onChange={(f) => {
-          onFilterChange(f)
-          onPageChange(1)
-        }}
+        onChange={onFilterChange}
       />
 
       <DataTable
-        columns={columns}
+        columns={buildColumns({ onSubmitSingle, onCancelSingle, onDeleteSingle, onAmendSingle })}
         data={data?.items ?? []}
-        keyExtractor={(so) => so.id}
+        keyExtractor={(so) => so.name}
         searchable
         searchPlaceholder="Search sales orders..."
         searchQuery={search}
-        onSearch={(q) => { onSearch(q); onPageChange(1) }}
+        onSearch={onSearch}
         loading={loading}
-        page={page}
         total={data?.total}
-        pageSize={10}
-        onPageChange={onPageChange}
+        pageSize={currentPageLength ?? 20}
         onRowClick={onRowClick}
+        toolbarActions={bulkToolbar}
+        selectable={selectable}
+        selectedKeys={selectedKeys}
+        onSelectionChange={onSelectionChange}
+        paginationMode={paginationMode}
+        currentPageLength={currentPageLength}
+        onPageLengthChange={onPageLengthChange}
+        onLoadMore={onLoadMore}
+        emptyState={
+          <div className="flex flex-col items-center gap-2 py-4">
+            <ShoppingCart size={32} className="text-muted opacity-40" />
+            <p className="font-semibold text-body">No sales orders found</p>
+            <p className="text-xs text-muted">
+              {hasActiveFilters
+                ? "No sales orders match the current filters."
+                : "Create your first sales order to get started."}
+            </p>
+          </div>
+        }
       />
     </div>
   )

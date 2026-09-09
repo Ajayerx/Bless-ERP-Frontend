@@ -196,11 +196,6 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
       "details" | "address" | "terms" | "more_info"
     >("details")
 
-    const currencies = useLazyOptions<string[]>(
-      "quotation:currencies",
-      quotationService.lookups.currencies,
-      [],
-    )
     const priceLists = useLazyOptions<string[]>(
       "quotation:price-lists",
       quotationService.lookups.priceLists,
@@ -1068,15 +1063,13 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
           }
         },
         placeholder: "Search item…",
-        weight: 2.4,
       },
-      { key: "qty", label: "Quantity", type: "number", align: "right", weight: 1 },
+      { key: "qty", label: "Quantity", type: "number", align: "right" },
       {
         key: "rate",
         label: `Rate (${currencyLabel})`,
         type: "number",
         align: "right",
-        weight: 1.2,
         placeholder: "0",
         prefix: "$",
         formatter: (row) => formatCurrency(row.rate ?? 0, currencyLabel),
@@ -1086,19 +1079,17 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
         label: `Amount (${currencyLabel})`,
         type: "readonly",
         align: "right",
-        weight: 1.4,
         formatter: (row) => formatCurrency(row.amount ?? 0, currencyLabel),
       },
     ]
 
     const readOnlyItemColumns: GridColumn<QuotationItem>[] = [
-      { key: "item_code", label: "Item", type: "link", weight: 2.4 },
+      { key: "item_code", label: "Item", type: "link" },
       {
         key: "qty",
         label: "Quantity",
         type: "number",
         align: "right",
-        weight: 1,
         formatter: (row) => formatFixed(row.qty ?? 0, 3),
       },
       {
@@ -1106,7 +1097,6 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
         label: `Rate (${currencyLabel})`,
         type: "number",
         align: "right",
-        weight: 1.2,
         formatter: (row) => formatCurrency(row.rate ?? 0, currencyLabel),
       },
       {
@@ -1114,14 +1104,13 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
         label: `Amount (${currencyLabel})`,
         type: "readonly",
         align: "right",
-        weight: 1.4,
         formatter: (row) => formatCurrency(row.amount ?? 0, currencyLabel),
       },
     ]
 
     const paymentScheduleColumns: GridColumn<Quotation["payment_schedule"][number]>[] = [
-      { key: "payment_term", label: "Payment Term", type: "text", weight: 2 },
-      { key: "description", label: "Description", type: "text", weight: 3 },
+      { key: "payment_term", label: "Payment Term", type: "text" },
+      { key: "description", label: "Description", type: "text" },
       { key: "due_date", label: "Due Date", type: "date" },
       { key: "invoice_portion", label: "Invoice Portion", type: "number", align: "right" },
       {
@@ -1133,18 +1122,17 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
     ]
 
     const pricingRuleColumns: GridColumn<PricingRuleRow>[] = [
-      { key: "pricing_rule", label: "Pricing Rule", type: "readonly", weight: 2 },
+      { key: "pricing_rule", label: "Pricing Rule", type: "readonly" },
       {
         key: "rule_applied",
         label: "Applied",
         type: "readonly",
-        weight: 1,
         formatter: (row) => (row.rule_applied ? "Yes" : "No"),
       },
     ]
 
     const lostReasonColumns: GridColumn<LostReasonRow>[] = [
-      { key: "lost_reason", label: "Lost Reason", type: "readonly", weight: 2 },
+      { key: "lost_reason", label: "Lost Reason", type: "readonly" },
     ]
 
     // ERPNext set_dynamic_labels outs the party label to quotation_to ("Customer").
@@ -1495,11 +1483,20 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
                     <div className="space-y-3">
                       <div>
                         <label className={labelClass}>Currency *</label>
-                        <Combobox
-                          name="currency"
+                        <LinkSearchField
                           value={form.currency || companyCurrency}
-                          options={currencies}
-                          onChange={(_name, val) => void handleCurrencyChange(val)}
+                          onChange={(v) => {
+                            if (v) void handleCurrencyChange(v)
+                          }}
+                          searchFn={async (q) => ({
+                            items: await customerService.searchLink("Currency", q, "Quotation"),
+                          })}
+                          validate={async (v) => {
+                            await customerService.validateLink("Currency", v)
+                          }}
+                          docType="Currency"
+                          placeholder="Select currency…"
+                          clearIconMode="hover"
                           disabled={rule("currency").readOnly}
                         />
                       </div>
@@ -1808,6 +1805,7 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
                     docType="Incoterm"
                     placeholder="Select incoterm…"
                     clearIconMode="hover"
+                    fetchLabelOnMount
                     disabled={!isFieldEditable("incoterm")}
                   />
                 </Field>
@@ -1926,11 +1924,11 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
                         {rule("base_in_words").visible && (
                           <div>
                             <label className={labelClass}>In Words ({companyCurrency})</label>
-                            <input
-                              type="text"
+                            <textarea
                               value={baseInWordsDisplay}
-                              className={`${inputClass} bg-gray-50 font-bold`}
+                              rows={2}
                               readOnly
+                              className={`${inputClass} bg-gray-50 font-bold resize-none`}
                             />
                           </div>
                         )}
@@ -2002,11 +2000,11 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
                       {rule("in_words").visible && (
                         <div>
                           <label className={labelClass}>In Words ({quoteCurrency})</label>
-                          <input
-                            type="text"
+                          <textarea
                             value={inWordsDisplay}
-                            className={`${inputClass} bg-gray-50 font-bold`}
+                            rows={2}
                             readOnly
+                            className={`${inputClass} bg-gray-50 font-bold resize-none`}
                           />
                         </div>
                       )}

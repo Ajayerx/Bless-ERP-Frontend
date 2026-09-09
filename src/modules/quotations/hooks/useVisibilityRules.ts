@@ -295,6 +295,8 @@ export const EMPTY_HIDE_EXEMPT = new Set([
   "bundle_items_section",
   "in_words",
   "base_in_words",
+  // action controls carry no value and are never null-hidden by base_control
+  "update_auto_repeat_reference",
 ])
 
 const DEFAULT_FIELD_STATE: ResolvedFieldState = {
@@ -306,12 +308,15 @@ const DEFAULT_FIELD_STATE: ResolvedFieldState = {
 
 /**
  * ERPNext docstatus-driven rendering parity (applied to every field query):
- * - Draft (0): all fields visible and editable.
- * - Submitted (1): read-only unless allow_on_submit; empty read-only fields
- *   are hidden entirely — only fields carrying data show (allow_on_submit
- *   fields, being still writable, are exempt from the empty-hide).
- * - Cancelled (2): everything read-only (incl. allow_on_submit); allow_on_submit
- *   fields behave like other read-only fields, so empty ones are hidden.
+ * Mirrors perm.js `get_field_display_status` then base_control `get_status`:
+ * - Draft (0): fields editable; read-only fields with a null value are hidden.
+ * - Submitted (1): read-only unless allow_on_submit (and not read_only — By
+ *   Read Only runs after By Allow on Submit, so a read_only + allow_on_submit
+ *   field stays read-only); empty read-only fields are hidden entirely — only
+ *   fields carrying data show (fields still writable are exempt).
+ * - Cancelled (2): everything read-only (incl. allow_on_submit); empty
+ *   read-only fields are hidden.
+ * `isDocFieldEmpty` matches Frappe `is_null` — `0`/`false` are NOT null.
  */
 export function resolveDocstatusAware(
   base: ResolvedFieldState,
@@ -319,16 +324,17 @@ export function resolveDocstatusAware(
   docstatus: number,
   exemptEmptyHide = false,
 ): ResolvedFieldState {
-  const hiddenEmpty =
-    docstatus !== 0 &&
-    !(docstatus === 1 && base.allowOnSubmit) &&
-    !exemptEmptyHide &&
-    isDocFieldEmpty(value)
+  const submitEditable = docstatus === 1 && base.allowOnSubmit && !base.readOnly
+  // Final display status mirrors perm.js get_field_display_status: "Read" when
+  // statically read-only, on cancelled docs, or on submitted docs that are not
+  // still writable (allow_on_submit and not read_only).
+  const readOnly = base.readOnly || (docstatus === 2 ? true : docstatus === 1 && !submitEditable)
+  // base_control.get_status null-hides values whose display status is "Read".
+  const hiddenEmpty = readOnly && !exemptEmptyHide && isDocFieldEmpty(value)
   return {
     ...base,
     visible: base.visible && !hiddenEmpty,
-    readOnly:
-      base.readOnly || (docstatus === 2 ? true : docstatus === 1 && !base.allowOnSubmit),
+    readOnly,
   }
 }
 
