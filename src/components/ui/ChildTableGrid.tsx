@@ -21,7 +21,7 @@ export interface GridColumn<T> {
   render?: (row: T) => ReactNode;
   formatter?: (row: T) => ReactNode;
   /** Color indicator dot rendered before the cell value (ERPNext grid indicator). */
-  indicator?: (row: T) => "green" | "orange" | "yellow" | undefined | null;
+  indicator?: (row: T) => "green" | "red" | "orange" | "yellow" | undefined | null;
   prefix?: string;
   weight?: number;
   align?: "left" | "right";

@@ -1488,7 +1488,31 @@ export const invoiceService = {
     targetDoc: Record<string, unknown>,
     args?: Record<string, unknown>,
   ): Promise<Record<string, unknown>> {
-    const mappedTarget = toSalesInvoiceTargetDoc(targetDoc)
+    // ERPNext map_docs merges source docs INTO the provided target_doc. Like
+    // erpnext.utils.map_current_doc we forward only a minimal header target:
+    // dumping the whole SI doc (items/taxes/name/docstatus) makes the backend
+    // return the mapped doc with an empty item table.
+    const headerTarget: Record<string, unknown> = { doctype: "Sales Invoice" }
+    for (const key of [
+      "customer",
+      "company",
+      "posting_date",
+      "due_date",
+      "currency",
+      "selling_price_list",
+      "price_list_currency",
+      "conversion_rate",
+      "plc_conversion_rate",
+      "update_stock",
+      "is_return",
+      "project",
+      "set_warehouse",
+      "is_pos",
+    ] as const) {
+      const value = targetDoc[key]
+      if (value !== undefined && value !== null) headerTarget[key] = value
+    }
+    const mappedTarget = toSalesInvoiceTargetDoc(headerTarget)
     return apiFormCall<Record<string, unknown>>("/method/frappe.model.mapper.map_docs", [
       ["method", method],
       ["source_names", JSON.stringify(sourceNames)],

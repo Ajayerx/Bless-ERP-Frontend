@@ -51,6 +51,7 @@ import ItemisedTaxBreakup from "@/modules/invoices/components/ItemisedTaxBreakup
 import SalesTaxesChargesTable from "@/modules/invoices/components/SalesTaxesChargesTable"
 import { moneyInWords } from "@/modules/payments/utils/moneyInWords"
 import { quotationService } from "@/modules/quotations/services"
+import { isFilledItemRow } from "@/modules/sales-orders/utils/items"
 import { ScanBarcode } from "lucide-react"
 import type { AccountingDimension } from "@/services"
 import type { Product } from "@/services"
@@ -98,6 +99,7 @@ type SalesOrderFormTab = "details" | "address" | "terms" | "more_info"
 export interface SalesOrderFormHandle {
   save: (action?: "Save" | "Update" | "Submit") => Promise<string | undefined>
   isDirty: () => boolean
+  addItems: (items: SalesOrderItemForm[]) => void
 }
 
 export interface SalesOrderFormProps {
@@ -109,6 +111,124 @@ export interface SalesOrderFormProps {
 
 function todayISO(): string {
   return new Date().toISOString().slice(0, 10)
+}
+
+// Field names excluded from the submitted-Sales-Order diff: the computed
+// header totals (derived from the item edit / the current form calculation)
+// and server-managed bookkeeping/status values. Everything else, including
+// the editable allow_on_submit headers, is a real user change we must flag.
+const SUBMITTED_DIFF_IGNORED_FIELDS = new Set([
+  "doctype",
+  "name",
+  "owner",
+  "creation",
+  "modified",
+  "modified_by",
+  "docstatus",
+  "idx",
+  "__islocal",
+  "__unsaved",
+  "_assign",
+  "_comments",
+  "_liked_by",
+  "_user_tags",
+  "status",
+  "billing_status",
+  "delivery_status",
+  "per_delivered",
+  "per_billed",
+  "per_picked",
+  "advance_paid",
+  "total_qty",
+  "total_net_weight",
+  "net_total",
+  "base_net_total",
+  "total",
+  "base_total",
+  "grand_total",
+  "base_grand_total",
+  "rounding_adjustment",
+  "rounded_total",
+  "base_rounding_adjustment",
+  "base_rounded_total",
+  "total_taxes_and_charges",
+  "base_total_taxes_and_charges",
+  "amount_eligible_for_commission",
+  "total_commission",
+  "discount_amount",
+  "base_discount_amount",
+  "other_charges_calculation",
+  "in_words",
+  "base_in_words",
+])
+
+function numEq(a: unknown, b: unknown): boolean {
+  const na = Number(a)
+  const nb = Number(b)
+  if (Number.isFinite(na) && Number.isFinite(nb)) return Math.abs(na - nb) < 1e-9
+  return a === b
+}
+
+// ERPNext locks a submitted Sales Order: only child item qty/rate may change
+// (update_child_qty_rate). A whole-doc re-save (savedocs with action
+// "Update") re-submits the document server-side, which the bench rejects with
+// a child-doctype permission 403. Diff the live form against the last-loaded
+// baseline so we can persist exactly the item changes and explain everything
+// else instead of hitting the doomed re-submit path.
+function diffSubmittedForm(
+  form: SalesOrderFormData,
+  baseline: SalesOrderFormData | null,
+): { removed: string[]; updatedItems: Array<{ docname?: string; item_code: string; qty: number; rate: number; uom?: string; conversion_factor?: number }>; nonItemFields: string[] } {
+  const removed: string[] = []
+  const updatedItems: Array<{ docname?: string; item_code: string; qty: number; rate: number; uom?: string; conversion_factor?: number }> = []
+  const nonItemFields: string[] = []
+
+  const baseItems = baseline?.items ?? []
+  const baseByName = new Map<string, SalesOrderItemForm>()
+  for (const row of baseItems) {
+    if (row.name) baseByName.set(row.name, row)
+  }
+
+  const currentNames = new Set<string>()
+  for (const row of form.items ?? []) {
+    if (row.name) currentNames.add(row.name)
+    const base = row.name ? baseByName.get(row.name) : undefined
+    const changed =
+      !base ||
+      !numEq(base.qty, row.qty) ||
+      !numEq(base.rate, row.rate) ||
+      !numEq(base.conversion_factor, row.conversion_factor) ||
+      (base.uom ?? "") !== (row.uom ?? "")
+    if (changed) {
+      updatedItems.push({
+        docname: row.name,
+        item_code: row.item_code ?? "",
+        qty: Number(row.qty) || 0,
+        rate: Number(row.rate) || 0,
+        uom: row.uom,
+        conversion_factor: Number(row.conversion_factor) || 1,
+      })
+    }
+  }
+  for (const row of baseItems) {
+    if (row.name && !currentNames.has(row.name)) {
+      removed.push(row.item_code || row.name)
+    }
+  }
+
+  const base = (baseline ?? {}) as Record<string, unknown>
+  const keys = new Set([...Object.keys(base), ...Object.keys(form as unknown as Record<string, unknown>)])
+  for (const key of keys) {
+    if (key === "items") continue
+    if (SUBMITTED_DIFF_IGNORED_FIELDS.has(key)) continue
+    const baseVal = (base as Record<string, unknown>)[key]
+    const formVal = (form as unknown as Record<string, unknown>)[key]
+    if (JSON.stringify(baseVal) !== JSON.stringify(formVal)) {
+      nonItemFields.push(key)
+    }
+  }
+
+  return { removed, updatedItems, nonItemFields }
 }
 
 function addDaysISO(days: number): string {
@@ -275,7 +395,9 @@ export default forwardRef<SalesOrderFormHandle, SalesOrderFormProps>(
     useEffect(() => {
       salesOrderService.getStockReservationStatus().then((enabled) => {
         setStockReservationEnabled(enabled)
-        if (!enabled) {
+        // Only default new-docs: mutating an existing (submitted/draft) doc
+        // here would dirty it against baseline and force the Update button.
+        if (!enabled && mode === "create") {
           setForm((prev) => ({
             ...prev,
             reserve_stock: 0,
@@ -283,6 +405,7 @@ export default forwardRef<SalesOrderFormHandle, SalesOrderFormProps>(
           }))
         }
       })
+      // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [])
 
     const formRef = useRef(form)
@@ -308,6 +431,11 @@ export default forwardRef<SalesOrderFormHandle, SalesOrderFormProps>(
             })),
           )
         }
+
+        // Only auto-fill defaults on fresh new-docs; patching an existing doc
+        // here would permanently dirty it against baseline (and thus always
+        // show the submitted-UPDATE button).
+        if (mode !== "create") return
 
         const company = formRef.current.company || defaultCompany
         const companyDims = dims.defaultDimensionsMap?.[company]
@@ -429,6 +557,16 @@ export default forwardRef<SalesOrderFormHandle, SalesOrderFormProps>(
 
       salesOrderService.validateLink("Company", company, []).catch(() => undefined)
 
+      // ERPNext parity: the debounced default-address fetch is a company
+      // *trigger* — it only fires when the user actually changes the Company.
+      // Auto-refilling it on load would silently dirty an untouched doc (and
+      // thus show the submitted UPDATE button after ~2s without any edit).
+      const companyChanged = initialData
+        ? company !== String(initialData.company ?? "")
+        : true
+
+      if (!companyChanged) return
+
       if (companyAddressTimer.current) clearTimeout(companyAddressTimer.current)
       companyAddressTimer.current = setTimeout(() => {
         salesOrderService
@@ -467,7 +605,7 @@ export default forwardRef<SalesOrderFormHandle, SalesOrderFormProps>(
     useEffect(() => {
       onDirtyChange?.(isDirty())
       // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [form])
+    }, [form, baseline])
 
     const isLocal = mode === "create" || !initialData?.name
     const baseRules = useSalesOrderVisibilityRules(form, undefined, isLocal)
@@ -1326,9 +1464,6 @@ export default forwardRef<SalesOrderFormHandle, SalesOrderFormProps>(
         align: "right",
         formatter: (row) => formatCurrency(row.amount ?? 0, currencyLabel),
       },
-      // ERPNext v15 sales_order_item.json: warehouse is in_list_view — shown in
-      // the read-only grid too (blank for drop-ship rows without a warehouse).
-      { key: "warehouse", label: "Source Warehouse", type: "readonly" },
     ]
 
     const paymentScheduleColumns: GridColumn<SalesOrderPaymentScheduleRow>[] = [
@@ -1415,6 +1550,45 @@ export default forwardRef<SalesOrderFormHandle, SalesOrderFormProps>(
     ]
 
     const handleSave = async (action?: "Save" | "Update" | "Submit"): Promise<string | undefined> => {
+      const submitted = mode === "edit" && (initialData?.docstatus ?? 0) === 1
+      if (submitted) {
+        // A submitted Sales Order cannot be re-saved as a whole document:
+        // savedocs action "Update" re-submits it server-side and the bench
+        // rejects that with a child-doctype permission 403 (PermissionError:
+        // No permission for Sales Order Item). ERPNext itself only allows
+        // child item qty/rate edits after submit, via update_child_qty_rate.
+        if (action === "Submit") {
+          throw new Error("This Sales Order is already submitted.")
+        }
+        const baseline = baselineRef.current
+        if (baseline) {
+          const diff = diffSubmittedForm(form, baseline)
+          if (diff.removed.length > 0) {
+            throw new Error(
+              `Items cannot be removed from a submitted Sales Order: ${diff.removed.join(", ")}.`,
+            )
+          }
+          if (diff.updatedItems.length > 0) {
+            if (diff.nonItemFields.length > 0) {
+              throw new Error(
+                `Submitted Sales Orders are locked after submission. Only item quantity/rate can be changed (Update Items) — locked field(s): ${diff.nonItemFields.join(", ")}.`,
+              )
+            }
+            await salesOrderService.updateChildQtyRate(initialData?.name ?? "", diff.updatedItems)
+            baselineRef.current = { ...form, name: initialData?.name }
+            setBaseline(baselineRef.current)
+            onSaved?.(initialData as unknown as SalesOrderDoc)
+            return initialData?.name
+          }
+          if (diff.nonItemFields.length > 0) {
+            throw new Error(
+              `Submitted Sales Orders are locked after submission — the server rejects re-saving a submitted order. Locked field(s): ${diff.nonItemFields.join(", ")}. Use "Update Items" for item quantity/rate, or amend the order.`,
+            )
+          }
+        }
+        return initialData?.name
+      }
+
       const doc: Record<string, unknown> = {
         ...form,
         // Flatten accounting_dimensions into top-level fields (ERPNext parity —
@@ -1453,11 +1627,7 @@ export default forwardRef<SalesOrderFormHandle, SalesOrderFormProps>(
         doc.name = "new-sales-order"
       }
       const saved =
-        action === "Submit"
-          ? await salesOrderService.saveDoc(doc, "Submit")
-          : mode === "edit" && (initialData?.docstatus ?? 0) === 1
-            ? await salesOrderService.saveDoc(doc, "Update")
-            : await salesOrderService.saveDoc(doc, "Save")
+        action === "Submit" ? await salesOrderService.saveDoc(doc, "Submit") : await salesOrderService.saveDoc(doc, "Save")
       baselineRef.current = { ...form, name: saved?.name }
       setBaseline(baselineRef.current)
       onSaved?.(saved)
@@ -1467,6 +1637,12 @@ export default forwardRef<SalesOrderFormHandle, SalesOrderFormProps>(
     useImperativeHandle(ref, () => ({
       save: handleSave,
       isDirty,
+      addItems: (newItems: SalesOrderItemForm[]) => {
+        setForm((prev) => ({
+          ...prev,
+          items: [...(prev.items ?? []).filter(isFilledItemRow), ...newItems],
+        }))
+      },
     }))
 
     const Field = ({
@@ -1974,7 +2150,7 @@ export default forwardRef<SalesOrderFormHandle, SalesOrderFormProps>(
                   </div>
                 ) : null}
                 {rule("set_warehouse").visible && <div>
-                  <label className={labelClass}>Set Source Warehouse</label>
+                  <label className={labelClass}>Set Warehouse</label>
                 <LinkSearchField
                   value={form.set_warehouse ?? ""}
                   onChange={(v) => update({ set_warehouse: v ?? "" })}

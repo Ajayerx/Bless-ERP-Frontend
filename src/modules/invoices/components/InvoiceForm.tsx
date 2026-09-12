@@ -1743,7 +1743,7 @@ export default function InvoiceForm({
               <div className="space-y-3">
                 {formData.updateStock && (
                   <div>
-                    <label className={labelClass}>Source Warehouse</label>
+                    <label className={labelClass}>Set Warehouse</label>
                     <LinkSearchField
                       value={formData.setWarehouse ?? ""}
                       onChange={(val) => {

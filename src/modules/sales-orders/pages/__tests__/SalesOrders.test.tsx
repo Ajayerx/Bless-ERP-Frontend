@@ -1,11 +1,15 @@
 ﻿import { render, screen, within, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
-import { MemoryRouter } from "react-router-dom"
+import { MemoryRouter, Routes, Route } from "react-router-dom"
 import { describe, it, expect, beforeAll, beforeEach, afterAll, afterEach, vi } from "vitest"
+import { http, HttpResponse } from "msw"
 
 import SalesOrders from "../SalesOrders"
+import { SalesOrderDetailWorkspace } from "../SalesOrderWorkspace"
 import { ToastProvider, MessageDialogProvider } from "@/components/ui"
-import { server, resetFixtures, lastRequest } from "@/mocks/server"
+import { AuthProvider } from "@/context/AuthContext"
+import { CompanyProvider } from "@/context/CompanyContext"
+import { server, resetFixtures, lastRequest, capturedRequests } from "@/mocks/server"
 import { salesOrders } from "@/mocks/handlers/frappe-lookups"
 
 vi.mock("@/components/layout/Topbar", () => ({ default: () => null }))
@@ -34,6 +38,24 @@ function renderPage() {
           <SalesOrders />
         </MessageDialogProvider>
       </ToastProvider>
+    </MemoryRouter>
+  )
+}
+
+function renderWorkspace(name: string) {
+  return render(
+    <MemoryRouter initialEntries={[`/sales-orders/${name}`]}>
+      <AuthProvider>
+        <CompanyProvider>
+          <ToastProvider>
+            <MessageDialogProvider>
+              <Routes>
+                <Route path="/sales-orders/:id" element={<SalesOrderDetailWorkspace />} />
+              </Routes>
+            </MessageDialogProvider>
+          </ToastProvider>
+        </CompanyProvider>
+      </AuthProvider>
     </MemoryRouter>
   )
 }
@@ -336,5 +358,255 @@ describe("SalesOrders list page (ERPNext parity)", () => {
         r.query.limit_page_length !== "0"
     )
     expect(lastFetch?.query.limit_page_length).toBe("100")
+  })
+})
+
+describe("SalesOrderWorkspace status dropdown (ERPNext parity)", () => {
+  it("shows a Status dropdown with On Hold + Close for an active submitted order", async () => {
+    renderWorkspace("SAL-ORD-2026-0001")
+
+    // Active submitted order → Update Items button present.
+    expect(await screen.findByRole("button", { name: "Update Items" })).toBeInTheDocument()
+
+    // No Update (save) button until the form is actually dirty.
+    expect(screen.queryByTestId("save_button")).not.toBeInTheDocument()
+
+    // Regression: the company default-address trigger used to fire 2s after load
+    // and silently dirty an untouched submitted doc, surfacing the Update button.
+    await new Promise((resolve) => setTimeout(resolve, 2100))
+    expect(screen.queryByTestId("save_button")).not.toBeInTheDocument()
+
+    // Status control lives in the toolbar (button), right next to Update Items,
+    // while the title row keeps a plain static badge.
+    const updateItems = screen.getByRole("button", { name: "Update Items" })
+    const trigger = screen.getByTitle("Change status")
+    expect(trigger.parentElement).toBe(updateItems.parentElement)
+    expect(trigger).toHaveTextContent("Status")
+    const badge = screen.getByText("TO DELIVER AND BILL", { selector: "span" })
+    expect(badge).toBeInTheDocument()
+
+    await user.click(trigger)
+    expect(await screen.findByRole("menuitem", { name: "On Hold" })).toBeInTheDocument()
+    const closeItem = screen.getByRole("menuitem", { name: "Close" })
+    expect(closeItem).toBeInTheDocument()
+    expect(screen.queryByRole("menuitem", { name: "Resume" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("menuitem", { name: "Re-open" })).not.toBeInTheDocument()
+
+    // Close is a direct call (no reason dialog required).
+    await user.click(closeItem)
+    await waitFor(() => {
+      const req = lastRequest(
+        (r) => r.path.endsWith("sales_order.update_status") && r.method === "POST"
+      )
+      expect(req?.body?.status).toBe("Closed")
+    })
+  })
+
+  it("requires a reason, records it as a comment, then holds the order", async () => {
+    renderWorkspace("SAL-ORD-2026-0001")
+    await screen.findByRole("button", { name: "Update Items" })
+
+    await user.click(screen.getByTitle("Change status"))
+    await user.click(await screen.findByRole("menuitem", { name: "On Hold" }))
+
+    expect(await screen.findByRole("heading", { name: "Reason for Hold" })).toBeInTheDocument()
+
+    // Empty reason is rejected.
+    await user.click(screen.getByRole("button", { name: "Hold" }))
+    expect(await screen.findByText("Reason for hold is required.")).toBeInTheDocument()
+
+    await user.type(screen.getByLabelText(/Hold Reason/i), "Cashflow freeze")
+    await user.click(screen.getByRole("button", { name: "Hold" }))
+
+    await waitFor(() => {
+      const commentReq = lastRequest((r) => r.path.endsWith("form.utils.add_comment"))
+      expect(String(commentReq?.body?.content ?? "")).toContain("Reason for hold: Cashflow freeze")
+    })
+    await waitFor(() => {
+      const statusReq = lastRequest(
+        (r) => r.path.endsWith("sales_order.update_status") && r.method === "POST"
+      )
+      expect(statusReq?.body?.status).toBe("On Hold")
+    })
+
+    // After reload the dropdown shows Resume + Close (the static tool bar
+    // button keeps its "Status" label; the title-row badge carries the state).
+    await waitFor(() => {
+      expect(screen.getByText("ON HOLD", { selector: "span" })).toBeInTheDocument()
+    })
+    await user.click(screen.getByTitle("Change status"))
+    expect(await screen.findByRole("menuitem", { name: "Resume" })).toBeInTheDocument()
+    expect(screen.getByRole("menuitem", { name: "Close" })).toBeInTheDocument()
+    expect(screen.queryByRole("menuitem", { name: "On Hold" })).not.toBeInTheDocument()
+  })
+
+  it("hides status actions and Update Items for a fully delivered + billed order", async () => {
+    renderWorkspace("SAL-ORD-2026-0004")
+    await screen.findByText("SAL-ORD-2026-0004")
+
+    expect(screen.queryByRole("button", { name: "Update Items" })).not.toBeInTheDocument()
+    expect(screen.queryByTitle("Change status")).not.toBeInTheDocument()
+    expect(screen.getByText("COMPLETED")).toBeInTheDocument()
+  })
+
+  it("persists Update Items qty edits into the main items grid", async () => {
+    renderWorkspace("SAL-ORD-2026-0001")
+    await screen.findByRole("button", { name: "Update Items" })
+
+    await user.click(screen.getByRole("button", { name: "Update Items" }))
+    const dialog = await screen.findByRole("dialog")
+    expect(within(dialog).getByText("PRD-001")).toBeInTheDocument()
+
+    // Activate the first row (ERPNext-style one-row-at-a-time editing) and change qty.
+    await user.click(within(dialog).getByText("40"))
+    const [qtyInput] = within(dialog).getAllByRole("spinbutton")
+    await user.clear(qtyInput)
+    await user.type(qtyInput, "41")
+
+    await user.click(within(dialog).getByRole("button", { name: "Update" }))
+
+    // update_child_qty_rate was POSTed with the new qty for the EXISTING child
+    // row (ERPNext v15: rows carrying a docname are edited in place).
+    await waitFor(() => {
+      const req = lastRequest(
+        (r) => r.path.endsWith("accounts_controller.update_child_qty_rate") && r.method === "POST"
+      )
+      expect(req).toBeTruthy()
+      const trans = JSON.parse(String(req?.body?.trans_items ?? "[]")) as Array<Record<string, unknown>>
+      expect(trans[0]).toMatchObject({ item_code: "PRD-001", qty: 41, docname: "PRD-001" })
+    })
+
+    // Dialog closes and the workspace reloads the doc — the main grid's first
+    // row now shows the updated qty.
+    await waitFor(() => {
+      expect(within(dialog).queryByRole("button", { name: "Update" })).not.toBeInTheDocument()
+    })
+    await waitFor(() => {
+      const cell = document.querySelector('[data-testid="sales-order-items_0_qty"]')
+      expect(cell).toHaveTextContent("41")
+    })
+  })
+
+  it("surfaces an ERPNext update_child_qty_rate validation error instead of silently closing", async () => {
+    // Frappe reports many validations as HTTP 200 + _server_messages/exc_type.
+    // The update service must surface them so the dialog shows the reason and
+    // stays open instead of silently reloading an unchanged doc.
+    server.use(
+      http.post(
+        "*/api/method/erpnext.controllers.accounts_controller.update_child_qty_rate",
+        () =>
+          HttpResponse.json({
+            exc_type: "ValidationError",
+            exc: "ValidationError: Cannot set quantity less than delivered quantity.",
+            _server_messages:
+              '[{"message":"Cannot set quantity less than delivered quantity.","indicator":"red","raise_exception":1}]',
+          }),
+      ),
+    )
+    renderWorkspace("SAL-ORD-2026-0001")
+    await screen.findByRole("button", { name: "Update Items" })
+
+    try {
+      await user.click(screen.getByRole("button", { name: "Update Items" }))
+      const dialog = await screen.findByRole("dialog")
+      await user.click(within(dialog).getByText("40"))
+      const [qtyInput] = within(dialog).getAllByRole("spinbutton")
+      await user.clear(qtyInput)
+      await user.type(qtyInput, "999")
+      await user.click(within(dialog).getByRole("button", { name: "Update" }))
+
+      await waitFor(() => {
+        expect(
+          within(dialog).getByText("Cannot set quantity less than delivered quantity.")
+        ).toBeInTheDocument()
+      })
+      expect(within(dialog).getByRole("button", { name: "Update" })).toBeInTheDocument()
+    } finally {
+      server.resetHandlers()
+    }
+  })
+
+  it("stays clean until edited and clears dirty after saving (draft)", async () => {
+    renderWorkspace("SAL-ORD-2026-0005")
+    await screen.findByTestId("submit_button")
+
+    // A freshly loaded untouched draft shows Submit, never a Save/Update button.
+    expect(screen.queryByTestId("save_button")).not.toBeInTheDocument()
+    await new Promise((resolve) => setTimeout(resolve, 2100))
+    expect(screen.queryByTestId("save_button")).not.toBeInTheDocument()
+
+    // Activate the first item row (ERPNext-style editing) and bump qty → dirty.
+    await user.click(screen.getByText("40"))
+    const qtyCell = document.querySelector('[data-testid="sales-order-items_0_qty"]')
+    const qtyInput = within(qtyCell as HTMLElement).getByRole("spinbutton")
+    await user.clear(qtyInput)
+    await user.type(qtyInput, "41")
+    await waitFor(() => expect(screen.getByTestId("save_button")).toBeInTheDocument())
+
+    // Saving an existing draft resets the baseline → the Save button disappears.
+    await user.click(screen.getByTestId("save_button"))
+    await waitFor(() => expect(screen.queryByTestId("save_button")).not.toBeInTheDocument())
+    expect(screen.getByTestId("submit_button")).toBeInTheDocument()
+  })
+
+  it("never re-submits a submitted order via savedocs (non-item edit → locked message)", async () => {
+    renderWorkspace("SAL-ORD-2026-0001")
+    await screen.findByRole("button", { name: "Update Items" })
+    expect(screen.queryByTestId("save_button")).not.toBeInTheDocument()
+
+    // po_no is an editable allow_on_submit header — editing it dirties the form
+    // and surfaces the Update button. Regression: the old code re-sent the whole
+    // submitted doc through frappe.desk.form.save.savedocs, which re-submits the
+    // order server-side and trips a child-doctype permission 403.
+    await user.type(screen.getByPlaceholderText("PO number…"), "PO-999")
+    await waitFor(() => expect(screen.getByTestId("save_button")).toBeInTheDocument())
+
+    const before = capturedRequests.length
+    await user.click(screen.getByTestId("save_button"))
+
+    expect(await screen.findByText(/locked after submission/i)).toBeInTheDocument()
+    expect(screen.getByText(/po_no/)).toBeInTheDocument()
+
+    const duringSave = capturedRequests.slice(before)
+    expect(duringSave.some((r) => r.path === "/api/method/frappe.desk.form.save.savedocs")).toBe(false)
+  })
+
+  it("resolves the selling price when an item is added through Update Items", async () => {
+    renderWorkspace("SAL-ORD-2026-0001")
+    await screen.findByRole("button", { name: "Update Items" })
+
+    await user.click(screen.getByRole("button", { name: "Update Items" }))
+    const dialog = await screen.findByRole("dialog")
+    expect(within(dialog).getByText("PRD-001")).toBeInTheDocument()
+
+    // Rewrite the first row's item to PRD-003 (Wild Blueberry Jam, $15 in
+    // Standard Selling). Regression: the enrich envelope used to price newly
+    // selected items at 0 on the real bench.
+    await user.click(within(dialog).getByText("PRD-001"))
+    const itemInput = within(dialog).getByPlaceholderText("Search item…")
+    await user.clear(itemInput)
+    await user.type(itemInput, "PRD-003")
+
+    const option = await screen.findByRole("button", { name: /PRD-003/ })
+    await user.click(option)
+
+    await waitFor(() => {
+      const [qtyInput, rateInput] = within(dialog).getAllByRole("spinbutton")
+      expect(qtyInput).toHaveValue(40)
+      expect(rateInput).toHaveValue(15)
+    })
+
+    const detailsReq = lastRequest(
+      (r) => r.path.endsWith("get_item_details.get_item_details") && r.method === "POST"
+    )
+    const args = (() => {
+      try {
+        return JSON.parse(String((detailsReq?.body as Record<string, unknown>)?.args ?? "{}"))
+      } catch {
+        return {}
+      }
+    })() as Record<string, unknown>
+    expect(args.item_code).toBe("PRD-003")
+    expect(args.price_list).toBe("Standard Selling")
   })
 })

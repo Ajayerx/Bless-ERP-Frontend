@@ -151,6 +151,24 @@ export const paymentScheduleRows = [
   { payment_term: "50% on Delivery", description: "50% of the quotation amount due on delivery", due_date: "2026-07-31", invoice_portion: 50, payment_amount: 1225.00 },
 ]
 
+// Enriches a Sales Order's child rows with the ERPNext child-row shape so the
+// workspace keeps a stable `name` per row (real ERPNext rows always carry a
+// docname). Identity falls back to item_code (unique within an SO) — this is
+// exactly what update_child_qty_rate matches on for in-place edits.
+export function withItemNames(name: string, items?: unknown[]): Record<string, unknown>[] {
+  return (Array.isArray(items) ? items : quotationItems).map((i, idx) => {
+    const raw = (i ?? {}) as Record<string, unknown>
+    return {
+      ...raw,
+      doctype: "Sales Order Item",
+      parentfield: "items",
+      parenttype: "Sales Order",
+      parent: name,
+      name: String(raw.name ?? raw.item_code ?? `item-${idx + 1}`),
+    }
+  })
+}
+
 // ── Sales Orders (list rows, ERPNext shape) ─────────────────────────
 export const salesOrders = [
   { name: "SAL-ORD-2026-0001", customer: "CUST-0001", customer_name: "Maple Leaf Bakery", transaction_date: "2026-07-02", delivery_date: "2026-07-15", grand_total: 2450.00, status: "To Deliver and Bill", docstatus: 1, per_delivered: 0, per_billed: 0, owner: "admin@blesserp.com", creation: "2026-07-02T10:15:00", modified: "2026-07-02T10:15:00", modified_by: "admin@blesserp.com", _assign: '["jane.doe@blesserp.com"]' },
@@ -379,6 +397,7 @@ export const frappeLookupHandlers = [
     if (doctype === "Sales Order") {
       const row = salesOrders.find((s) => s.name === name)
       if (!row) return HttpResponse.json({ data: null })
+      const extras = row as unknown as Record<string, unknown>
       return HttpResponse.json({
         data: {
           doctype: "Sales Order",
@@ -392,10 +411,15 @@ export const frappeLookupHandlers = [
           docstatus: row.docstatus,
           per_delivered: row.per_delivered,
           per_billed: row.per_billed,
+          order_type: "Sales",
           company: "BlessERP Inc.",
           currency: "CAD",
-          items: quotationItems,
-          taxes: quotationTaxes,
+          selling_price_list: "Standard Selling",
+          price_list_currency: "CAD",
+          conversion_rate: 1,
+          plc_conversion_rate: 1,
+          items: withItemNames(row.name, extras.items as unknown[] | undefined),
+          taxes: Array.isArray(extras.taxes) ? (extras.taxes as unknown[]) : quotationTaxes,
           owner: row.owner,
           creation: row.creation,
           modified: row.modified,
@@ -558,6 +582,7 @@ export const frappeLookupHandlers = [
       const body = (await request.json()) as Record<string, unknown>
       salesOrders[idx] = { ...salesOrders[idx], ...body, modified: new Date().toISOString().replace("T", " ").slice(0, 19) }
       const row = salesOrders[idx]
+      const extras = row as unknown as Record<string, unknown>
       return HttpResponse.json({
         data: {
           doctype: "Sales Order",
@@ -571,10 +596,15 @@ export const frappeLookupHandlers = [
           docstatus: row.docstatus,
           per_delivered: row.per_delivered,
           per_billed: row.per_billed,
+          order_type: "Sales",
           company: "BlessERP Inc.",
           currency: "CAD",
-          items: quotationItems,
-          taxes: quotationTaxes,
+          selling_price_list: String(extras.selling_price_list ?? "Standard Selling"),
+          price_list_currency: "CAD",
+          conversion_rate: 1,
+          plc_conversion_rate: 1,
+          items: withItemNames(row.name, extras.items as unknown[] | undefined),
+          taxes: Array.isArray(extras.taxes) ? (extras.taxes as unknown[]) : quotationTaxes,
           owner: row.owner,
           creation: row.creation,
           modified: row.modified ?? row.creation,

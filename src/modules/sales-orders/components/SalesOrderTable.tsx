@@ -45,13 +45,6 @@ const statusIcon: Record<SalesOrderStatus, React.ReactNode> = {
   Closed: <Lock size={14} />,
 }
 
-const fulfillmentVariant: Record<string, "success" | "warning" | "info" | "danger"> = {
-  fulfilled: "success",
-  partial: "warning",
-  pending: "info",
-  cancelled: "danger",
-}
-
 function buildColumns(actions: {
   onSubmitSingle: (name: string) => void
   onCancelSingle: (name: string) => void

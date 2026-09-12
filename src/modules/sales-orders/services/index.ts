@@ -8,6 +8,7 @@ import {
   type SalesOrderListResponse,
   type SalesOrderDoc,
   type SalesOrderFormData,
+  type SalesOrderItemForm,
   type SalesOrderTax,
   type SalesOrderStatus,
   type SalesOrderDocStatus,
@@ -27,6 +28,11 @@ export type {
 
 const DOCTYPE = "Sales Order"
 
+/** Local-date ISO string (YYYY-MM-DD) for the desk get_item_details envelope. */
+function todayIsoDate(): string {
+  return new Date().toISOString().slice(0, 10)
+}
+
 /** Columns offered by the list export dialog (server-side data_import template). */
 export const SALES_ORDER_EXPORT_FIELDS: Record<string, string[]> = {
   "Sales Order": [
@@ -41,6 +47,26 @@ export const SALES_ORDER_EXPORT_FIELDS: Record<string, string[]> = {
   taxes: [
     "charge_type", "account_head", "description", "rate", "tax_amount", "total",
   ],
+}
+
+function toSalesOrderTargetDoc(source: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {
+    doctype: "Sales Order",
+  }
+  for (const [key, value] of Object.entries(source)) {
+    if (value === undefined || value === null) continue
+    const mapped =
+      key === "transactionDate" ? "transaction_date"
+      : key === "deliveryDate" ? "delivery_date"
+      : key === "sellingPriceList" ? "selling_price_list"
+      : key === "conversionRate" ? "conversion_rate"
+      : key === "customerName" ? "customer_name"
+      : key === "skipDeliveryNote" ? "skip_delivery_note"
+      : key === "orderType" ? "order_type"
+      : key
+    out[mapped] = value
+  }
+  return out
 }
 
 // ── frappe.request.is_fresh equivalent (request.js:96-110) ──────────────
@@ -306,7 +332,7 @@ function deskChildRow(
       account_currency: row.account_currency ?? "",
       tax_amount: dnum(row.tax_amount),
       total: dnum(row.total),
-      parent,
+      parent: parentName,
       parentfield,
       parenttype: DOCTYPE,
       idx,
@@ -326,7 +352,7 @@ function deskChildRow(
     }
   } else {
     Object.assign(out, {
-      parent,
+      parent: parentName,
       parentfield,
       parenttype: DOCTYPE,
       idx,
@@ -903,8 +929,8 @@ export const salesOrderService = {
     )
   },
 
-  // Warehouse search for the items grid Source Warehouse column, scoped to
-  // the Sales Order's company (mirrors ERPNext's warehouse_query link).
+  // Warehouse search scoped to the Sales Order's company (mirrors ERPNext's
+  // warehouse_query link).
   async searchWarehouses(
     query: string,
     company?: string,
@@ -1704,7 +1730,325 @@ export const salesOrderService = {
       return true
     }
   },
+
+  // ── Update Items on submitted Sales Order ───────────────────────────
+  async updateChildQtyRate(
+    parentDoctypeName: string,
+    transItems: Array<{
+      docname?: string
+      item_code: string
+      qty: number
+      rate: number
+      uom?: string
+      conversion_factor?: number
+    }>,
+    childDocname: string = "items",
+  ): Promise<void> {
+    const body = await postMethodRaw<{ exc_type?: string }>(
+      "erpnext.controllers.accounts_controller.update_child_qty_rate",
+      {
+        parent_doctype: DOCTYPE,
+        trans_items: JSON.stringify(transItems),
+        parent_doctype_name: parentDoctypeName,
+        child_docname: childDocname,
+      },
+    )
+    const messages = serverMessagesFromBody(body)
+    if (messages.length > 0) {
+      throw new ApiError(0, messages.map((m) => m.message).join(" "), undefined, messages[0])
+    }
+  },
+
+  // ── Get Items From (map source docs to current SO inline) ──────────
+  async mapSourceDocuments(
+    method: string,
+    sourceNames: string[],
+    targetDoc: Record<string, unknown>,
+    args?: Record<string, unknown>,
+  ): Promise<Record<string, unknown>> {
+    // ERPNext map_docs merges source docs INTO the provided target_doc. Like
+    // erpnext.utils.map_current_doc we forward only a minimal header target:
+    // dumping the whole SO doc (items/taxes/name/docstatus) makes the backend
+    // return the mapped doc with an empty item table.
+    const headerTarget: Record<string, unknown> = { doctype: "Sales Order" }
+    for (const key of [
+      "customer",
+      "company",
+      "transaction_date",
+      "delivery_date",
+      "currency",
+      "order_type",
+      "selling_price_list",
+      "price_list_currency",
+      "conversion_rate",
+      "plc_conversion_rate",
+      "project",
+      "set_warehouse",
+      "skip_delivery_note",
+    ] as const) {
+      const value = targetDoc[key]
+      if (value !== undefined && value !== null) headerTarget[key] = value
+    }
+    const mappedTarget = toSalesOrderTargetDoc(headerTarget)
+    return apiFormCall<Record<string, unknown>>("/method/frappe.model.mapper.map_docs", [
+      ["method", method],
+      ["source_names", JSON.stringify(sourceNames)],
+      ["target_doc", JSON.stringify(mappedTarget)],
+      ["args", JSON.stringify(args ?? {})],
+    ])
+  },
+
+  async searchWidget(args: {
+    doctype: string
+    txt?: string
+    query?: string
+    searchfield?: string
+    start?: number
+    page_length?: number
+    filters?: Record<string, unknown>
+    filter_fields?: string[]
+    as_dict?: boolean
+  }): Promise<Array<Record<string, unknown>>> {
+    const fields: Array<[string, string]> = [
+      ["doctype", args.doctype],
+      ["txt", args.txt ?? ""],
+      ...(args.query ? [["query", args.query] as [string, string]] : []),
+      ...(args.searchfield ? [["searchfield", args.searchfield] as [string, string]] : []),
+      ["start", String(args.start ?? 0)],
+      ["page_length", String(args.page_length ?? 10)],
+    ]
+    if (args.filters) fields.push(["filters", JSON.stringify(args.filters)])
+    if (args.filter_fields) fields.push(["filter_fields", JSON.stringify(args.filter_fields)])
+    fields.push(["as_dict", args.as_dict === false ? "false" : "true"])
+    return apiFormCall<Array<Record<string, unknown>>>(
+      "/method/frappe.desk.search.search_widget",
+      fields,
+      { doctype: args.doctype },
+    )
+  },
+
+  async getList(args: {
+    doctype: string
+    fields: string[]
+    filters?: unknown[]
+    parent?: string
+    order_by?: string
+    limit_start?: number
+    limit_page_length?: number
+  }): Promise<Array<Record<string, unknown>>> {
+    const fields: Array<[string, string]> = [
+      ["doctype", args.doctype],
+      ["fields", JSON.stringify(args.fields)],
+    ]
+    if (args.filters) fields.push(["filters", JSON.stringify(args.filters)])
+    if (args.parent !== undefined) fields.push(["parent", args.parent])
+    if (args.order_by) fields.push(["order_by", args.order_by])
+    fields.push(["limit_start", String(args.limit_start ?? 0)])
+    fields.push(["limit_page_length", String(args.limit_page_length ?? 20)])
+    return apiFormCall<Array<Record<string, unknown>>>("/method/frappe.client.get_list", fields, {
+      doctype: args.doctype,
+    })
+  },
 }
 
 export { deskChildRow }
 export type { DeskDocEnvelopeOptions }
+
+/** Child-row std fields skipped when merging desk get_item_details output. */
+export const SALES_ORDER_ITEM_STD_FIELDS = new Set([
+  "doctype",
+  "name",
+  "owner",
+  "creation",
+  "modified",
+  "modified_by",
+  "docstatus",
+  "idx",
+  "parent",
+  "parentfield",
+  "parenttype",
+  "__islocal",
+  "__unsaved",
+  "__unedited",
+  "_user_tags",
+  "comments",
+  "likes",
+])
+
+export interface EnrichSalesOrderItemOptions {
+  /** True for a fresh unsaved doc (desk __islocal/__unsaved envelope). */
+  isNew: boolean
+  /** Session user id (desk doc.owner). Omitted when unknown. */
+  owner?: string
+  /** Resolved doc name for the desk call (existing name or new-doc id). */
+  name: string
+  /** Company fallback when snapshot carries no company value. */
+  company?: string
+}
+
+/**
+ * ERPNext-faithful item select for a Sales Order item row. Single source of
+ * truth shared by the form's item grid and the Update Items dialog (mirrors
+ * the quotation module's enrichQuotationItem): validates the item link, calls
+ * the full desk get_item_details (price list, currency conversion, margins,
+ * discounts, pricing rules, item defaults), computes the net rate + amount
+ * like transaction.js, and fetches the item tax template.
+ *
+ * `snapshot` is the current Sales Order doc (party/price list/currency…),
+ * `item` the target row to enrich (may carry existing qty). The desk call
+ * rewrites volatile child fields (uom/conversion_factor/price fields reset to
+ * 0) exactly as the main form's runItemCodeFlow does; `opts.isNew` must
+ * therefore be true only for a real new doc.
+ */
+export async function enrichSalesOrderItem(
+  snapshot: Partial<SalesOrderDoc> & Record<string, unknown>,
+  item: SalesOrderItemForm | null,
+  itemCode: string,
+  opts: EnrichSalesOrderItemOptions,
+): Promise<SalesOrderItemForm | null> {
+  if (!item || !itemCode) return null
+
+  const patched: SalesOrderItemForm = {
+    ...item,
+    item_code: itemCode,
+    weight_per_unit: 0,
+    weight_uom: "",
+    uom: "",
+    conversion_factor: 0,
+    barcode: null,
+    pricing_rules: "",
+  }
+
+  await salesOrderService.validateLink("Item", itemCode, []).catch(() => undefined)
+
+  const items = [...((snapshot.items ?? []) as SalesOrderItemForm[])]
+  const idxOf = items.findIndex((r) => r === item || r.name === item.name)
+  if (idxOf >= 0) items[idxOf] = patched
+  else items.push(patched)
+
+  // ERPNext resolves the rate from args.price_list. A Sales Order whose
+  // selling_price_list is empty (e.g. a hand-crafted doc) yields rate 0 even
+  // when an Item Price exists — fall back to the customer's default price
+  // list so the added item still prices itself like desk would.
+  let priceList = String(snapshot.selling_price_list || "").trim()
+  if (!priceList) {
+    const customer = String(snapshot.customer || "").trim()
+    if (customer) {
+      const defaults = await salesOrderService.getValue(
+        "Customer",
+        "default_price_list",
+        { name: customer },
+      )
+      const fallback = (defaults as { default_price_list?: unknown })?.default_price_list
+      if (typeof fallback === "string" && fallback.trim()) priceList = fallback.trim()
+    }
+  }
+
+  const docName = opts.name || `new-sales-order-${deskRandomString()}`
+  const doc = buildDeskApplyPriceListDoc(
+    { ...snapshot, name: docName, items },
+    { isNew: opts.isNew, owner: opts.owner },
+  )
+  const args: Record<string, unknown> = {
+    item_code: itemCode,
+    barcode: null,
+    serial_no: undefined,
+    batch_no: undefined,
+    set_warehouse: snapshot.set_warehouse || undefined,
+    warehouse: patched.warehouse || undefined,
+    customer: snapshot.customer || undefined,
+    currency: snapshot.currency || undefined,
+    conversion_rate: snapshot.conversion_rate ?? 1,
+    price_list: priceList || undefined,
+    price_list_currency: snapshot.price_list_currency || undefined,
+    plc_conversion_rate: snapshot.plc_conversion_rate ?? 1,
+    company: snapshot.company || opts.company,
+    order_type: snapshot.order_type || undefined,
+    ignore_pricing_rule: snapshot.ignore_pricing_rule ?? 0,
+    doctype: DOCTYPE,
+    name: docName || undefined,
+    qty: patched.qty || 1,
+    net_rate: patched.rate || undefined,
+    stock_qty: patched.stock_qty || undefined,
+    conversion_factor: 0,
+    weight_per_unit: 0,
+    uom: null,
+    stock_uom: patched.stock_uom || "Nos",
+    tax_category: snapshot.tax_category || "",
+    item_tax_template: undefined,
+    child_doctype: "Sales Order Item",
+    child_docname: patched.name || undefined,
+    transaction_date: snapshot.transaction_date || todayIsoDate(),
+    delivery_date: snapshot.delivery_date || "",
+    is_pos: 0,
+    is_return: 0,
+    is_subcontracted: undefined,
+    update_stock: 0,
+  }
+
+  const details = await salesOrderService.getItemDetailsDesk(doc, args)
+  if (!details || typeof details !== "object") return null
+
+  const merged: Record<string, unknown> = { ...patched }
+  for (const [k, v] of Object.entries(details)) {
+    if (SALES_ORDER_ITEM_STD_FIELDS.has(k)) continue
+    merged[k] = v
+  }
+
+  const plr = Number(merged.price_list_rate) || 0
+  const marginType = String(merged.margin_type ?? "")
+  const mra = Number(merged.margin_rate_or_amount) || 0
+  const rateWithMargin = plr + (marginType === "Percentage" ? plr * (mra / 100) : mra)
+  const discPct = Number(merged.discount_percentage) || 0
+  let discountAmount = Number(merged.discount_amount) || 0
+  if (discPct && !discountAmount) discountAmount = rateWithMargin * (discPct / 100)
+  let rate = rateWithMargin
+  if (discountAmount > 0) {
+    rate = rateWithMargin - discountAmount
+    merged.discount_percentage = (100 * discountAmount) / rateWithMargin
+  }
+
+  const qty = Number(merged.qty) || 0
+  const convRate = Number(snapshot.conversion_rate) || 1
+  merged.rate = Math.round(rate * 100) / 100
+  merged.amount = Math.round(rate * qty * 100) / 100
+  merged.base_net_rate = Math.round(rate * convRate * 100) / 100
+  merged.stock_qty = qty * (Number(merged.conversion_factor) || 0)
+
+  if (plr > 0 && rate > plr) {
+    merged.discount_percentage = 0
+    merged.margin_type = "Amount"
+    merged.margin_rate_or_amount = Math.round((rate - plr) * 100) / 100
+    merged.rate_with_margin = rate
+  } else if (plr > 0) {
+    merged.discount_percentage = Math.round((1 - rate / plr) * 100 * 100) / 100
+    merged.discount_amount = Math.round((plr - rate) * 100) / 100
+    merged.margin_type = ""
+    merged.margin_rate_or_amount = 0
+    merged.rate_with_margin = 0
+  } else {
+    merged.discount_percentage = 0
+    merged.margin_type = ""
+    merged.margin_rate_or_amount = 0
+    merged.rate_with_margin = 0
+  }
+
+  if (!merged.delivery_date) {
+    merged.delivery_date = snapshot.delivery_date || ""
+  }
+
+  const mergedRow = merged as unknown as SalesOrderItemForm
+
+  if (mergedRow.item_code && mergedRow.rate) {
+    const tpl = await salesOrderService.getItemTaxTemplate({
+      item_code: mergedRow.item_code,
+      company: snapshot.company || opts.company || "",
+      base_net_rate: Number(merged.base_net_rate) || 0,
+      tax_category: snapshot.tax_category || "",
+      transaction_date: snapshot.transaction_date || "",
+    })
+    if (tpl) mergedRow.item_tax_template = tpl
+  }
+
+  return mergedRow
+}

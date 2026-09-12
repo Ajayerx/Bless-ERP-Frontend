@@ -46,6 +46,12 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+  Input,
   useMessageDialog,
   messageFromError,
 } from "@/components/ui"
@@ -55,6 +61,8 @@ import { useAuth } from "@/context/AuthContext"
 import PaymentActivity from "@/modules/payments/components/PaymentActivity"
 import SalesOrderForm, { type SalesOrderFormHandle } from "../components/SalesOrderForm"
 import SalesOrderMetaPanel from "../components/SalesOrderMetaPanel"
+import UpdateItemsDialog from "../components/UpdateItemsDialog"
+import GetItemsFromTrigger from "../components/GetItemsFromTrigger"
 import type { SalesOrderDoc, SalesOrderMappedDoc, SalesOrderStatus } from "../types"
 import { formatDate } from "@/lib/utils"
 
@@ -129,6 +137,11 @@ export default function SalesOrderWorkspace({ mode, id }: SalesOrderWorkspacePro
   const [dirty, setDirty] = useState(false)
   const [acting, setActing] = useState(false)
   const [createOpen, setCreateOpen] = useState(false)
+  const [updateItemsOpen, setUpdateItemsOpen] = useState(false)
+  const [holdOpen, setHoldOpen] = useState(false)
+  const [holdReason, setHoldReason] = useState("")
+  const [holdSaving, setHoldSaving] = useState(false)
+  const [holdError, setHoldError] = useState("")
 
   const [comments, setComments] = useState<PaymentActivityItem[]>([])
   const [commentsLoading, setCommentsLoading] = useState(false)
@@ -197,6 +210,10 @@ export default function SalesOrderWorkspace({ mode, id }: SalesOrderWorkspacePro
     setSalesOrder(doc)
     setDirty(false)
     loadComments(doc, currentUserId)
+  }
+
+  const handleAddItems = (fetchedItems: Array<Record<string, unknown>>) => {
+    formRef.current?.addItems(fetchedItems as unknown as SalesOrderDoc["items"])
   }
 
   const handleSave = async (action?: "Save" | "Update" | "Submit") => {
@@ -282,6 +299,52 @@ export default function SalesOrderWorkspace({ mode, id }: SalesOrderWorkspacePro
     }
   }
 
+  // ERPNext parity: holding a Sales Order first records the reason as a
+  // comment ("Reason for hold: <text>"), then flips status to On Hold.
+  const handleHold = async () => {
+    const doc = salesOrder
+    if (!doc || holdSaving) return
+    const reason = holdReason.trim()
+    if (!reason) {
+      setHoldError("Reason for hold is required.")
+      return
+    }
+    setHoldSaving(true)
+    setHoldError("")
+    try {
+      await salesOrderService.addComment(
+        doc.name,
+        "Reason for hold: " + reason,
+        user?.id ?? "",
+        user?.name ?? "",
+      )
+      await salesOrderService.updateStatus(doc.name, "On Hold")
+      setHoldOpen(false)
+      setHoldReason("")
+      showMessage("Sales Order placed on hold.")
+      await loadDoc(doc.name)
+    } catch (err) {
+      const msg = messageFromError(err, "Failed to place sales order on hold.")
+      setHoldError(typeof msg === "string" ? msg : msg.message)
+    } finally {
+      setHoldSaving(false)
+    }
+  }
+
+  const handleResume = async () => {
+    if (!salesOrder || acting) return
+    setActing(true)
+    try {
+      await salesOrderService.updateStatus(salesOrder.name, "Draft")
+      showMessage("Sales Order resumed.")
+      await loadDoc(salesOrder.name)
+    } catch (err) {
+      showMessage(messageFromError(err, "Failed to resume sales order."))
+    } finally {
+      setActing(false)
+    }
+  }
+
   const handleCreate = async (
     target: (typeof CREATE_TARGETS)[number],
   ) => {
@@ -324,6 +387,60 @@ export default function SalesOrderWorkspace({ mode, id }: SalesOrderWorkspacePro
     await loadComments(doc, currentUserId)
   }
 
+  // Dialogs are rendered above the loading guard so they stay mounted while
+  // the underlying doc reloads (the skeleton must not swallow a visible
+  // validation error from a failed Update Items attempt).
+  const dialogs = salesOrder ? (
+    <>
+      <UpdateItemsDialog
+        open={updateItemsOpen}
+        onOpenChange={setUpdateItemsOpen}
+        doc={salesOrder}
+        onUpdated={() => void loadDoc(salesOrder.name)}
+      />
+      <Dialog
+        open={holdOpen}
+        onOpenChange={(open) => {
+          setHoldOpen(open)
+          if (!open) {
+            setHoldReason("")
+            setHoldError("")
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Reason for Hold</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <label htmlFor="holdReason" className="text-sm text-body">
+              Hold Reason <span className="text-danger-600">*</span>
+            </label>
+            <Input
+              id="holdReason"
+              value={holdReason}
+              onChange={(e) => {
+                setHoldReason(e.target.value)
+                setHoldError("")
+              }}
+              placeholder="Enter the reason for holding this sales order"
+              autoFocus
+            />
+            {holdError && <p className="text-xs text-danger-600">{holdError}</p>}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setHoldOpen(false)} disabled={holdSaving}>
+              Cancel
+            </Button>
+            <Button onClick={() => void handleHold()} disabled={holdSaving} loading={holdSaving}>
+              {holdSaving ? "Placing on hold..." : "Hold"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  ) : null
+
   if (loading) {
     return (
       <>
@@ -332,6 +449,7 @@ export default function SalesOrderWorkspace({ mode, id }: SalesOrderWorkspacePro
           <Skeleton className="h-8 w-48" />
           <Skeleton className="h-64 w-full" />
         </div>
+        {dialogs}
       </>
     )
   }
@@ -341,6 +459,7 @@ export default function SalesOrderWorkspace({ mode, id }: SalesOrderWorkspacePro
       <>
         <Topbar />
         <div className="p-6 text-center text-muted py-24">Sales Order not found.</div>
+        {dialogs}
       </>
     )
   }
@@ -354,25 +473,46 @@ export default function SalesOrderWorkspace({ mode, id }: SalesOrderWorkspacePro
   const isClosed = status === "Closed"
   const isCompleted = status === "Completed"
 
+  // ERPNext can_update_items(): a submitted SO's items can still be updated
+  // unless it is Closed or fully delivered & billed.
+  const perDelivered = salesOrder?.per_delivered ?? 0
+  const perBilled = salesOrder?.per_billed ?? 0
+  const canUpdateItems =
+    isSubmitted && status !== "Closed" && perDelivered < 100 && perBilled < 100
+
   const renderToolbar = () => {
     if (mode === "new") {
       return (
-        <Button
-          variant="primary"
-          onClick={() => void handleSave("Save")}
-          disabled={acting}
-          loading={acting}
-          data-testid="save_button"
-        >
-          <Save size={16} />
-          {acting ? "Saving..." : "Save Draft"}
-        </Button>
+        <div className="flex items-center gap-3">
+          <GetItemsFromTrigger
+            customer={salesOrder?.customer}
+            company={salesOrder?.company}
+            formData={salesOrder as unknown as Record<string, unknown>}
+            onItemsFetched={handleAddItems}
+          />
+          <Button
+            variant="primary"
+            onClick={() => void handleSave("Save")}
+            disabled={acting}
+            loading={acting}
+            data-testid="save_button"
+          >
+            <Save size={16} />
+            {acting ? "Saving..." : "Save Draft"}
+          </Button>
+        </div>
       )
     }
 
     if (isDraft) {
       return (
         <>
+          <GetItemsFromTrigger
+            customer={salesOrder?.customer}
+            company={salesOrder?.company}
+            formData={salesOrder as unknown as Record<string, unknown>}
+            onItemsFetched={handleAddItems}
+          />
           <div className="relative">
             <Button
               size="sm"
@@ -433,6 +573,53 @@ export default function SalesOrderWorkspace({ mode, id }: SalesOrderWorkspacePro
     if (isSubmitted) {
       return (
         <>
+          {canUpdateItems && (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => setUpdateItemsOpen(true)}
+            >
+              <FileEdit size={14} /> Update Items
+            </Button>
+          )}
+          {!isCompleted && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="secondary" size="sm" title="Change status">
+                  Status <ChevronDown size={14} />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                {!isOnHold && !isClosed && (
+                  <>
+                    <DropdownMenuItem disabled={!canUpdateItems} onClick={() => setHoldOpen(true)}>
+                      On Hold
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      disabled={!canUpdateItems}
+                      onClick={() => void handleStatus("Closed", "Sales Order closed.")}
+                    >
+                      Close
+                    </DropdownMenuItem>
+                  </>
+                )}
+                {isOnHold && (
+                  <>
+                    <DropdownMenuItem onClick={() => void handleResume()}>Resume</DropdownMenuItem>
+                    <DropdownMenuItem
+                      disabled={!canUpdateItems}
+                      onClick={() => void handleStatus("Closed", "Sales Order closed.")}
+                    >
+                      Close
+                    </DropdownMenuItem>
+                  </>
+                )}
+                {isClosed && (
+                  <DropdownMenuItem onClick={() => void handleResume()}>Re-open</DropdownMenuItem>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
           <div className="relative">
             <Button
               size="sm"
@@ -474,36 +661,6 @@ export default function SalesOrderWorkspace({ mode, id }: SalesOrderWorkspacePro
               data-testid="save_button"
             >
               <CheckCircle2 size={14} /> Update
-            </Button>
-          )}
-          {!isOnHold && !isCompleted && !isClosed && (
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => void handleStatus("On Hold", "Sales Order placed on hold.")}
-              loading={acting}
-            >
-              On Hold
-            </Button>
-          )}
-          {(isOnHold || isClosed) && (
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => void handleStatus("To Deliver and Bill", "Sales Order resumed.")}
-              loading={acting}
-            >
-              Resume
-            </Button>
-          )}
-          {!isClosed && !isCompleted && (
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => void handleStatus("Closed", "Sales Order closed.")}
-              loading={acting}
-            >
-              Close
             </Button>
           )}
           <Button variant="danger" size="sm" onClick={() => void handleCancelDoc()} loading={acting}>
@@ -639,6 +796,7 @@ export default function SalesOrderWorkspace({ mode, id }: SalesOrderWorkspacePro
           </div>
         </div>
       </motion.div>
+      {dialogs}
     </>
   )
 }

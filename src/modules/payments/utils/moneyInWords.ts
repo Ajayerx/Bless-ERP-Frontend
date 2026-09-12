@@ -134,6 +134,29 @@ function getFractionLength(numberFormat: string): number {
   return NUMBER_FORMAT_INFO[numberFormat] ?? 2
 }
 
+let currencyNameLookup: Intl.DisplayNames | null = null
+let currencyNameLookupUsable = true
+
+// ERPNext renders the currency in amount-in-words via _(currencyCode,
+// context="Currency") — i.e. the currency NAME, not the ISO code. Map the code
+// with the platform's currency names (CAD → "Canadian Dollar") and fall back to
+// the code when the code is unknown or the API is unavailable.
+function getCurrencyName(code: string): string {
+  if (currencyNameLookupUsable && !currencyNameLookup) {
+    try {
+      currencyNameLookup = new Intl.DisplayNames("en", { type: "currency" })
+    } catch {
+      currencyNameLookupUsable = false
+    }
+  }
+  if (!currencyNameLookup) return code
+  try {
+    return currencyNameLookup.of(code) || code
+  } catch {
+    return code
+  }
+}
+
 export function moneyInWords(
   number: number | string | null | undefined,
   mainCurrency?: string,
@@ -147,6 +170,7 @@ export function moneyInWords(
   if (amount < 0) return ""
 
   const currency = mainCurrency || "CAD"
+  const currencyLabel = getCurrencyName(currency)
   const fractionCurrency = opts?.fractionCurrency || "Cent"
   const numberFormat = opts?.numberFormat || "#,###.##"
 
@@ -160,7 +184,7 @@ export function moneyInWords(
   const isZero = parseInt(mainPart, 10) === 0 && parseInt(fraction, 10) === 0
 
   if (isZero) {
-    return `${currency} Zero only.`
+    return `${currencyLabel} Zero only.`
   }
 
   if (parseInt(mainPart, 10) === 0) {
@@ -173,5 +197,5 @@ export function moneyInWords(
       ? ` and ${inWords(parseInt(fraction, 10), inMillion).replace(/\b\w/g, (c) => c.toUpperCase())} ${fractionCurrency}`
       : ""
 
-  return `${currency} ${mainWords}${fractionWords} only.`
+  return `${currencyLabel} ${mainWords}${fractionWords} only.`
 }

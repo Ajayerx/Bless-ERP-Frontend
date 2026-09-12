@@ -5,7 +5,8 @@ import { Loader2, ArrowRight } from "lucide-react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui"
 import { Button } from "@/components/ui"
 import LinkSearchField from "@/components/ui/LinkSearchField"
-import { invoiceService, customerService } from "@/services"
+import { salesOrderService } from "@/modules/sales-orders/services"
+import { customerService } from "@/modules/customers/services"
 import { cn } from "@/lib/utils"
 
 interface SourceDoc {
@@ -25,11 +26,6 @@ interface SetterField {
   defaultValue?: string
 }
 
-interface DataField {
-  fieldname: string
-  label: string
-}
-
 interface GetItemsFromModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -40,7 +36,6 @@ interface GetItemsFromModalProps {
   childDoctype?: string
   childFieldname?: string
   childColumns?: string[]
-  dataFields?: DataField[]
   customer?: string
   company?: string
   formData?: Record<string, unknown>
@@ -72,7 +67,6 @@ export default function GetItemsFromModal({
   childDoctype,
   childFieldname,
   childColumns = [],
-  dataFields = [],
   customer,
   company,
   formData,
@@ -96,7 +90,6 @@ export default function GetItemsFromModal({
   const [childMore, setChildMore] = useState(false)
   const [childPageLength, setChildPageLength] = useState(20)
   const [selectedChildren, setSelectedChildren] = useState<Set<string>>(new Set())
-  const [dataValues, setDataValues] = useState<Record<string, boolean>>({})
   const [fetching, setFetching] = useState(false)
 
   const userTypedRef = useRef(false)
@@ -117,26 +110,16 @@ export default function GetItemsFromModal({
     (values: Record<string, string>) => {
       const filters: Record<string, unknown> = {}
       if (company) filters["company"] = company
-      if (sourceDoctype === "Sales Order") {
-        filters["docstatus"] = 1
-        filters["status"] = ["not in", ["Closed", "On Hold"]]
-        filters["per_billed"] = ["<", 99.99]
-      }
       if (sourceDoctype === "Quotation") {
         filters["docstatus"] = 1
         filters["status"] = ["!=", "Lost"]
-      }
-      if (sourceDoctype === "Delivery Note") {
-        filters["docstatus"] = 1
-        filters["is_return"] = formData?.isReturn ? 1 : 0
-        if (customer) filters["customer"] = customer
       }
       for (const fieldname of setterFieldnames) {
         if (values[fieldname]) filters[fieldname] = values[fieldname]
       }
       return filters
     },
-    [company, sourceDoctype, customer, formData, setterFieldnames],
+    [company, sourceDoctype, setterFieldnames],
   )
 
   const runSearch = useCallback(
@@ -144,7 +127,7 @@ export default function GetItemsFromModal({
       setLoading(true)
       setError("")
       try {
-        const rows = await invoiceService.searchWidget({
+        const rows = await salesOrderService.searchWidget({
           doctype: sourceDoctype,
           txt: term,
           filters: buildFilters(values),
@@ -189,9 +172,6 @@ export default function GetItemsFromModal({
     setShowChild(false)
     setChildPageLength(20)
     setPageLength(20)
-    const dataInit: Record<string, boolean> = {}
-    for (const d of dataFields) dataInit[d.fieldname] = false
-    setDataValues(dataInit)
     setError("")
     runSearch("", init, 20)
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -249,7 +229,7 @@ export default function GetItemsFromModal({
 
   const searchCustomer = useCallback(
     async (q: string) => {
-      const items = await customerService.searchLink("Customer", q, "Sales Invoice", undefined, undefined, true)
+      const items = await customerService.searchLink("Customer", q, "Sales Order", undefined, undefined, true)
       return { items }
     },
     [],
@@ -260,7 +240,7 @@ export default function GetItemsFromModal({
       if (!childDoctype || !childFieldname) return
       setChildLoading(true)
       try {
-        const parentRows = await invoiceService.searchWidget({
+        const parentRows = await salesOrderService.searchWidget({
           doctype: sourceDoctype,
           txt: term,
           filters: buildFilters(values),
@@ -274,7 +254,7 @@ export default function GetItemsFromModal({
         if (parentNames.length) {
           filters.push(["parent", "in", parentNames])
         }
-        const rows = await invoiceService.getList({
+        const rows = await salesOrderService.getList({
           doctype: childDoctype,
           fields: ["name", "parent", ...childColumns],
           filters,
@@ -326,12 +306,9 @@ export default function GetItemsFromModal({
       for (const [k, v] of Object.entries(setterValues)) {
         if (v) args[k] = v
       }
-      for (const [k, v] of Object.entries(dataValues)) {
-        args[k] = v ? 1 : 0
-      }
       args["filtered_children"] = Array.from(selectedChildren)
       const targetDoc = { customer, company, ...(formData ? { ...formData } : {}) }
-      const result = await invoiceService.mapSourceDocuments(method, sourceNames, targetDoc, args)
+      const result = await salesOrderService.mapSourceDocuments(method, sourceNames, targetDoc, args)
       const items = (result as Record<string, unknown>)[childFieldname ?? "items"] as Array<Record<string, unknown>> | undefined
       if (!Array.isArray(items) || items.length === 0) {
         setError(`No items were returned from the selected ${sourceDoctype} document(s).`)
@@ -379,7 +356,6 @@ export default function GetItemsFromModal({
         </DialogHeader>
 
         <div className="space-y-4 py-2">
-          {/* Primary filters row: search + child toggle (col 1), setters (col 2-3) */}
           <div className="grid grid-cols-2 gap-4 items-start">
             <div className="space-y-1.5">
               <label className="block text-xs font-semibold text-muted mb-1.5">Name</label>
@@ -434,28 +410,8 @@ export default function GetItemsFromModal({
             </div>
           </div>
 
-          {/* Data fields (e.g. merge taxes) */}
-          {dataFields.length > 0 && (
-            <div className="space-y-2">
-              {dataFields.map((d) => (
-                <label key={d.fieldname} className="flex items-center gap-2 text-sm text-body cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={!!dataValues[d.fieldname]}
-                    onChange={(e) =>
-                      setDataValues((prev) => ({ ...prev, [d.fieldname]: e.target.checked }))
-                    }
-                    className="h-4 w-4 rounded border-border"
-                  />
-                  {d.label}
-                </label>
-              ))}
-            </div>
-          )}
-
           {error && <p className="text-sm text-danger-600">{error}</p>}
 
-          {/* Parent results (hidden when child selection is active) */}
           {!showChild && (
             <div>
               <div
@@ -489,7 +445,6 @@ export default function GetItemsFromModal({
             </div>
           )}
 
-          {/* Child items */}
           {childFieldname && childDoctype && showChild && (
             <div>
               <div

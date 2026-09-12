@@ -1,6 +1,18 @@
 import { http, HttpResponse, delay, passthrough } from "msw"
 import { salesOrders, quotationItems, quotationTaxes, paymentScheduleRows } from "./frappe-lookups"
 
+// Keeps the shared list pseudo-array in sync so the REST /resource/Sales Order
+// handlers (frappe-lookups) resolve doc mutations (status, items, totals) by
+// name on the next reload.
+function syncListRow(name: string, row: Record<string, unknown>): void {
+  const listIdx = salesOrders.findIndex((s) => String(s.name) === String(name))
+  if (listIdx === -1) {
+    salesOrders.push(row as (typeof salesOrders)[number])
+    return
+  }
+  salesOrders[listIdx] = row as (typeof salesOrders)[number]
+}
+
 // ── Sales Order mock backend (ERPNext form endpoints) ───────────────
 // Mirrors the exact wire contract of the Sales Order workspace:
 //   frappe.desk.form.load.getdoc      → { docs: [doc], docinfo }
@@ -276,6 +288,7 @@ export const salesOrderFormHandlers = [
       merged.modified = nowStamp()
       merged.modified_by = "admin@blesserp.com"
       store[idx] = merged
+      syncListRow(existingName, merged)
       doc = fullDoc(merged)
     }
 
@@ -303,8 +316,132 @@ export const salesOrderFormHandlers = [
     const status = fields.status ?? ""
     const idx = store.findIndex((s) => String(s.name) === name)
     if (idx === -1) return HttpResponse.json({ message: `Sales Order ${name} not found` }, { status: 404 })
-    store[idx] = { ...store[idx], status, modified: nowStamp(), modified_by: "admin@blesserp.com" }
+    const updated = { ...store[idx], status, modified: nowStamp(), modified_by: "admin@blesserp.com" }
+    store[idx] = updated
+    // Keep the shared list pseudo-array in sync so the REST /resource/Sales Order
+    // reload (loadDoc after a status change) sees the new status.
+    syncListRow(name, updated)
     return HttpResponse.json({ message: status })
+  }),
+
+  // ── Update Items: erpnext.controllers.accounts_controller.update_child_qty_rate ──
+  // Mirrors ERPNext v15 exactly: rows matched by child-row docname are updated;
+  // rows without a docname are INSERTED as new child rows; the parent is saved.
+  // Persists to both the form `store` and the shared REST list so the workspace
+  // reload (loadDoc) reflects the change on the main items grid.
+  http.post("/api/method/erpnext.controllers.accounts_controller.update_child_qty_rate", async ({ request }) => {
+    await delay(200)
+    const fields = await formFields(request)
+    const name = String(fields.parent_doctype_name ?? "")
+    const transItems = safeJson<Array<Record<string, unknown>>>(fields.trans_items ?? "[]", [])
+    const idx = store.findIndex((s) => String(s.name) === name)
+    if (idx === -1) return HttpResponse.json({ message: `Sales Order ${name} not found` }, { status: 404 })
+
+    const doc = store[idx]
+    const items: Record<string, unknown>[] = Array.isArray(doc.items)
+      ? (doc.items as Record<string, unknown>[]).map((i) => ({ ...i }))
+      : quotationItems.map((i) => ({ ...i, doctype: "Sales Order Item", parentfield: "items", parenttype: "Sales Order" }))
+
+    for (const t of transItems) {
+      if (!t.item_code) continue
+      const docname = String(t.docname ?? "")
+      let row =
+        docname !== ""
+          ? items.find((i) => String(i.name ?? "") === docname)
+          : undefined
+      // Store rows seeded from the list fixture carry no child-row names, so
+      // fall back to item_code identity (unique within an SO) — this is what
+      // the served doc's withItemNames also uses.
+      if (!row) row = items.find((i) => String(i.item_code) === String(t.item_code))
+      if (row) {
+        row.qty = Number(t.qty ?? row.qty ?? 0)
+        row.rate = Number(t.rate ?? row.rate ?? 0)
+        if (t.uom !== undefined && t.uom !== null) row.uom = t.uom
+        if (t.conversion_factor !== undefined && t.conversion_factor !== null) {
+          row.conversion_factor = Number(t.conversion_factor)
+        }
+        row.amount = Math.round((Number(row.rate) || 0) * (Number(row.qty) || 0) * 100) / 100
+      } else {
+        const newRow: Record<string, unknown> = {
+          name: `new-sales-order-item-${Math.random().toString(36).slice(2, 10)}`,
+          doctype: "Sales Order Item",
+          parentfield: "items",
+          parenttype: "Sales Order",
+          parent: name,
+          item_code: t.item_code,
+          item_name: String(t.item_name ?? t.item_code),
+          qty: Number(t.qty ?? 1),
+          rate: Number(t.rate ?? 0),
+          uom: t.uom ?? "",
+          conversion_factor: Number(t.conversion_factor ?? 1),
+          amount: 0,
+        }
+        newRow.amount = Math.round((Number(newRow.rate) || 0) * (Number(newRow.qty) || 0) * 100) / 100
+        items.push(newRow)
+      }
+    }
+
+    const round2 = (n: number): number => Math.round(n * 100) / 100
+    const totalQty = round2(items.reduce((s, i) => s + (Number(i.qty) || 0), 0))
+    const netTotal = round2(items.reduce((s, i) => s + (Number(i.amount) || 0), 0))
+    const originalBaseTotal = Number(doc.base_total) || 0
+    const originalTax = Number(doc.base_total_taxes_and_charges) || 0
+    const taxPct = originalBaseTotal > 0 ? originalTax / originalBaseTotal : 0.14975
+    const taxAmt = round2(netTotal * taxPct)
+    const grandTotal = round2(netTotal + taxAmt)
+
+    const merged: Record<string, unknown> = {
+      ...doc,
+      items,
+      total_qty: totalQty,
+      base_total: netTotal,
+      base_net_total: netTotal,
+      total: netTotal,
+      net_total: netTotal,
+      base_total_taxes_and_charges: taxAmt,
+      total_taxes_and_charges: taxAmt,
+      base_grand_total: grandTotal,
+      grand_total: grandTotal,
+      base_rounded_total: grandTotal,
+      rounded_total: grandTotal,
+      modified: nowStamp(),
+      modified_by: "admin@blesserp.com",
+    }
+    store[idx] = merged
+    syncListRow(name, merged)
+    return HttpResponse.json({ message: "Updated" })
+  }),
+
+  // ── Fetch flow: get_item_details ──────────────────────────────────
+  // Mirrors the quotation mock handler so item codes selected in the Update
+  // Items dialog resolve price/rate/warehouse/income-account details exactly
+  // like they do for a Quotation (the dialog enriches via the same desk call
+  // erpnext.stock.get_item_details.get_item_details).
+  http.post("/api/method/erpnext.stock.get_item_details.get_item_details", async ({ request }) => {
+    await delay(120)
+    const fields = await formFields(request)
+    const args = safeJson<Record<string, unknown>>(fields.args ?? "", {})
+    const itemCode = String(args.item_code ?? "")
+    const items: Record<string, unknown> = {
+      "PRD-001": { item_name: "Organic All-Purpose Flour", uom: "Nos", conversion_factor: 1, price_list_rate: 25.0, rate: 25.0, amount: 0, warehouse: "Main Warehouse", income_account: "Income - BE", cost_center: "Main - BE", description: "Organic all-purpose flour, 10kg bag", stock_uom: "Nos", stock_qty: 0, is_free_item: 0 },
+      "PRD-002": { item_name: "Cold-Pressed Canola Oil", uom: "Nos", conversion_factor: 1, price_list_rate: 5.5, rate: 5.5, amount: 0, warehouse: "Main Warehouse", income_account: "Income - BE", cost_center: "Main - BE", description: "Cold-pressed canola oil, 1L", stock_uom: "Nos", stock_qty: 0, is_free_item: 0 },
+      "PRD-003": { item_name: "Wild Blueberry Jam", uom: "Nos", conversion_factor: 1, price_list_rate: 15.0, rate: 15.0, amount: 0, warehouse: "Main Warehouse", income_account: "Income - BE", cost_center: "Main - BE", description: "Wild blueberry jam, 500g jar", stock_uom: "Nos", stock_qty: 0, is_free_item: 0 },
+      "PRD-004": { item_name: "Atlantic Smoked Salmon", uom: "Nos", conversion_factor: 1, price_list_rate: 9.0, rate: 9.0, amount: 0, warehouse: "Cold Storage", income_account: "Income - BE", cost_center: "Main - BE", description: "Smoked salmon fillets, 250g pack", stock_uom: "Nos", stock_qty: 0, is_free_item: 0 },
+      "PRD-005": { item_name: "Maple Syrup (Grade A)", uom: "Nos", conversion_factor: 1, price_list_rate: 28.0, rate: 28.0, amount: 0, warehouse: "Main Warehouse", income_account: "Income - BE", cost_center: "Main - BE", description: "Grade A maple syrup, 750ml bottle", stock_uom: "Nos", stock_qty: 0, is_free_item: 0 },
+    }
+    const qty = Number(args.qty ?? 1)
+    const base = items[itemCode] as Record<string, unknown> | undefined
+    if (!base) return HttpResponse.json({ message: "Invalid item" })
+    const rate = Number(base.price_list_rate)
+    return HttpResponse.json({
+      message: {
+        ...base,
+        item_code: itemCode,
+        qty,
+        amount: Math.round(rate * qty * 100) / 100,
+        delivery_date: args.delivery_date ?? "",
+      },
+    })
   }),
 
   // ── Fetch flow: get_conversion_factor ─────────────────────────────

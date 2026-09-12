@@ -29,7 +29,6 @@ interface GetItemsSource {
   setters?: SetterField[];
   dataFields?: Array<{ fieldname: string; label: string }>;
   searchQuery?: string;
-  docLinkBase?: string;
   makeDocRoute: string;
 }
 
@@ -42,7 +41,6 @@ const GET_ITEMS_SOURCES: GetItemsSource[] = [
     childDoctype: "Sales Order Item",
     childColumns: ["item_code", "item_name", "qty", "amount", "billed_amt"],
     setters: [{ fieldname: "customer", label: "Customer" }],
-    docLinkBase: "/sales-orders",
     makeDocRoute: "/sales-orders",
   },
   {
@@ -53,7 +51,6 @@ const GET_ITEMS_SOURCES: GetItemsSource[] = [
     childDoctype: "Quotation Item",
     childColumns: ["item_code", "item_name", "qty", "rate", "amount"],
     setters: [{ fieldname: "party_name", label: "Customer" }],
-    docLinkBase: "/quotations",
     makeDocRoute: "/quotations/new",
   },
   {
@@ -66,7 +63,6 @@ const GET_ITEMS_SOURCES: GetItemsSource[] = [
     setters: [{ fieldname: "customer", label: "Customer" }],
     dataFields: [{ fieldname: "merge_taxes", label: "Merge taxes from multiple documents" }],
     searchQuery: "erpnext.controllers.queries.get_delivery_notes_to_be_billed",
-    docLinkBase: "/inventory/transfers",
     makeDocRoute: "/inventory/transfers/new",
   },
 ];
@@ -179,7 +175,6 @@ export default function GetItemsFromTrigger({
           company={company}
           formData={formData}
           searchQuery={activeSource.searchQuery}
-          docLinkBase={activeSource.docLinkBase}
           makeDocLabel={activeSource.key}
           onMakeDoc={(setterValues) => {
             const params = new URLSearchParams()
