@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
-import { useNavigate } from "react-router-dom";
+import { useState, useEffect, useCallback, useMemo } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Plus, Download, Trash2, UserRound, Tag } from "lucide-react";
+import { Plus, Download, Trash2, UserRound, Tag, AlertCircle } from "lucide-react";
 import Topbar from "@/components/layout/Topbar";
 import {
   Button,
@@ -12,40 +12,32 @@ import {
   Input,
   ListBulkActions,
   BulkDeleteModal,
-  FilterPills,
   LinkSearchField,
   useMessageDialog,
   messageFromError,
   type BulkDeleteItem,
 } from "@/components/ui";
 import { customerService, type Customer, type CustomerListResponse } from "@/services";
-import { CUSTOMER_EXPORT_FIELDS } from "../services";
+import { CUSTOMER_EXPORT_FIELDS, type CustomerListFilters } from "../services";
 import CustomerTable from "../components/CustomerTable";
 import QuickAddCustomerModal from "../components/QuickAddCustomerModal";
 import CustomerImportModal from "../components/CustomerImportModal";
+import { rFilterToArgs, type RFilter } from "../components/CustomerFilters";
 
-type StatusFilter = "all" | "active" | "disabled" | "frozen";
+type StatusFilter = "All" | "Active" | "Disabled" | "Frozen";
 
-function statusToFilters(filter: StatusFilter): unknown[] {
-  switch (filter) {
-    case "active": return [["disabled", "=", 0]]
-    case "disabled": return [["disabled", "=", 1]]
-    case "frozen": return [["is_frozen", "=", 1]]
-    default: return []
-  }
-}
+const STATUS_FILTERS: StatusFilter[] = ["All", "Active", "Disabled", "Frozen"];
 
 export default function Customers() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { showMessage } = useMessageDialog();
   const [data, setData] = useState<CustomerListResponse | null>(null);
   const [allItems, setAllItems] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [search, setSearch] = useState("");
   const [start, setStart] = useState(0);
   const [pageLength, setPageLength] = useState(20);
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [showQuickAdd, setShowQuickAdd] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
@@ -68,17 +60,56 @@ export default function Customers() {
     JSON.parse(JSON.stringify(CUSTOMER_EXPORT_FIELDS))
   );
 
+  // ── Unified filter state (single source of truth) ──────────────────
+  const [filters, setFilters] = useState<RFilter[]>(() => {
+    try {
+      const raw = searchParams.get("filters")
+      if (!raw) return []
+      const parsed = JSON.parse(raw)
+      return Array.isArray(parsed) ? (parsed as RFilter[]) : []
+    } catch {
+      return []
+    }
+  })
+  const [sortBy, setSortBy] = useState(() => {
+    const field = searchParams.get("sort")?.split(" ")[0]
+    return field || "customer_name"
+  })
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">(() => {
+    const order = searchParams.get("sort")?.split(" ")[1]
+    return order === "desc" ? "desc" : "asc"
+  })
+
+  const statusChip = filters.find((f) => f.field === "status" && f.operator === "=")
+  const activeFilter: StatusFilter = (statusChip?.value as StatusFilter) ?? "All"
+  const filtersArgs = useMemo(() => filters.flatMap(rFilterToArgs), [filters])
+  const hasActiveFilters = filters.length > 0
+
+  // Persist filters/sort in the URL.
+  useEffect(() => {
+    const next: Record<string, string> = {}
+    if (filters.length > 0) next.filters = JSON.stringify(filters)
+    if (sortBy !== "customer_name" || sortOrder !== "asc") next.sort = `${sortBy} ${sortOrder}`
+    const current = Object.fromEntries(searchParams.entries())
+    const same =
+      Object.keys(next).length === Object.keys(current).length &&
+      Object.entries(next).every(([k, v]) => current[k] === v)
+    if (same) return
+    setSearchParams(next, { replace: true })
+  }, [filters, sortBy, sortOrder]) // eslint-disable-line react-hooks/exhaustive-deps
+
   const fetchData = useCallback(async (append = false) => {
     setLoading(true);
     setError("");
     try {
-      const filters = statusToFilters(statusFilter);
-      const result = await customerService.list({
-        search: search || undefined,
+      const params: CustomerListFilters = {
         start: append ? start : 0,
         pageLength,
-        filters,
-      });
+        filters: filtersArgs.length > 0 ? filtersArgs : undefined,
+        sortBy,
+        sortOrder,
+      };
+      const result = await customerService.list(params);
       setData(result);
       setAllItems((prev) => (append ? [...prev, ...result.items] : result.items));
       if (!append) setStart(pageLength);
@@ -88,21 +119,42 @@ export default function Customers() {
     } finally {
       setLoading(false);
     }
-  }, [search, start, pageLength, statusFilter]);
+  }, [start, pageLength, filtersArgs, sortBy, sortOrder]);
 
   useEffect(() => {
     setStart(0);
     setAllItems([]);
     fetchData(false);
-  }, [search, statusFilter, pageLength]);
+  }, [filtersArgs, sortBy, sortOrder, pageLength]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleLoadMore = () => {
     fetchData(true);
   };
 
   const handlePageLengthChange = (size: number) => {
+    setStart(0);
+    setAllItems([]);
     setPageLength(size);
   };
+
+  // Status pills mutate the "Status = x" chip, keeping one source of truth.
+  const handleFilterPill = (f: string) => {
+    setFilters((prev) => {
+      const rest = prev.filter((x) => !(x.field === "status" && x.operator === "="))
+      if (f === "All") return rest
+      return [...rest, { field: "status", label: "Status", operator: "=", value: f }]
+    })
+  }
+
+  // ERPNext list parity: clicking a list value applies it as a filter.
+  const handleCellFilter = useCallback((chip: RFilter) => {
+    setFilters((prev) => [...prev.filter((x) => x.field !== chip.field), chip])
+  }, [])
+
+  const handleSort = (field: string, order: "asc" | "desc") => {
+    setSortBy(field)
+    setSortOrder(order)
+  }
 
   const handleBulkDelete = () => {
     if (!data || selectedKeys.size === 0) return;
@@ -170,10 +222,8 @@ export default function Customers() {
   };
 
   const exportScopeFilters = (): unknown[] | undefined => {
-    if (selectedKeys.size > 0) return [["name", "in", Array.from(selectedKeys)]];
-    const filters: unknown[] = statusToFilters(statusFilter);
-    if (search.trim()) filters.push(["customer_name", "like", `%${search.trim()}%`]);
-    return filters.length > 0 ? filters : undefined;
+    if (selectedKeys.size > 0) return [["Customer", "name", "in", Array.from(selectedKeys)]];
+    return filtersArgs.length > 0 ? filtersArgs : undefined;
   };
 
   const toggleExportField = (group: string, field: string) => {
@@ -386,27 +436,30 @@ export default function Customers() {
         </div>
 
         {error && (
-          <p className="text-sm text-danger-600 bg-danger-50 border border-danger-100 px-3 py-2.5 rounded-[10px]">
-            {error}
-          </p>
+          <div className="flex items-start gap-2 text-sm text-danger-600 bg-danger-50 border border-danger-100 px-4 py-3 rounded-[10px]">
+            <AlertCircle size={16} className="shrink-0 mt-0.5" />
+            <p>{error}</p>
+          </div>
         )}
-
-        <FilterPills
-          value={statusFilter}
-          onChange={(v) => setStatusFilter(v)}
-          options={[
-            { value: "all", label: "All" },
-            { value: "active", label: "Active" },
-            { value: "disabled", label: "Disabled" },
-            { value: "frozen", label: "Frozen" },
-          ]}
-        />
 
         <CustomerTable
           data={tableData}
           loading={loading}
-          search={search}
-          onSearch={setSearch}
+          onRowClick={(customer) => navigate(`/customers/${customer.name}`)}
+          filters={STATUS_FILTERS}
+          activeFilter={activeFilter}
+          onFilterChange={handleFilterPill}
+          filterChips={filters}
+          onFilterChipsChange={setFilters}
+          onCellFilter={handleCellFilter}
+          groupSearch={(q) =>
+            customerService.searchLink("Customer Group", q).then((items) => ({ items }))
+          }
+          territorySearch={(q) =>
+            customerService.searchLink("Territory", q).then((items) => ({ items }))
+          }
+          sort={{ field: sortBy, order: sortOrder, onChange: handleSort }}
+          hasActiveFilters={hasActiveFilters}
           selectable
           selectedKeys={selectedKeys}
           onSelectionChange={setSelectedKeys}
@@ -455,7 +508,6 @@ export default function Customers() {
               ]}
             />
           }
-          onRowClick={(customer) => navigate(`/customers/${customer.name}`)}
           paginationMode="loadMore"
           currentPageLength={pageLength}
           onPageLengthChange={handlePageLengthChange}

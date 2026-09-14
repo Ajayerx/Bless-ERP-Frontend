@@ -1,4 +1,4 @@
-import { apiClient, apiClientWithBody, serverMessagesFromBody, failedNamesFromMessages, serverDownloadTemplate, throwServerMessageError, type AppMessage } from "@/services/api-client"
+import { apiClient, apiFormCall, apiClientWithBody, serverMessagesFromBody, failedNamesFromMessages, serverDownloadTemplate, throwServerMessageError, type AppMessage } from "@/services/api-client"
 import { API_CONFIG } from "@/config/api.config"
 import { sanitizeHtml } from "@/lib/utils"
 import { postMethod, postMethodRaw, withDedup } from "@/services/frappe-client"
@@ -203,6 +203,10 @@ export interface PaymentListFilters {
   name?: string
   sortBy?: string
   sortOrder?: "asc" | "desc"
+  /** Raw frappe filter tuples in ERPNext's list-view wire format
+   * `[field, operator, value]` or `[doctype, field, operator, value]` (AND'd
+   * with the typed params). */
+  filters?: unknown[][]
 }
 
 // Frappe splits the list search into a top-level `or_filters` group; nested
@@ -780,11 +784,13 @@ async function fetchOptions(doctype: string, filters?: unknown[]): Promise<strin
 export const paymentService = {
   letterHeads: (): Promise<string[]> => fetchOptions("Letter Head", [["disabled", "=", 0]]),
 
-  async list(params: PaymentListFilters = {}): Promise<PaymentEntryListResponse> {
+async list(params: PaymentListFilters = {}): Promise<PaymentEntryListResponse> {
     const page = params.page ?? 1
     const pageSize = params.pageLength ?? params.pageSize ?? 10
     const limit_start = params.start != null ? params.start : (page - 1) * pageSize
     const built = buildPaymentFilters(params)
+    const filters: unknown[] = [...(built?.filters ?? [])]
+    if (params.filters && params.filters.length > 0) filters.push(...params.filters)
     const order_by = params.sortBy
       ? `${params.sortBy} ${params.sortOrder === "asc" ? "ASC" : "DESC"}`
       : "posting_date DESC"
@@ -793,14 +799,14 @@ export const paymentService = {
       apiClient<PaymentEntry[]>(
         buildListUrl("Payment Entry", {
           fields: LIST_FIELDS,
-          filters: built?.filters,
+          filters: filters.length > 0 ? filters : undefined,
           orFilters: built?.orFilters,
           limit_page_length: pageSize,
           limit_start,
           order_by,
         })
       ),
-      getCount("Payment Entry", built?.filters, built?.orFilters),
+      getCount("Payment Entry", filters.length > 0 ? filters : undefined, built?.orFilters),
     ])
 
     return {
@@ -1177,6 +1183,64 @@ async getOutstandingReferences(args: GetOutstandingArgs): Promise<OutstandingRef
   // Search assignable users via frappe.desk.search.search_link — the same
   // backend ERPNext's AssignToDialog populates (db.get_link_options -> User,
   // filtered to enabled System Users). Matches name / full name / email.
+  async searchLink(
+    doctype: string,
+    query: string,
+    extraParams?: {
+      reference_doctype?: string
+      link_fieldname?: string
+      searchfield?: string
+      filters?: Record<string, unknown>
+      start?: number
+      page_length?: number
+      query?: string
+    },
+  ): Promise<{ items: Array<{ value: string; label: string; description: string }> }> {
+    const fields: Array<[string, string]> = [
+      ["txt", query || ""],
+      ["doctype", doctype],
+      ["ignore_user_permissions", "false"],
+    ]
+    if (extraParams?.reference_doctype) fields.push(["reference_doctype", extraParams.reference_doctype])
+    if (extraParams?.link_fieldname) fields.push(["link_fieldname", extraParams.link_fieldname])
+    fields.push(["page_length", String(extraParams?.page_length ?? 10)])
+    if (extraParams?.filters) fields.push(["filters", JSON.stringify(extraParams.filters)])
+    if (extraParams?.query) fields.push(["query", extraParams.query])
+    fields.push(["searchfield", extraParams?.searchfield ?? "name"])
+    try {
+      const result = await apiFormCall<Array<{ value: string; label: string; description: string }>>(
+        "/method/frappe.desk.search.search_link",
+        fields,
+        { doctype },
+      )
+      return { items: Array.isArray(result) ? result : [] }
+    } catch {
+      return { items: [] }
+    }
+  },
+
+  async searchParties(
+    query: string,
+  ): Promise<{ items: Array<{ value: string; label: string; description: string }> }> {
+    const [customers, suppliers] = await Promise.all([
+      this.searchLink("Customer", query, { reference_doctype: "Payment Entry", link_fieldname: "party" }),
+      this.searchLink("Supplier", query, { reference_doctype: "Payment Entry", link_fieldname: "party" }),
+    ])
+    const seen = new Set<string>()
+    const items = [...customers.items, ...suppliers.items].filter((i) => {
+      if (seen.has(i.value)) return false
+      seen.add(i.value)
+      return true
+    })
+    return { items }
+  },
+
+  async searchCompanies(
+    query: string,
+  ): Promise<{ items: Array<{ value: string; label: string; description: string }> }> {
+    return this.searchLink("Company", query, { reference_doctype: "Payment Entry", link_fieldname: "company" })
+  },
+
   async searchAssignableUsers(
     query: string
   ): Promise<{ value: string; label: string; description: string }[]> {

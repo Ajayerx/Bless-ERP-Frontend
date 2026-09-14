@@ -89,3 +89,7 @@ export { followUpService } from "@/modules/followups/services"
 export type { FollowUp, FollowUpListResponse } from "@/modules/followups/services"
 
 export { accountingService } from "@/modules/accounting/services"
+
+// Shared filter types (ERPNext-style RFilter chips)
+export type { FilterOperator, RFilter, FilterFieldType, FilterFieldDef } from "./filter-types"
+export { rFilterToArgs, operatorsForType, operatorNeedsValue, operatorNeedsValue2 } from "./filter-types"

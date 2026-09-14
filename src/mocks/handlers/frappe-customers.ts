@@ -74,6 +74,11 @@ let customers: CustomerRow[] = [
   { name: "CUST-00020", customer_name: "Boreal Forest Products", customer_type: "Company", customer_group: "Commercial", territory: "Canada", website: "https://borealforestproducts.ca", email_id: "sales@borealforestproducts.ca", mobile_no: "+1 807-555-2020", tax_id: "RT852159753", industry: "Manufacturing", market_segment: "Enterprise", language: "en", default_currency: "CAD", default_price_list: "Standard Selling", payment_terms: "Net 30", so_required: 1, dn_required: 1, disabled: 0, creation: "2023-12-05 11:00:00", modified: "2026-07-04 14:00:00" },
 ]
 
+// Snapshot of the Customer fixture rows for the shared test server (server.ts),
+// which mirrors the browser handlers above on its catch-all endpoint. server.ts
+// keeps its own working copy (customerRows) and restores it on resetFixtures.
+export const initialCustomers = customers.map((c) => ({ ...c }))
+
 // ── Contact store ────────────────────────────────────────────────────
 interface MockContact {
   name: string

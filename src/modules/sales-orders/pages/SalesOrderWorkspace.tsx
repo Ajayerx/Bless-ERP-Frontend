@@ -16,7 +16,6 @@ import {
   CheckCircle2,
   XCircle,
   FileEdit,
-  Plus,
   ChevronDown,
   Trash2,
   Save,
@@ -27,14 +26,6 @@ import {
   Copy,
   Printer,
   Mail,
-  Receipt,
-  Hammer,
-  PackageOpen,
-  ShoppingBag,
-  Wrench,
-  ClipboardList,
-  CreditCard,
-  Landmark,
 } from "lucide-react"
 import Topbar from "@/components/layout/Topbar"
 import {
@@ -63,6 +54,7 @@ import SalesOrderForm, { type SalesOrderFormHandle } from "../components/SalesOr
 import SalesOrderMetaPanel from "../components/SalesOrderMetaPanel"
 import UpdateItemsDialog from "../components/UpdateItemsDialog"
 import GetItemsFromTrigger from "../components/GetItemsFromTrigger"
+import CreateMenu from "../components/CreateMenu"
 import type { SalesOrderDoc, SalesOrderMappedDoc } from "../types"
 import { formatDate } from "@/lib/utils"
 import { getSalesOrderIndicator, type SalesOrderIndicator } from "@/services"
@@ -106,20 +98,6 @@ function normalizeMappedDoc(doc: SalesOrderMappedDoc): SalesOrderDoc {
   }
 }
 
-const CREATE_TARGETS = [
-  { key: "Delivery Note", label: "Delivery Note", make: salesOrderService.makeDeliveryNote, icon: PackageOpen },
-  { key: "Sales Invoice", label: "Sales Invoice", make: salesOrderService.makeSalesInvoice, icon: Receipt },
-  { key: "Work Order", label: "Work Order(s)", make: salesOrderService.makeWorkOrders, icon: Wrench },
-  { key: "Material Request", label: "Material Request", make: salesOrderService.makeMaterialRequest, icon: ClipboardList },
-  { key: "Purchase Order", label: "Purchase Order", make: salesOrderService.makePurchaseOrder, icon: ShoppingBag },
-  { key: "Maintenance Schedule", label: "Maintenance Schedule", make: salesOrderService.makeMaintenanceSchedule, icon: Hammer },
-  { key: "Maintenance Visit", label: "Maintenance Visit", make: salesOrderService.makeMaintenanceVisit, icon: Hammer },
-  { key: "Project", label: "Project", make: salesOrderService.makeProject, icon: FileText },
-  { key: "Pick List", label: "Pick List", make: salesOrderService.createPickList, icon: PackageOpen },
-  { key: "Payment Request", label: "Payment Request", make: salesOrderService.makePaymentRequest, icon: CreditCard },
-  { key: "Payment Entry", label: "Payment Entry", make: salesOrderService.makePaymentEntry, icon: Landmark },
-] as const
-
 export default function SalesOrderWorkspace({ mode, id }: SalesOrderWorkspaceProps) {
   const navigate = useNavigate()
   const location = useLocation()
@@ -139,7 +117,6 @@ export default function SalesOrderWorkspace({ mode, id }: SalesOrderWorkspacePro
   )
   const [dirty, setDirty] = useState(false)
   const [acting, setActing] = useState(false)
-  const [createOpen, setCreateOpen] = useState(false)
   const [updateItemsOpen, setUpdateItemsOpen] = useState(false)
   const [holdOpen, setHoldOpen] = useState(false)
   const [holdReason, setHoldReason] = useState("")
@@ -348,27 +325,6 @@ export default function SalesOrderWorkspace({ mode, id }: SalesOrderWorkspacePro
     }
   }
 
-  const handleCreate = async (
-    target: (typeof CREATE_TARGETS)[number],
-  ) => {
-    if (!salesOrder) return
-    try {
-      const res = await target.make(salesOrder.name)
-      const route = target.key === "Sales Invoice"
-        ? `/invoices/${res.name}`
-        : target.key === "Payment Request" || target.key === "Payment Entry"
-          ? `/payments/${res.name}`
-          : null
-      if (route) {
-        navigate(route)
-      } else {
-        showMessage(`${target.key} module not available yet (created ${res.doctype}: ${res.name}).`)
-      }
-    } catch (err) {
-      showMessage(messageFromError(err, `Failed to create ${target.key}.`))
-    }
-  }
-
   const handleAddComment = async (content: string) => {
     const doc = salesOrder
     if (!doc) return
@@ -519,38 +475,6 @@ export default function SalesOrderWorkspace({ mode, id }: SalesOrderWorkspacePro
             formData={salesOrder as unknown as Record<string, unknown>}
             onItemsFetched={handleAddItems}
           />
-          <div className="relative">
-            <Button
-              size="sm"
-              onClick={() => setCreateOpen((v) => !v)}
-              className="flex items-center gap-1"
-              title="Create"
-            >
-              <Plus size={14} /> Create <ChevronDown size={12} />
-            </Button>
-            {createOpen && (
-              <>
-                <div
-                  className="fixed inset-0 z-10"
-                  onClick={() => setCreateOpen(false)}
-                />
-                <div className="absolute right-0 mt-1 z-20 w-56 bg-white border border-border rounded-lg shadow-xl py-1 max-h-96 overflow-auto">
-                  {CREATE_TARGETS.map((target) => (
-                    <button
-                      key={target.key}
-                      onClick={() => {
-                        setCreateOpen(false)
-                        void handleCreate(target)
-                      }}
-                      className="w-full text-left px-4 py-2.5 text-sm text-body hover:bg-gray-50 flex items-center gap-2"
-                    >
-                      <target.icon size={14} /> {target.label}
-                    </button>
-                  ))}
-                </div>
-              </>
-            )}
-          </div>
           {dirty ? (
             <Button
               variant="primary"
@@ -626,38 +550,10 @@ export default function SalesOrderWorkspace({ mode, id }: SalesOrderWorkspacePro
               </DropdownMenuContent>
             </DropdownMenu>
           )}
-          <div className="relative">
-            <Button
-              size="sm"
-              onClick={() => setCreateOpen((v) => !v)}
-              className="flex items-center gap-1"
-              title="Create"
-            >
-              <Plus size={14} /> Create <ChevronDown size={12} />
-            </Button>
-            {createOpen && (
-              <>
-                <div
-                  className="fixed inset-0 z-10"
-                  onClick={() => setCreateOpen(false)}
-                />
-                <div className="absolute right-0 mt-1 z-20 w-56 bg-white border border-border rounded-lg shadow-xl py-1 max-h-96 overflow-auto">
-                  {CREATE_TARGETS.map((target) => (
-                    <button
-                      key={target.key}
-                      onClick={() => {
-                        setCreateOpen(false)
-                        void handleCreate(target)
-                      }}
-                      className="w-full text-left px-4 py-2.5 text-sm text-body hover:bg-gray-50 flex items-center gap-2"
-                    >
-                      <target.icon size={14} /> {target.label}
-                    </button>
-                  ))}
-                </div>
-              </>
-            )}
-          </div>
+          <CreateMenu
+            doc={salesOrder as SalesOrderDoc}
+            onDocCreated={() => salesOrder && void loadDoc(salesOrder.name)}
+          />
           {dirty && (
             <Button
               variant="primary"

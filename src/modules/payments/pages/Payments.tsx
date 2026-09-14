@@ -1,14 +1,15 @@
 "use client"
 
-import { useEffect, useState, useCallback } from "react"
-import { useNavigate } from "react-router-dom"
+import { useEffect, useState, useCallback, useMemo } from "react"
+import { useNavigate, useSearchParams } from "react-router-dom"
 import { motion } from "framer-motion"
 import { DollarSign, FileText, BadgeCheck, AlertCircle, Download, UserRound, Tag } from "lucide-react"
 import Topbar from "@/components/layout/Topbar"
 import { Button, Badge, Card, CardContent, ConfirmationDialog, Modal, ModalFooter, Input, BulkPrintDialog, type PrintSettings } from "@/components/ui"
 import PaymentTable from "../components/PaymentTable"
 import { paymentService, type SalesInvoice, type PaymentEntry, type PaymentEntryListResponse } from "@/services"
-import { buildExportFilters, PAYMENT_EXPORT_FIELDS, type PaymentListFilters } from "../services"
+import { PAYMENT_EXPORT_FIELDS, type PaymentListFilters } from "../services"
+import { rFilterToArgs, type RFilter } from "../components/PaymentFilters"
 import { useMessageDialog, messageFromError, LinkSearchField } from "@/components/ui"
 import { stripHtml } from "@/services/api-client"
 import { formatCurrency, formatDate, cn } from "@/lib/utils"
@@ -16,10 +17,13 @@ import { openMultiPdfPrint } from "@/lib/multi-pdf-print"
 
 type StatusFilter = "All" | "Draft" | "Submitted" | "Cancelled"
 
+const STATUS_FILTERS: StatusFilter[] = ["All", "Draft", "Submitted", "Cancelled"]
+
 const MESSAGE_DIVIDER = '<hr class="my-2 border-0 border-t border-gray-200" />'
 
 export default function Payments() {
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const { showMessage } = useMessageDialog()
 
   const [unpaidInvoices, setUnpaidInvoices] = useState<SalesInvoice[]>([])
@@ -39,25 +43,43 @@ export default function Payments() {
   } | null>(null)
   const [confirmError, setConfirmError] = useState<string | null>(null)
 
-  // Filter state
-  const [activeStatus, setActiveStatus] = useState<StatusFilter>("All")
-  const [paymentTypeFilter, setPaymentTypeFilter] = useState("")
-  const [modeFilter, setModeFilter] = useState("")
-  const [partyTypeFilter, setPartyTypeFilter] = useState("")
-  const [partyTypeOptions, setPartyTypeOptions] = useState<string[]>([])
-  const [searchQuery, setSearchQuery] = useState("")
-  const [assigneeFilter, setAssigneeFilter] = useState("")
-  const [nameFilter, setNameFilter] = useState("")
-  const [dateFrom, setDateFrom] = useState("")
-  const [dateTo, setDateTo] = useState("")
-
-  const SORT_STORAGE_KEY = "blesserp_payments_sort"
-  const [sortBy, setSortBy] = useState<string>(() => {
-    try { return localStorage.getItem(SORT_STORAGE_KEY)?.split("|")[0] || "" } catch { return "" }
+  // ── Unified filter state (single source of truth) ──────────────────
+  const [filters, setFilters] = useState<RFilter[]>(() => {
+    try {
+      const raw = searchParams.get("filters")
+      if (!raw) return []
+      const parsed = JSON.parse(raw)
+      return Array.isArray(parsed) ? (parsed as RFilter[]) : []
+    } catch {
+      return []
+    }
+  })
+  const [sortBy, setSortBy] = useState(() => {
+    const field = searchParams.get("sort")?.split(" ")[0]
+    return field || "posting_date"
   })
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">(() => {
-    try { return (localStorage.getItem(SORT_STORAGE_KEY)?.split("|")[1] as "asc" | "desc") || "desc" } catch { return "desc" }
+    const order = searchParams.get("sort")?.split(" ")[1]
+    return order === "asc" ? "asc" : "desc"
   })
+
+  const statusChip = filters.find((f) => f.field === "status" && f.operator === "=")
+  const activeFilter: StatusFilter = (statusChip?.value as StatusFilter) ?? "All"
+  const filtersArgs = useMemo(() => filters.flatMap(rFilterToArgs), [filters])
+  const hasActiveFilters = filters.length > 0
+
+  // Persist filters/sort in the URL.
+  useEffect(() => {
+    const next: Record<string, string> = {}
+    if (filters.length > 0) next.filters = JSON.stringify(filters)
+    if (sortBy !== "posting_date" || sortOrder !== "desc") next.sort = `${sortBy} ${sortOrder}`
+    const current = Object.fromEntries(searchParams.entries())
+    const same =
+      Object.keys(next).length === Object.keys(current).length &&
+      Object.entries(next).every(([k, v]) => current[k] === v)
+    if (same) return
+    setSearchParams(next, { replace: true })
+  }, [filters, sortBy, sortOrder]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Toolbar dialogs (Phase 1: export / print / assign / tags)
   const [exportOpen, setExportOpen] = useState(false)
@@ -71,12 +93,6 @@ export default function Payments() {
   const [tagsOpen, setTagsOpen] = useState(false)
   const [tagsInput, setTagsInput] = useState("")
   const [actingToolbar, setActingToolbar] = useState(false)
-
-  useEffect(() => {
-    paymentService.getPartyTypes().then((types) => {
-      setPartyTypeOptions(types.map((t) => t.name))
-    }).catch(() => setPartyTypeOptions([]))
-  }, [])
 
   const fetchUnpaid = useCallback(async () => {
     setLoadingUnpaid(true)
@@ -97,22 +113,10 @@ export default function Payments() {
       const filterParams: PaymentListFilters = {
         start: append ? paymentStart : 0,
         pageLength: paymentPageLength,
+        filters: filtersArgs.length > 0 ? filtersArgs : undefined,
+        sortBy: sortBy || undefined,
+        sortOrder,
       }
-      if (activeStatus !== "All") {
-        filterParams.status = activeStatus.toLowerCase()
-      }
-      if (paymentTypeFilter) filterParams.paymentType = paymentTypeFilter
-      if (modeFilter) filterParams.modeOfPayment = modeFilter
-      if (partyTypeFilter) filterParams.partyType = partyTypeFilter
-      if (searchQuery) filterParams.search = searchQuery
-      if (assigneeFilter) filterParams.assignedTo = assigneeFilter
-      if (nameFilter) filterParams.name = nameFilter
-      if (sortBy) {
-        filterParams.sortBy = sortBy
-        filterParams.sortOrder = sortOrder
-      }
-      if (dateFrom) filterParams.postingDateFrom = dateFrom
-      if (dateTo) filterParams.postingDateTo = dateTo
 
       const paid = await paymentService.list(filterParams)
       setPaymentsData(paid)
@@ -127,7 +131,7 @@ export default function Payments() {
     } finally {
       setLoadingPayments(false)
     }
-  }, [paymentStart, paymentPageLength, activeStatus, paymentTypeFilter, modeFilter, partyTypeFilter, searchQuery, assigneeFilter, nameFilter, sortBy, sortOrder, dateFrom, dateTo])
+  }, [paymentStart, paymentPageLength, filtersArgs, sortBy, sortOrder])
 
   const fetchData = useCallback(async (append = false) => {
     await Promise.all([fetchUnpaid(), fetchPayments(append)])
@@ -137,7 +141,7 @@ export default function Payments() {
     setPaymentStart(0)
     setAllPayments([])
     fetchData(false)
-  }, [activeStatus, paymentTypeFilter, modeFilter, partyTypeFilter, searchQuery, assigneeFilter, nameFilter, sortBy, sortOrder, dateFrom, dateTo, paymentPageLength])
+  }, [filtersArgs, sortBy, sortOrder, paymentPageLength]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const overdueCount = unpaidInvoices.filter(
     (inv) => inv.status === "Overdue",
@@ -147,35 +151,24 @@ export default function Payments() {
     navigate(`/payments/new?invoice=${inv.name}`)
   }
 
-  const hasActiveFilters = activeStatus !== "All" || paymentTypeFilter !== "" || modeFilter !== "" || partyTypeFilter !== "" || searchQuery !== "" || assigneeFilter !== "" || nameFilter !== "" || dateFrom !== "" || dateTo !== ""
-
-  const resetFilters = () => {
-    setActiveStatus("All")
-    setPaymentTypeFilter("")
-    setModeFilter("")
-    setPartyTypeFilter("")
-    setSearchQuery("")
-    setAssigneeFilter("")
-    setNameFilter("")
-    setDateFrom("")
-    setDateTo("")
-    setPaymentStart(0)
+  // Status pills mutate the "Status = x" chip, keeping one source of truth.
+  const handleFilterPill = (f: string) => {
+    setFilters((prev) => {
+      const rest = prev.filter((x) => !(x.field === "status" && x.operator === "="))
+      if (f === "All") return rest
+      return [...rest, { field: "status", label: "Status", operator: "=", value: f }]
+    })
   }
 
-  // Click-to-filter on list values (ERPNext `.filterable` cells): status badge,
-  // payment type, and the ID word. Re-clicking the active value toggles it off.
-  const handleFilterStatus = useCallback((docstatus: number) => {
-    const next: StatusFilter = docstatus === 1 ? "Submitted" : docstatus === 2 ? "Cancelled" : "Draft"
-    setActiveStatus((cur) => (cur === next ? "All" : next))
+  // ERPNext list parity: clicking a list value applies it as a filter.
+  const handleCellFilter = useCallback((chip: RFilter) => {
+    setFilters((prev) => [...prev.filter((x) => x.field !== chip.field), chip])
   }, [])
 
-  const handleFilterType = useCallback((type: string) => {
-    setPaymentTypeFilter((cur) => (cur === type ? "" : type))
-  }, [])
-
-  const handleFilterId = useCallback((name: string) => {
-    setNameFilter((cur) => (cur === name ? "" : name))
-  }, [])
+  const handleSort = (field: string, order: "asc" | "desc") => {
+    setSortBy(field)
+    setSortOrder(order)
+  }
 
   const handleLoadMore = useCallback(() => {
     fetchPayments(true)
@@ -279,14 +272,6 @@ export default function Payments() {
 
   const confirmInfo = getConfirmInfo()
 
-  // --- Sorting (persisted like ERPNext's list sort) ---
-  const handleSort = useCallback((field: string, order: "asc" | "desc") => {
-    setSortBy(field)
-    setSortOrder(order)
-    try { localStorage.setItem(SORT_STORAGE_KEY, `${field}|${order}`) } catch { /* ignore */ }
-    setPaymentStart(0)
-  }, [])
-
   // --- Toolbar actions (export / print / assign / tags) ---
   const downloadBlob = (blob: Blob, filename: string) => {
     const url = URL.createObjectURL(blob)
@@ -300,15 +285,8 @@ export default function Payments() {
   }
 
   const exportScopeFilters = (): unknown[] | undefined => {
-    if (selectedPayments.length > 0) return [["name", "in", selectedPayments]]
-    const current: PaymentListFilters = {}
-    if (activeStatus !== "All") current.status = activeStatus.toLowerCase()
-    if (paymentTypeFilter) current.paymentType = paymentTypeFilter
-    if (modeFilter) current.modeOfPayment = modeFilter
-    if (partyTypeFilter) current.partyType = partyTypeFilter
-    if (dateFrom) current.postingDateFrom = dateFrom
-    if (dateTo) current.postingDateTo = dateTo
-    return buildExportFilters(current)
+    if (selectedPayments.length > 0) return [["Payment Entry", "name", "in", selectedPayments]]
+    return filtersArgs.length > 0 ? filtersArgs : undefined
   }
 
   const toggleExportField = (group: string, field: string) => {
@@ -456,36 +434,20 @@ export default function Payments() {
           onCancelSingle={(name) => setConfirmAction({ type: "single-cancel", target: name })}
           onDeleteSingle={(name) => setConfirmAction({ type: "single-delete", target: name })}
           onAmendSingle={(name) => setConfirmAction({ type: "single-amend", target: name })}
-          activeStatus={activeStatus}
-          onStatusFilterChange={(f) => { setActiveStatus(f); setPaymentStart(0) }}
-          paymentTypeFilter={paymentTypeFilter}
-          onPaymentTypeFilterChange={(v) => { setPaymentTypeFilter(v); setPaymentStart(0) }}
-          modeFilter={modeFilter}
-          onModeFilterChange={(v) => { setModeFilter(v); setPaymentStart(0) }}
-          partyTypeFilter={partyTypeFilter}
-          onPartyTypeFilterChange={(v) => { setPartyTypeFilter(v); setPaymentStart(0) }}
-          partyTypeOptions={partyTypeOptions}
-          searchQuery={searchQuery}
-          onSearchQueryChange={(v) => { setSearchQuery(v); setPaymentStart(0) }}
-          assigneeFilter={assigneeFilter}
-          onAssigneeFilterChange={(v) => { setAssigneeFilter(v); setPaymentStart(0) }}
-          nameFilter={nameFilter}
-          onFilterId={handleFilterId}
-          onFilterType={handleFilterType}
-          onFilterStatus={handleFilterStatus}
+          filters={STATUS_FILTERS}
+          activeFilter={activeFilter}
+          onFilterChange={handleFilterPill}
+          filterChips={filters}
+          onFilterChipsChange={setFilters}
+          onCellFilter={handleCellFilter}
+          partySearch={(q) => paymentService.searchParties(q)}
+          companySearch={(q) => paymentService.searchCompanies(q)}
+          sort={{ field: sortBy, order: sortOrder, onChange: handleSort }}
           onBulkExport={() => setExportOpen(true)}
           onBulkPrint={handleOpenPrint}
           onBulkAssign={() => { setAssignee(""); setAssignOpen(true) }}
           onBulkClearAssign={() => handleBulkAssign(true)}
           onBulkAddTags={() => { setTagsInput(""); setTagsOpen(true) }}
-          sortField={sortBy}
-          sortOrder={sortOrder}
-          onSortChange={handleSort}
-          dateFrom={dateFrom}
-          onDateFromChange={(v) => { setDateFrom(v); setPaymentStart(0) }}
-          dateTo={dateTo}
-          onDateToChange={(v) => { setDateTo(v); setPaymentStart(0) }}
-          onResetFilters={resetFilters}
           hasActiveFilters={hasActiveFilters}
           paginationMode="loadMore"
           currentPageLength={paymentPageLength}

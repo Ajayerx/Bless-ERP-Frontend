@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState, useCallback, useMemo } from "react"
-import { useNavigate } from "react-router-dom"
+import { useNavigate, useSearchParams } from "react-router-dom"
 import { motion } from "framer-motion"
 import { Plus, CheckCheck, X, Printer, Download, Trash2, UserRound, Tag } from "lucide-react"
 import Topbar from "@/components/layout/Topbar"
@@ -10,14 +10,36 @@ import { useMessageDialog, messageFromError, LinkSearchField } from "@/component
 import { invoiceService, type SalesInvoice, type SalesInvoiceListResponse } from "@/services"
 import { INVOICE_EXPORT_FIELDS } from "../services"
 import InvoiceTable from "../components/InvoiceTable"
+import { rFilterToArgs, type RFilter } from "../components/InvoiceFilters"
 import { openMultiPdfPrint } from "@/lib/multi-pdf-print"
 
 type StatusFilter = "All" | "Paid" | "Unpaid" | "Overdue" | "Draft" | "Cancelled"
 
+const STATUS_FILTERS: StatusFilter[] = [
+  "All",
+  "Paid",
+  "Unpaid",
+  "Overdue",
+  "Draft",
+  "Cancelled",
+]
+
 const MESSAGE_DIVIDER = '<hr class="my-2 border-0 border-t border-gray-200" />'
+
+function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement("a")
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(url)
+}
 
 export default function Invoices() {
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const { addToast } = useToast()
   const { showMessage } = useMessageDialog()
   const [data, setData] = useState<SalesInvoiceListResponse | null>(null)
@@ -26,7 +48,6 @@ export default function Invoices() {
   const [error, setError] = useState("")
   const [start, setStart] = useState(0)
   const [pageLength, setPageLength] = useState(20)
-  const [activeFilter, setActiveFilter] = useState<StatusFilter>("All")
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set())
   const [bulkSubmitting, setBulkSubmitting] = useState(false)
   const [bulkCancelling, setBulkCancelling] = useState(false)
@@ -36,6 +57,44 @@ export default function Invoices() {
   const [tagsOpen, setTagsOpen] = useState(false)
   const [tagsInput, setTagsInput] = useState("")
   const [actingToolbar, setActingToolbar] = useState(false)
+
+  // ── Unified filter state (single source of truth) ──────────────────
+  const [filters, setFilters] = useState<RFilter[]>(() => {
+    try {
+      const raw = searchParams.get("filters")
+      if (!raw) return []
+      const parsed = JSON.parse(raw)
+      return Array.isArray(parsed) ? (parsed as RFilter[]) : []
+    } catch {
+      return []
+    }
+  })
+  const [sortBy, setSortBy] = useState(() => {
+    const field = searchParams.get("sort")?.split(" ")[0]
+    return field || "posting_date"
+  })
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">(() => {
+    const order = searchParams.get("sort")?.split(" ")[1]
+    return order === "asc" ? "asc" : "desc"
+  })
+
+  const statusChip = filters.find((f) => f.field === "status" && f.operator === "=")
+  const activeFilter: StatusFilter = (statusChip?.value as StatusFilter) ?? "All"
+  const filtersArgs = useMemo(() => filters.flatMap(rFilterToArgs), [filters])
+  const hasActiveFilters = filters.length > 0
+
+  // Persist filters/sort in the URL.
+  useEffect(() => {
+    const next: Record<string, string> = {}
+    if (filters.length > 0) next.filters = JSON.stringify(filters)
+    if (sortBy !== "posting_date" || sortOrder !== "desc") next.sort = `${sortBy} ${sortOrder}`
+    const current = Object.fromEntries(searchParams.entries())
+    const same =
+      Object.keys(next).length === Object.keys(current).length &&
+      Object.entries(next).every(([k, v]) => current[k] === v)
+    if (same) return
+    setSearchParams(next, { replace: true })
+  }, [filters, sortBy, sortOrder]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Export dialog
   const [exportOpen, setExportOpen] = useState(false)
@@ -48,86 +107,35 @@ export default function Invoices() {
   const [printOpen, setPrintOpen] = useState(false)
   const [printableNames, setPrintableNames] = useState<string[]>([])
 
-  // Filter state
-  const [customerSearch, setCustomerSearch] = useState("")
-  const [dateFrom, setDateFrom] = useState("")
-  const [dateTo, setDateTo] = useState("")
-  const [assigneeFilter, setAssigneeFilter] = useState("")
-  const [nameFilter, setNameFilter] = useState("")
-
-  const INVOICE_SORT_STORAGE_KEY = "blesserp_invoices_sort"
-  const [sortBy, setSortBy] = useState<string>(() => {
-    try { return localStorage.getItem(INVOICE_SORT_STORAGE_KEY)?.split("|")[0] || "" } catch { return "" }
-  })
-  const [sortOrder, setSortOrder] = useState<"asc" | "desc">(() => {
-    try { return (localStorage.getItem(INVOICE_SORT_STORAGE_KEY)?.split("|")[1] as "asc" | "desc") || "desc" } catch { return "desc" }
-  })
-
-  const handleSort = (field: string, order: "asc" | "desc") => {
-    setSortBy(field)
-    setSortOrder(order)
-    try { localStorage.setItem(INVOICE_SORT_STORAGE_KEY, `${field}|${order}`) } catch { /* ignore */ }
-    setStart(0)
-  }
-
-  const handleFilterId = (name: string) => {
-    setNameFilter((cur) => (cur === name ? "" : name))
-    setStart(0)
-  }
-
-  const hasActiveFilters =
-    customerSearch !== "" ||
-    dateFrom !== "" ||
-    dateTo !== "" ||
-    assigneeFilter !== "" ||
-    nameFilter !== "" ||
-    activeFilter !== "All" ||
-    sortBy !== ""
-
-  const resetFilters = () => {
-    setCustomerSearch("")
-    setDateFrom("")
-    setDateTo("")
-    setAssigneeFilter("")
-    setNameFilter("")
-    setActiveFilter("All")
-    setSortBy("")
-    setSortOrder("desc")
-    try { localStorage.removeItem(INVOICE_SORT_STORAGE_KEY) } catch { /* ignore */ }
-    setStart(0)
-  }
-
-  const fetchData = useCallback(async (append = false) => {
-    setLoading(true)
-    setError("")
-    try {
-      const result = await invoiceService.list({
-        search: customerSearch,
-        start: append ? start : 0,
-        pageLength,
-        status: activeFilter === "All" ? undefined : activeFilter.toLowerCase(),
-        postingDateFrom: dateFrom || undefined,
-        postingDateTo: dateTo || undefined,
-        assignedTo: assigneeFilter || undefined,
-        name: nameFilter || undefined,
-        sortBy: sortBy || undefined,
-        sortOrder,
-      })
-      setData(result)
-      setAllItems((prev) => (append ? [...prev, ...result.items] : result.items))
-      if (!append) setStart(pageLength)
-      else setStart((s) => s + pageLength)
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load invoices")
-    } finally {
-      setLoading(false)
-    }
-  }, [customerSearch, start, pageLength, activeFilter, dateFrom, dateTo, assigneeFilter, nameFilter, sortBy, sortOrder])
+  const fetchData = useCallback(
+    async (append = false) => {
+      setLoading(true)
+      setError("")
+      try {
+        const result = await invoiceService.list({
+          start: append ? start : 0,
+          pageLength,
+          filters: filtersArgs.length > 0 ? filtersArgs : undefined,
+          sortBy: sortBy || undefined,
+          sortOrder,
+        })
+        setData(result)
+        setAllItems((prev) => (append ? [...prev, ...result.items] : result.items))
+        if (!append) setStart(pageLength)
+        else setStart((s) => s + pageLength)
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Failed to load invoices")
+      } finally {
+        setLoading(false)
+      }
+    },
+    [start, pageLength, filtersArgs, sortBy, sortOrder]
+  )
 
   useEffect(() => {
     setStart(0)
     fetchData(false)
-  }, [customerSearch, activeFilter, dateFrom, dateTo, pageLength, assigneeFilter, nameFilter, sortBy, sortOrder])
+  }, [filtersArgs, sortBy, sortOrder, pageLength]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleLoadMore = () => {
     fetchData(true)
@@ -135,6 +143,25 @@ export default function Invoices() {
 
   const handlePageLengthChange = (size: number) => {
     setPageLength(size)
+  }
+
+  // Status pills mutate the "Status = x" chip, keeping one source of truth.
+  const handleFilterPill = (f: string) => {
+    setFilters((prev) => {
+      const rest = prev.filter((x) => !(x.field === "status" && x.operator === "="))
+      if (f === "All") return rest
+      return [...rest, { field: "status", label: "Status", operator: "=", value: f }]
+    })
+  }
+
+  // ERPNext list parity: clicking a list value applies it as a filter.
+  const handleCellFilter = useCallback((chip: RFilter) => {
+    setFilters((prev) => [...prev.filter((x) => x.field !== chip.field), chip])
+  }, [])
+
+  const handleSort = (field: string, order: "asc" | "desc") => {
+    setSortBy(field)
+    setSortOrder(order)
   }
 
   const selectedItems = useMemo(() => {
@@ -231,9 +258,6 @@ export default function Invoices() {
   }
 
   const handleOpenPrint = () => {
-    // Cancelled invoices are blocked by Frappe's printview (403), and
-    // download_multi_pdf skips docs it cannot render — drop them up front so
-    // the user knows why the merged PDF may be shorter than the selection.
     const docstatusByName = new Map(allItems.map((inv) => [inv.name, inv.docstatus]))
     const names = Array.from(selectedKeys)
     const printable = names.filter((name) => docstatusByName.get(name) !== 2)
@@ -302,32 +326,9 @@ export default function Invoices() {
     }
   }
 
-  const downloadBlob = (blob: Blob, filename: string) => {
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement("a")
-    a.href = url
-    a.download = filename
-    document.body.appendChild(a)
-    a.click()
-    a.remove()
-    URL.revokeObjectURL(url)
-  }
-
   const exportScopeFilters = (): unknown[] | undefined => {
-    if (selectedKeys.size > 0) return [["name", "in", Array.from(selectedKeys)]]
-    const filters: unknown[] = []
-    if (activeFilter !== "All") {
-      const statusMap: Record<string, string> = {
-        paid: "Paid", unpaid: "Unpaid", overdue: "Overdue",
-        draft: "Draft", cancelled: "Cancelled", submitted: "Submitted",
-      }
-      filters.push(["status", "=", statusMap[activeFilter.toLowerCase()] || activeFilter])
-    }
-    if (dateFrom) filters.push(["posting_date", ">=", dateFrom])
-    if (dateTo) filters.push(["posting_date", "<=", dateTo])
-    if (assigneeFilter) filters.push(["_assign", "like", `%${assigneeFilter}%`])
-    if (nameFilter) filters.push(["name", "=", nameFilter])
-    return filters.length > 0 ? filters : undefined
+    if (selectedKeys.size > 0) return [["Sales Invoice", "name", "in", Array.from(selectedKeys)]]
+    return filtersArgs.length > 0 ? filtersArgs : undefined
   }
 
   const toggleExportField = (group: string, field: string) => {
@@ -401,34 +402,25 @@ export default function Invoices() {
         <InvoiceTable
           data={data ? { ...data, items: allItems } : null}
           loading={loading || bulkSubmitting || bulkCancelling || bulkDeleting}
-          page={1}
-          onPageChange={() => {}}
+          filters={STATUS_FILTERS}
           activeFilter={activeFilter}
-          onFilterChange={(f) => { setActiveFilter(f); setStart(0) }}
+          onFilterChange={handleFilterPill}
+          filterChips={filters}
+          onFilterChipsChange={setFilters}
           onRowClick={(inv) => navigate(`/invoices/${inv.name}`)}
           onRecordPayment={handleRecordPayment}
-          customerSearch={customerSearch}
-          onCustomerSearchChange={(v) => { setCustomerSearch(v); setStart(0) }}
-          dateFrom={dateFrom}
-          onDateFromChange={(v) => { setDateFrom(v); setStart(0) }}
-          dateTo={dateTo}
-          onDateToChange={(v) => { setDateTo(v); setStart(0) }}
-          assignedTo={assigneeFilter}
-          onAssigneeFilterChange={(v) => { setAssigneeFilter(v); setStart(0) }}
-          nameFilter={nameFilter}
-          onFilterId={handleFilterId}
-          sortField={sortBy}
-          sortOrder={sortOrder}
-          onSortChange={handleSort}
-          onResetFilters={resetFilters}
-          hasActiveFilters={hasActiveFilters}
-          selectable
-          selectedKeys={selectedKeys}
-          onSelectionChange={setSelectedKeys}
+          onCellFilter={handleCellFilter}
+          customerSearch={(q) => invoiceService.searchCustomers(q).then((items) => ({ items }))}
+          companySearch={(q) => invoiceService.searchCompanies(q).then((items) => ({ items }))}
+          sort={{ field: sortBy, order: sortOrder, onChange: handleSort }}
           paginationMode="loadMore"
           currentPageLength={pageLength}
           onPageLengthChange={handlePageLengthChange}
           onLoadMore={handleLoadMore}
+          selectable
+          selectedKeys={selectedKeys}
+          onSelectionChange={setSelectedKeys}
+          hasActiveFilters={hasActiveFilters}
           toolbarActions={
             <ListBulkActions
               count={selectedKeys.size}
@@ -474,7 +466,7 @@ export default function Invoices() {
                   onClick: handleOpenPrint,
                 },
                 {
-                  label: "Assign to…",
+                  label: "Assign to\u2026",
                   icon: <UserRound size={14} />,
                   onClick: () => setAssignOpen(true),
                 },

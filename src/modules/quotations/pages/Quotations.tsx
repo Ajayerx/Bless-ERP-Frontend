@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState, useCallback, useMemo } from "react"
-import { useNavigate } from "react-router-dom"
+import { useNavigate, useSearchParams } from "react-router-dom"
 import { motion } from "framer-motion"
 import { Plus, Download, UserRound } from "lucide-react"
 import Topbar from "@/components/layout/Topbar"
@@ -9,9 +9,23 @@ import { Button, Modal, ModalFooter, Input, ConfirmationDialog, BulkPrintDialog,
 import { useMessageDialog, messageFromError, LinkSearchField } from "@/components/ui"
 import { quotationService, QUOTATION_EXPORT_FIELDS, type Quotation, type QuotationListResponse } from "@/services"
 import QuotationTable from "../components/QuotationTable"
+import { rFilterToArgs, type RFilter } from "../components/QuotationFilters"
 import { openMultiPdfPrint } from "@/lib/multi-pdf-print"
 
-const QUOTATION_SORT_STORAGE_KEY = "blesserp_quotations_sort"
+type StatusFilter = "All" | "Draft" | "Open" | "Replied" | "Partially Ordered" | "Ordered" | "Lost" | "Cancelled" | "Expired"
+
+const STATUS_FILTERS: StatusFilter[] = [
+  "All",
+  "Draft",
+  "Open",
+  "Replied",
+  "Partially Ordered",
+  "Ordered",
+  "Lost",
+  "Cancelled",
+  "Expired",
+]
+
 const MESSAGE_DIVIDER = '<hr class="my-2 border-0 border-t border-gray-200" />'
 
 function downloadBlob(blob: Blob, filename: string) {
@@ -25,6 +39,7 @@ function downloadBlob(blob: Blob, filename: string) {
 
 export default function Quotations() {
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const { showMessage } = useMessageDialog()
   const [data, setData] = useState<QuotationListResponse | null>(null)
   const [allItems, setAllItems] = useState<Quotation[]>([])
@@ -32,7 +47,6 @@ export default function Quotations() {
   const [error, setError] = useState("")
   const [start, setStart] = useState(0)
   const [pageLength, setPageLength] = useState(20)
-  const [activeFilter, setActiveFilter] = useState("All")
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set())
   const [bulkLoading] = useState(false)
   const [actingToolbar, setActingToolbar] = useState(false)
@@ -58,66 +72,47 @@ export default function Quotations() {
   // Print dialog
   const [printOpen, setPrintOpen] = useState(false)
 
-  // Filter state
-  const [customerSearch, setCustomerSearch] = useState("")
-  const [dateFrom, setDateFrom] = useState("")
-  const [dateTo, setDateTo] = useState("")
-  const [validTillFrom, setValidTillFrom] = useState("")
-  const [validTillTo, setValidTillTo] = useState("")
-  const [assigneeFilter, setAssigneeFilter] = useState("")
-
-  const [sortBy, setSortBy] = useState<string>(() => {
+  // ── Unified filter state (single source of truth) ──────────────────
+  const [filters, setFilters] = useState<RFilter[]>(() => {
     try {
-      return localStorage.getItem(QUOTATION_SORT_STORAGE_KEY)?.split("|")[0] || ""
+      const raw = searchParams.get("filters")
+      if (!raw) return []
+      const parsed = JSON.parse(raw)
+      return Array.isArray(parsed) ? (parsed as RFilter[]) : []
     } catch {
-      return ""
+      return []
     }
+  })
+  const [sortBy, setSortBy] = useState(() => {
+    const field = searchParams.get("sort")?.split(" ")[0]
+    return field || "transaction_date"
   })
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">(() => {
-    try {
-      return (localStorage.getItem(QUOTATION_SORT_STORAGE_KEY)?.split("|")[1] as "asc" | "desc") || "desc"
-    } catch {
-      return "desc"
-    }
+    const order = searchParams.get("sort")?.split(" ")[1]
+    return order === "asc" ? "asc" : "desc"
   })
+
+  const statusChip = filters.find((f) => f.field === "status" && f.operator === "=")
+  const activeFilter: StatusFilter = (statusChip?.value as StatusFilter) ?? "All"
+  const filtersArgs = useMemo(() => filters.flatMap(rFilterToArgs), [filters])
+  const hasActiveFilters = filters.length > 0
+
+  // Persist filters/sort in the URL.
+  useEffect(() => {
+    const next: Record<string, string> = {}
+    if (filters.length > 0) next.filters = JSON.stringify(filters)
+    if (sortBy !== "transaction_date" || sortOrder !== "desc") next.sort = `${sortBy} ${sortOrder}`
+    const current = Object.fromEntries(searchParams.entries())
+    const same =
+      Object.keys(next).length === Object.keys(current).length &&
+      Object.entries(next).every(([k, v]) => current[k] === v)
+    if (same) return
+    setSearchParams(next, { replace: true })
+  }, [filters, sortBy, sortOrder]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSort = (field: string, order: "asc" | "desc") => {
     setSortBy(field)
     setSortOrder(order)
-    try {
-      localStorage.setItem(QUOTATION_SORT_STORAGE_KEY, `${field}|${order}`)
-    } catch {
-      // ignore
-    }
-    setStart(0)
-  }
-
-  const hasActiveFilters =
-    customerSearch !== "" ||
-    dateFrom !== "" ||
-    dateTo !== "" ||
-    validTillFrom !== "" ||
-    validTillTo !== "" ||
-    assigneeFilter !== "" ||
-    activeFilter !== "All" ||
-    sortBy !== ""
-
-  const resetFilters = () => {
-    setCustomerSearch("")
-    setDateFrom("")
-    setDateTo("")
-    setValidTillFrom("")
-    setValidTillTo("")
-    setAssigneeFilter("")
-    setActiveFilter("All")
-    setSortBy("")
-    setSortOrder("desc")
-    try {
-      localStorage.removeItem(QUOTATION_SORT_STORAGE_KEY)
-    } catch {
-      // ignore
-    }
-    setStart(0)
   }
 
   const fetchData = useCallback(
@@ -126,20 +121,14 @@ export default function Quotations() {
       setError("")
       try {
         const result = await quotationService.list({
-          search: customerSearch,
           page: Math.floor((append ? start : 0) / pageLength) + 1,
           pageSize: pageLength,
-          status: activeFilter === "All" ? undefined : activeFilter,
-          transactionDateFrom: dateFrom || undefined,
-          transactionDateTo: dateTo || undefined,
-          validTillFrom: validTillFrom || undefined,
-          validTillTo: validTillTo || undefined,
-          assignedTo: assigneeFilter || undefined,
+          filters: filtersArgs.length > 0 ? filtersArgs : undefined,
           sortBy: sortBy || undefined,
           sortOrder,
         })
         setData(result)
-        setAllItems(result.items)
+        setAllItems((prev) => (append ? [...prev, ...result.items] : result.items))
         if (!append) setStart(pageLength)
         else setStart((s) => s + pageLength)
       } catch (e) {
@@ -148,36 +137,27 @@ export default function Quotations() {
         setLoading(false)
       }
     },
-    [
-      customerSearch,
-      start,
-      pageLength,
-      activeFilter,
-      dateFrom,
-      dateTo,
-      validTillFrom,
-      validTillTo,
-      assigneeFilter,
-      sortBy,
-      sortOrder,
-    ]
+    [start, pageLength, filtersArgs, sortBy, sortOrder]
   )
 
   useEffect(() => {
     setStart(0)
     fetchData(false)
-  }, [ // eslint-disable-line react-hooks/exhaustive-deps
-    customerSearch,
-    activeFilter,
-    dateFrom,
-    dateTo,
-    validTillFrom,
-    validTillTo,
-    pageLength,
-    assigneeFilter,
-    sortBy,
-    sortOrder,
-  ])
+  }, [filtersArgs, sortBy, sortOrder, pageLength]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Status pills mutate the "Status = x" chip, keeping one source of truth.
+  const handleFilterPill = (f: string) => {
+    setFilters((prev) => {
+      const rest = prev.filter((x) => !(x.field === "status" && x.operator === "="))
+      if (f === "All") return rest
+      return [...rest, { field: "status", label: "Status", operator: "=", value: f }]
+    })
+  }
+
+  // ERPNext list parity: clicking a list value applies it as a filter.
+  const handleCellFilter = useCallback((chip: RFilter) => {
+    setFilters((prev) => [...prev.filter((x) => x.field !== chip.field), chip])
+  }, [])
 
   const handleLoadMore = () => {
     fetchData(true)
@@ -299,21 +279,9 @@ export default function Quotations() {
     setExportFields(JSON.parse(JSON.stringify(QUOTATION_EXPORT_FIELDS)))
   }
 
-  const buildExportFilters = (): unknown[] | undefined => {
-    const filters: unknown[] = []
-    if (activeFilter !== "All") filters.push(["status", "=", activeFilter])
-    if (customerSearch) filters.push(["party_name", "like", `%${customerSearch}%`])
-    if (dateFrom) filters.push(["transaction_date", ">=", dateFrom])
-    if (dateTo) filters.push(["transaction_date", "<=", dateTo])
-    if (validTillFrom) filters.push(["valid_till", ">=", validTillFrom])
-    if (validTillTo) filters.push(["valid_till", "<=", validTillTo])
-    if (assigneeFilter) filters.push(["_assign", "like", `%${assigneeFilter}%`])
-    return filters.length > 0 ? filters : undefined
-  }
-
   const exportScopeFilters = (): unknown[] | undefined => {
-    if (selectedKeys.size > 0) return [["name", "in", Array.from(selectedKeys)]]
-    return buildExportFilters()
+    if (selectedKeys.size > 0) return [["Quotation", "name", "in", Array.from(selectedKeys)]]
+    return filtersArgs.length > 0 ? filtersArgs : undefined
   }
 
   const handleBulkExport = async () => {
@@ -430,50 +398,20 @@ export default function Quotations() {
         )}
 
         <QuotationTable
-          data={data}
+          data={data ? { ...data, items: allItems } : null}
           loading={loading || bulkLoading}
           page={Math.floor(start / pageLength) + 1}
           onPageChange={() => {}}
+          filters={STATUS_FILTERS}
           activeFilter={activeFilter}
-          onFilterChange={(f) => {
-            setActiveFilter(f)
-            setStart(0)
-          }}
+          onFilterChange={handleFilterPill}
+          filterChips={filters}
+          onFilterChipsChange={setFilters}
           onRowClick={(quotation) => navigate(`/quotations/${quotation.name}`)}
-          customerSearch={customerSearch}
-          onCustomerSearchChange={(v) => {
-            setCustomerSearch(v)
-            setStart(0)
-          }}
-          dateFrom={dateFrom}
-          onDateFromChange={(v) => {
-            setDateFrom(v)
-            setStart(0)
-          }}
-          dateTo={dateTo}
-          onDateToChange={(v) => {
-            setDateTo(v)
-            setStart(0)
-          }}
-          validTillFrom={validTillFrom}
-          onValidTillFromChange={(v) => {
-            setValidTillFrom(v)
-            setStart(0)
-          }}
-          validTillTo={validTillTo}
-          onValidTillToChange={(v) => {
-            setValidTillTo(v)
-            setStart(0)
-          }}
-          assignedTo={assigneeFilter}
-          onAssigneeFilterChange={(v) => {
-            setAssigneeFilter(v)
-            setStart(0)
-          }}
-          sortField={sortBy}
-          sortOrder={sortOrder}
-          onSortChange={handleSort}
-          onResetFilters={resetFilters}
+          onCellFilter={handleCellFilter}
+          partySearch={(q) => quotationService.searchCustomers(q)}
+          companySearch={(q) => quotationService.searchCompanies(q)}
+          sort={{ field: sortBy, order: sortOrder, onChange: handleSort }}
           hasActiveFilters={hasActiveFilters}
           selectable
           selectedKeys={selectedKeys}

@@ -1,21 +1,11 @@
 "use client"
 
-import { FileText, DollarSign, AlertTriangle, CheckCircle2, Users, UserRound } from "lucide-react"
-import { Button, Badge, ListFilterBar, FitText, FilterPills } from "@/components/ui"
+import { FileText, DollarSign, AlertTriangle, CheckCircle2, Users } from "lucide-react"
+import { Button, Badge, FitText } from "@/components/ui"
 import DataTable, { type Column } from "@/components/ui/DataTable"
 import { type SalesInvoice, type SalesInvoiceListResponse } from "@/services"
 import { formatCurrency, cn, formatDate } from "@/lib/utils"
-
-type StatusFilter = "All" | "Paid" | "Unpaid" | "Overdue" | "Draft" | "Cancelled"
-
-const STATUS_FILTERS: StatusFilter[] = [
-  "All",
-  "Paid",
-  "Unpaid",
-  "Overdue",
-  "Draft",
-  "Cancelled",
-]
+import InvoiceFilters, { type RFilter, type InvoiceSort } from "./InvoiceFilters"
 
 const statusVariant: Record<string, "success" | "info" | "warning" | "danger" | "default"> = {
   Paid: "success",
@@ -24,6 +14,8 @@ const statusVariant: Record<string, "success" | "info" | "warning" | "danger" | 
   Overdue: "danger",
   Cancelled: "default",
   Submitted: "info",
+  Return: "warning",
+  "Credit Note Issued": "info",
 }
 
 function SummaryCard({
@@ -57,13 +49,14 @@ function SummaryCard({
 
 function buildColumns(
   onRecordPayment: (inv: SalesInvoice) => void,
+  onCellFilter?: (chip: RFilter) => void,
 ): Column<SalesInvoice>[] {
   return [
     {
       key: "name",
       header: "Invoice",
       width: "w-[23%]",
-      title: (inv) => `Invoice: ${inv.name} · ${formatDate(inv.posting_date)}`,
+      title: (inv) => `Invoice: ${inv.name} \u00b7 ${formatDate(inv.posting_date)}`,
       render: (inv) => (
         <div className="flex items-center gap-3 min-w-0">
           <div className="w-9 h-9 rounded-[10px] bg-primary-50 text-primary-600 flex items-center justify-center shrink-0">
@@ -80,7 +73,18 @@ function buildColumns(
       key: "customer_name",
       header: "Customer",
       width: "w-[19%]",
-      render: (inv) => <span className="text-sm text-body">{inv.customer_name}</span>,
+      render: (inv) => (
+        <span
+          className="text-sm text-body cursor-pointer hover:text-primary-700 hover:underline"
+          onClick={(e) => {
+            e.stopPropagation()
+            onCellFilter?.({ field: "customer", label: "Customer", operator: "=", value: inv.customer })
+          }}
+          title={`Filter by ${inv.customer_name}`}
+        >
+          {inv.customer_name}
+        </span>
+      ),
     },
     {
       key: "grand_total",
@@ -140,30 +144,23 @@ function buildColumns(
   ]
 }
 
+export type { RFilter, InvoiceSort }
+
 interface InvoiceTableProps {
   data: SalesInvoiceListResponse | null
   loading: boolean
-  page: number
-  onPageChange: (page: number) => void
-  activeFilter: StatusFilter
-  onFilterChange: (filter: StatusFilter) => void
   onRowClick: (inv: SalesInvoice) => void
   onRecordPayment: (inv: SalesInvoice) => void
-  customerSearch: string
-  onCustomerSearchChange: (v: string) => void
-  dateFrom: string
-  onDateFromChange: (v: string) => void
-  dateTo: string
-  onDateToChange: (v: string) => void
-  assignedTo: string
-  onAssigneeFilterChange: (v: string) => void
-  nameFilter: string
-  onFilterId: (v: string) => void
-  sortField: string
-  sortOrder: "asc" | "desc"
-  onSortChange: (field: string, order: "asc" | "desc") => void
-  onResetFilters: () => void
-  hasActiveFilters: boolean
+  /** Status filter pills (All/Paid/Unpaid/Overdue/Draft/Cancelled). */
+  filters?: string[]
+  activeFilter?: string
+  onFilterChange?: (filter: string) => void
+  filterChips?: RFilter[]
+  onFilterChipsChange?: (filterChips: RFilter[]) => void
+  onCellFilter?: (chip: RFilter) => void
+  customerSearch?: (query: string) => Promise<{ items: Array<{ value: string; label: string; description: string }> }>
+  companySearch?: (query: string) => Promise<{ items: Array<{ value: string; label: string; description: string }> }>
+  sort?: InvoiceSort
   toolbarActions?: React.ReactNode
   selectable?: boolean
   selectedKeys?: Set<string>
@@ -172,32 +169,23 @@ interface InvoiceTableProps {
   currentPageLength?: number
   onPageLengthChange?: (size: number) => void
   onLoadMore?: () => void
+  hasActiveFilters?: boolean
 }
 
 export default function InvoiceTable({
   data,
   loading,
-  page,
-  onPageChange,
-  activeFilter,
-  onFilterChange,
   onRowClick,
   onRecordPayment,
+  filters,
+  activeFilter,
+  onFilterChange,
+  filterChips,
+  onFilterChipsChange,
+  onCellFilter,
   customerSearch,
-  onCustomerSearchChange,
-  dateFrom,
-  onDateFromChange,
-  dateTo,
-  onDateToChange,
-  assignedTo,
-  onAssigneeFilterChange,
-  nameFilter,
-  onFilterId,
-  sortField,
-  sortOrder,
-  onSortChange,
-  onResetFilters,
-  hasActiveFilters,
+  companySearch,
+  sort,
   toolbarActions,
   selectable,
   selectedKeys,
@@ -206,6 +194,7 @@ export default function InvoiceTable({
   currentPageLength,
   onPageLengthChange,
   onLoadMore,
+  hasActiveFilters,
 }: InvoiceTableProps) {
   const allItems = data?.items ?? []
   const totalAmount = allItems.reduce((s, i) => s + i.grand_total, 0)
@@ -213,7 +202,7 @@ export default function InvoiceTable({
   const overdueCount = allItems.filter((i) => i.status === "Overdue").length
   const customerCount = new Set(allItems.map((i) => i.customer)).size
 
-  const columns = buildColumns(onRecordPayment)
+  const columns = buildColumns(onRecordPayment, onCellFilter)
 
   return (
     <div className="space-y-6">
@@ -253,64 +242,33 @@ export default function InvoiceTable({
       </div>
 
       {/* Status pill tabs */}
-      <FilterPills
-        options={STATUS_FILTERS}
-        value={activeFilter}
-        onChange={(f) => {
-          onFilterChange(f)
-          onPageChange(1)
-        }}
-      />
+      {filters && (
+        <div className="flex items-center gap-2 flex-wrap">
+          {filters.map((f) => (
+            <button
+              key={f}
+              type="button"
+              onClick={() => onFilterChange?.(f)}
+              className={cn(
+                "h-8 px-3 rounded-full text-xs font-semibold transition-colors",
+                (activeFilter ?? "All") === f
+                  ? "bg-primary-100 text-primary-700"
+                  : "text-muted hover:bg-gray-100 hover:text-body"
+              )}
+            >
+              {f}
+            </button>
+          ))}
+        </div>
+      )}
 
-      {/* Customer search */}
-      <ListFilterBar
-        controls={{
-          search: {
-            value: customerSearch,
-            onChange: onCustomerSearchChange,
-            placeholder: "Search customer / ID...",
-            width: "w-48",
-          },
-          dateRange: {
-            from: dateFrom,
-            to: dateTo,
-            onChange: (from, to) => {
-              onDateFromChange(from)
-              onDateToChange(to)
-            },
-          },
-          sort: {
-            field: sortField || "posting_date",
-            order: sortOrder ?? "desc",
-            onSort: onSortChange,
-            options: [
-              { value: "posting_date", label: "Posting Date" },
-              { value: "customer_name", label: "Customer" },
-              { value: "grand_total", label: "Amount" },
-              { value: "due_date", label: "Due Date" },
-            ],
-          },
-          chips: [
-            ...(nameFilter
-              ? [{
-                  key: "name",
-                  label: `ID: ${nameFilter}`,
-                  icon: <FileText size={12} />,
-                  onClear: () => onFilterId(nameFilter),
-                }]
-              : []),
-            ...(assignedTo
-              ? [{
-                  key: "assignee",
-                  label: `Assigned to: ${assignedTo}`,
-                  icon: <UserRound size={12} />,
-                  onClear: () => onAssigneeFilterChange(""),
-                }]
-              : []),
-          ],
-        }}
-        hasActiveFilters={hasActiveFilters}
-        onReset={onResetFilters}
+      {/* ERPNext-style filter bar + FilterGroup */}
+      <InvoiceFilters
+        filters={filterChips ?? []}
+        onFiltersChange={(next) => onFilterChipsChange?.(next)}
+        customerSearch={customerSearch}
+        companySearch={companySearch}
+        sort={sort}
       />
 
       <DataTable
@@ -318,10 +276,10 @@ export default function InvoiceTable({
         data={data?.items ?? []}
         keyExtractor={(inv) => inv.name}
         loading={loading}
-        page={page}
+        page={1}
         total={data?.total}
-        pageSize={10}
-        onPageChange={onPageChange}
+        pageSize={currentPageLength ?? 20}
+        onPageChange={() => {}}
         onRowClick={onRowClick}
         toolbarActions={toolbarActions}
         selectable={selectable}

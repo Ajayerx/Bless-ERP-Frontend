@@ -512,6 +512,10 @@ export const quotationService = {
     assignedTo?: string
     sortBy?: string
     sortOrder?: "asc" | "desc"
+    /** Raw frappe filter tuples in ERPNext's list-view wire format
+     * `[field, operator, value]` or `[doctype, field, operator, value]` (AND'd
+     * with the typed params). */
+    filters?: unknown[][]
   }): Promise<QuotationListResponse> {
     const pageSize = params.pageSize ?? 10
     const limit_start = ((params.page ?? 1) - 1) * pageSize
@@ -526,6 +530,7 @@ export const quotationService = {
     if (params.validTillFrom) filters.push(["valid_till", ">=", params.validTillFrom])
     if (params.validTillTo) filters.push(["valid_till", "<=", params.validTillTo])
     if (params.assignedTo) filters.push(["_assign", "like", `%${params.assignedTo}%`])
+    if (params.filters && params.filters.length > 0) filters.push(...params.filters)
 
     const orFilters: unknown[] = []
     if (params.search) {
@@ -784,6 +789,48 @@ export const quotationService = {
       label: u.label ?? u.value,
       description: u.description ?? "",
     }))
+  },
+
+  async searchLink(
+    doctype: string,
+    query: string,
+    extraParams?: {
+      reference_doctype?: string
+      searchfield?: string
+      filters?: Record<string, unknown>
+      page_length?: number
+    },
+  ): Promise<{ items: Array<{ value: string; label: string; description: string }> }> {
+    const fields: Array<[string, string]> = [
+      ["txt", query || ""],
+      ["doctype", doctype],
+      ["ignore_user_permissions", "false"],
+    ]
+    if (extraParams?.reference_doctype) fields.push(["reference_doctype", extraParams.reference_doctype])
+    fields.push(["page_length", String(extraParams?.page_length ?? 10)])
+    if (extraParams?.filters) fields.push(["filters", JSON.stringify(extraParams.filters)])
+    fields.push(["searchfield", extraParams?.searchfield ?? "name"])
+    try {
+      const result = await apiFormCall<Array<{ value: string; label: string; description: string }>>(
+        "/method/frappe.desk.search.search_link",
+        fields,
+        { doctype },
+      )
+      return { items: Array.isArray(result) ? result : [] }
+    } catch {
+      return { items: [] }
+    }
+  },
+
+  // ERPNext list parity: the Quotation list "Party" / "Company" link filters
+  // search via the same search_link envelope as the SI list. Party spans
+  // Customer/Lead/Prospect (the quotation_to doctypes).
+  searchCustomers(query: string): Promise<{ items: Array<{ value: string; label: string; description: string }> }> {
+    return this.searchLink("Customer", query, { reference_doctype: DOCTYPE })
+  },
+
+  searchCompanies(query: string): Promise<{ items: Array<{ value: string; label: string; description: string }> }> {
+    return this.searchLink("Company", query, { reference_doctype: DOCTYPE })
   },
 
   // frappe.desk.search.search_link for the quotation_to Link field

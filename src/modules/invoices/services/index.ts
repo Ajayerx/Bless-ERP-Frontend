@@ -1041,6 +1041,10 @@ export const invoiceService = {
     name?: string
     sortBy?: string
     sortOrder?: "asc" | "desc"
+    /** Raw frappe filter tuples in ERPNext's list-view wire format
+     * `[field, operator, value]` or `[doctype, field, operator, value]` (AND'd
+     * with the typed params). */
+    filters?: unknown[][]
   }): Promise<SalesInvoiceListResponse> {
     const pageSize = params.pageLength ?? params.pageSize ?? 10
     const limit_start = params.start != null ? params.start : ((params.page ?? 1) - 1) * pageSize
@@ -1073,6 +1077,7 @@ export const invoiceService = {
     if (params.name) {
       filters.push(["name", "=", params.name])
     }
+    if (params.filters && params.filters.length > 0) filters.push(...params.filters)
 
     // Frappe splits the list search into a top-level `or_filters` group.
     const orFilters: unknown[] = []
@@ -1994,6 +1999,16 @@ export const invoiceService = {
   },
 
   // ── Assignment (frappe.desk.form.assign_to) ───────────────────────
+
+  async searchCustomers(query: string): Promise<Array<{ value: string; label: string; description: string }>> {
+    const result = await this.searchLink("Customer", query)
+    return result.items
+  },
+
+  async searchCompanies(query: string): Promise<Array<{ value: string; label: string; description: string }>> {
+    const result = await this.searchLink("Company", query)
+    return result.items
+  },
 
   async searchAssignableUsers(
     query: string,

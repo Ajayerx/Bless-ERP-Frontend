@@ -1400,10 +1400,13 @@ export const salesOrderService = {
   },
 
   // ── Create menu (make_mapped_doc + status / reservation) ───────────
-  async makeDeliveryNote(sourceName: string): Promise<{ doctype: string; name: string }> {
+  async makeDeliveryNote(
+    sourceName: string,
+    args?: { delivery_dates?: string[]; for_reserved_stock?: boolean; skip_item_mapping?: boolean },
+  ): Promise<{ doctype: string; name: string }> {
     return apiClient<{ doctype: string; name: string }>(
       "/method/frappe.model.mapper.make_mapped_doc",
-      { method: "POST", body: JSON.stringify({ method: "erpnext.selling.doctype.sales_order.sales_order.make_delivery_note", source_name: sourceName }) },
+      { method: "POST", body: JSON.stringify({ method: "erpnext.selling.doctype.sales_order.sales_order.make_delivery_note", source_name: sourceName, ...(args ? { args: JSON.stringify(args) } : {}) }) },
     )
   },
 
@@ -1414,13 +1417,6 @@ export const salesOrderService = {
     )
   },
 
-  async createPickList(sourceName: string): Promise<{ doctype: string; name: string }> {
-    return apiClient<{ doctype: string; name: string }>(
-      "/method/frappe.model.mapper.make_mapped_doc",
-      { method: "POST", body: JSON.stringify({ method: "erpnext.selling.doctype.sales_order.sales_order.create_pick_list", source_name: sourceName }) },
-    )
-  },
-
   async makeMaterialRequest(sourceName: string): Promise<{ doctype: string; name: string }> {
     return apiClient<{ doctype: string; name: string }>(
       "/method/frappe.model.mapper.make_mapped_doc",
@@ -1428,17 +1424,44 @@ export const salesOrderService = {
     )
   },
 
-  async makeRawMaterialRequest(sourceName: string): Promise<{ doctype: string; name: string }> {
-    return apiClient<{ doctype: string; name: string }>(
-      "/method/frappe.model.mapper.make_mapped_doc",
-      { method: "POST", body: JSON.stringify({ method: "erpnext.selling.doctype.sales_order.sales_order.make_raw_material_request", source_name: sourceName }) },
+  async makeRawMaterialRequest(
+    items: Array<{ item_code: string; warehouse?: string; bom?: string; required_qty?: number }>,
+    company: string,
+    salesOrder: string,
+    project?: string,
+    opts?: { includeExplodedItems?: boolean; ignoreExistingOrderedQty?: boolean },
+  ): Promise<{ doctype: string; name: string } | null> {
+    return postMethod<{ doctype: string; name: string } | null>(
+      "erpnext.selling.doctype.sales_order.sales_order.make_raw_material_request",
+      {
+        items: JSON.stringify({
+          include_exploded_items: opts?.includeExplodedItems ? 1 : 0,
+          ignore_existing_ordered_qty: opts?.ignoreExistingOrderedQty ? 1 : 0,
+          items,
+        }),
+        company,
+        sales_order: salesOrder,
+        project: project ?? "",
+      },
     )
   },
 
-  async makeWorkOrders(sourceName: string): Promise<{ doctype: string; name: string }> {
-    return apiClient<{ doctype: string; name: string }>(
-      "/method/frappe.model.mapper.make_mapped_doc",
-      { method: "POST", body: JSON.stringify({ method: "erpnext.selling.doctype.sales_order.sales_order.make_work_orders", source_name: sourceName }) },
+  async makeWorkOrders(
+    items: Array<{
+      bom: string
+      item_code: string
+      pending_qty: number
+      sales_order_item?: string
+      warehouse?: string
+      description?: string
+    }>,
+    salesOrder: string,
+    company: string,
+    project?: string,
+  ): Promise<string[]> {
+    return postMethod<string[]>(
+      "erpnext.selling.doctype.sales_order.sales_order.make_work_orders",
+      { items: JSON.stringify({ items }), sales_order: salesOrder, company, project: project ?? "" },
     )
   },
 
@@ -1449,10 +1472,20 @@ export const salesOrderService = {
     )
   },
 
-  async makePurchaseOrder(sourceName: string): Promise<{ doctype: string; name: string }> {
+  async makePurchaseOrder(
+    sourceName: string,
+    selectedItems: Array<{
+      name?: string
+      item_code?: string
+      item_name?: string
+      pending_qty?: number
+      uom?: string
+      supplier?: string
+    }>,
+  ): Promise<{ doctype: string; name: string }> {
     return apiClient<{ doctype: string; name: string }>(
-      "/method/frappe.model.mapper.make_mapped_doc",
-      { method: "POST", body: JSON.stringify({ method: "erpnext.selling.doctype.sales_order.sales_order.make_purchase_order", source_name: sourceName }) },
+      "/method/erpnext.selling.doctype.sales_order.sales_order.make_purchase_order",
+      { method: "POST", body: JSON.stringify({ source_name: sourceName, selected_items: JSON.stringify(selectedItems) }) },
     )
   },
 

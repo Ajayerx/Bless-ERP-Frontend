@@ -23,7 +23,7 @@ interface UseCustomersResult {
   refetch: () => Promise<void>
 }
 
-function statusToFilters(filter: StatusFilter): unknown[] {
+function statusToFilters(filter: StatusFilter): unknown[][] {
   switch (filter) {
     case "active": return [["disabled", "=", 0]]
     case "disabled": return [["disabled", "=", 1]]

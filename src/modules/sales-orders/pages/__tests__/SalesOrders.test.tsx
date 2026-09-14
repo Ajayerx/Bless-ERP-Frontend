@@ -656,6 +656,40 @@ describe("SalesOrders list filters (ERPNext parity)", () => {
       expect(screen.getByText("SAL-ORD-2026-0001")).toBeInTheDocument()
     })
   })
+
+  it("adds an advanced filter via the FilterGroup popover (grand_total >= 1000)", async () => {
+    renderPage()
+    await screen.findByText("SAL-ORD-2026-0001")
+
+    await user.click(screen.getByRole("button", { name: "Advanced Filter" }))
+    await user.click(await screen.findByRole("button", { name: /Add a Filter/ }))
+    await user.selectOptions(await screen.findByLabelText("Filter field"), "grand_total")
+    await user.selectOptions(screen.getByLabelText("Filter condition"), ">=")
+    await user.type(screen.getByLabelText("Filter value"), "1000")
+    await user.click(screen.getByRole("button", { name: /Apply/ }))
+
+    await waitFor(() => {
+      const req = lastRequest(
+        (r) => r.path === "/api/resource/Sales Order" && r.method === "GET" && r.query.limit_page_length !== "0"
+      )
+      expect(String(req?.query?.filters ?? "")).toContain('["Sales Order","grand_total",">=","1000"]')
+    })
+  })
+
+  it("seeds the advanced filter popover from active URL filters", async () => {
+    renderPageWithQuery(
+      `?filters=${encodeURIComponent(
+        JSON.stringify([{ field: "status", label: "Status", operator: "=", value: "Draft" }])
+      )}`
+    )
+    await screen.findByText("SAL-ORD-2026-0005")
+
+    await user.click(screen.getByRole("button", { name: "Advanced Filter" }))
+    await waitFor(() => {
+      expect(screen.getByLabelText("Filter field")).toHaveValue("status")
+    })
+    expect(screen.getByLabelText("Filter value")).toHaveValue("Draft")
+  })
 })
 
 describe("SalesOrderWorkspace status dropdown (ERPNext parity)", () => {
@@ -906,5 +940,19 @@ describe("SalesOrderWorkspace status dropdown (ERPNext parity)", () => {
     })() as Record<string, unknown>
     expect(args.item_code).toBe("PRD-003")
     expect(args.price_list).toBe("Standard Selling")
+  })
+
+  it("shows a not-available message when the Create menu's Pick List action is clicked", async () => {
+    renderWorkspace("SAL-ORD-2026-0001")
+    await screen.findByRole("button", { name: "Create" })
+
+    await user.click(screen.getByRole("button", { name: "Create" }))
+    await user.click(await screen.findByRole("button", { name: "Pick List" }))
+
+    expect(await screen.findByText("Pick List module is not available yet.")).toBeInTheDocument()
+    // Not a real Pick List flow: no mapper call is issued for the action.
+    expect(
+      capturedRequests.some((r) => r.path.endsWith("make_mapped_doc") && r.method === "POST")
+    ).toBe(false)
   })
 })

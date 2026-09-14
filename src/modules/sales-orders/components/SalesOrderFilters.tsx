@@ -16,42 +16,20 @@ import {
   isToday,
 } from "date-fns"
 import { ArrowDown, ArrowUp, CalendarDays, Check, ChevronDown, ChevronLeft, ChevronRight, Filter, X } from "lucide-react"
-import { LinkSearchField, Popover, PopoverTrigger, PopoverContent, PopoverAnchor } from "@/components/ui"
+import { FilterGroup, LinkSearchField, Popover, PopoverTrigger, PopoverContent, PopoverAnchor } from "@/components/ui"
 import { cn, formatDateDDMMYYYY } from "@/lib/utils"
-import { INDICATOR_FILTER_TUPLES } from "@/services"
-
-// ── Filter model (ERPNext-style field/operator/value chips) ────────────
-export type FilterOperator =
-  | "="
-  | "!="
-  | "like"
-  | "not like"
-  | ">"
-  | "<"
-  | ">="
-  | "<="
-  | "between"
-  | "is"
-  | "not set"
-
-export interface RFilter {
-  field: string
-  label: string
-  operator: FilterOperator
-  value: string
-  value2?: string
-}
+import type { RFilter, FilterOperator, FilterFieldDef } from "@/services/filter-types"
+import { rFilterToArgs as rFilterToArgsBase } from "@/services/filter-types"
 
 const DOCTYPE = "Sales Order"
 
-type FieldType = "text" | "select" | "date" | "link"
-
-interface FilterFieldDef {
-  field: string
-  label: string
-  type: FieldType
-  options?: readonly string[]
+/** Re-export rFilterToArgs with Sales Order doctype baked in (backward compat). */
+export function rFilterToArgs(r: RFilter): unknown[][] {
+  return rFilterToArgsBase(r, DOCTYPE)
 }
+
+// Re-export shared types for backward compatibility.
+export type { RFilter, FilterOperator, FilterFieldDef }
 
 // ERPNext Sales Order list filters — always visible on the list page.
 const INLINE_FIELDS: FilterFieldDef[] = [
@@ -75,35 +53,18 @@ const INLINE_FIELDS: FilterFieldDef[] = [
   },
 ]
 
-/** Map a chip to the raw frappe filter tuples ERPNext would send to the server,
- * in the list-view wire format `[doctype, field, operator, value]`. A
- * `status = <indicator label>` chip expands to the doctype indicator's full
- * AND-tuple (e.g. Overdue → `per_delivered,<,100 | delivery_date,<,Today |
- * status,!=,Closed | docstatus,=,1`), exactly like ERPNext's `data-filter`. */
-export function rFilterToArgs(r: RFilter): unknown[][] {
-  const { field, operator, value } = r
-  if (field === "status" && operator === "=") {
-    const tuple = INDICATOR_FILTER_TUPLES[value as keyof typeof INDICATOR_FILTER_TUPLES]
-    if (tuple) return tuple.map((t) => [DOCTYPE, ...t])
-  }
-  switch (operator) {
-    case "like":
-      return [[DOCTYPE, field, "like", `%${value}%`]]
-    case "not like":
-      return [[DOCTYPE, field, "not like", `%${value}%`]]
-    case "between":
-      return [
-        ...(value ? [[DOCTYPE, field, ">=", value]] : []),
-        ...(r.value2 ? [[DOCTYPE, field, "<=", r.value2]] : []),
-      ]
-    case "is":
-      return [[DOCTYPE, field, "is", "set"]]
-    case "not set":
-      return [[DOCTYPE, field, "is", "not set"]]
-    default:
-      return [[DOCTYPE, field, operator, value]]
-  }
-}
+/** Fields available in the advanced filter popover (any filterable SO field). */
+export const SO_ADVANCED_FILTER_FIELDS: FilterFieldDef[] = [
+  ...INLINE_FIELDS,
+  { field: "status", label: "Status", type: "select", options: ["Draft", "On Hold", "To Deliver and Bill", "To Deliver", "To Bill", "Completed", "Cancelled", "Closed"] },
+  { field: "order_type", label: "Order Type", type: "select", options: ["Sales", "Maintenance", "Standard"] },
+  { field: "grand_total", label: "Grand Total", type: "number" },
+  { field: "per_delivered", label: "% Delivered", type: "number" },
+  { field: "per_billed", label: "% Billed", type: "number" },
+  { field: "owner", label: "Owner", type: "link" },
+  { field: "creation", label: "Created On", type: "date" },
+  { field: "modified", label: "Last Updated", type: "date" },
+]
 
 // ── Sort control ───────────────────────────────────────────────────────
 export interface SalesOrderSort {
@@ -487,6 +448,12 @@ export default function SalesOrderFilters({
         </p>
 
         <div className="flex items-center gap-3">
+          <FilterGroup
+            filters={filters}
+            onFiltersChange={onFiltersChange}
+            availableFields={SO_ADVANCED_FILTER_FIELDS}
+          />
+
           {activeCount > 0 && (
             <button
               type="button"

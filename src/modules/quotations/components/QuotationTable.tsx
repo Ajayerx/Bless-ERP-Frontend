@@ -1,15 +1,14 @@
 "use client"
 
-import { FileText, CheckCircle2, Clock, XCircle, ArrowRight, Users, TrendingDown, Send, RotateCcw, Trash2, Download, Printer, UserRound, Tag } from "lucide-react"
-import { Badge, ListFilterBar, FitText, FilterPills, ListBulkActions } from "@/components/ui"
+import { FileText, CheckCircle2, Clock, XCircle, ArrowRight, TrendingDown, Send, RotateCcw, Trash2, Download, Printer, UserRound, Tag } from "lucide-react"
+import { Badge, FitText, ListBulkActions } from "@/components/ui"
 import DataTable, { type Column } from "@/components/ui/DataTable"
 import { type Quotation, type QuotationListResponse } from "@/services"
 import type { QuotationStatus } from "../types"
 import { formatCurrency, cn, formatDate } from "@/lib/utils"
+import QuotationFilters, { type RFilter, type QuotationSort } from "./QuotationFilters"
 
-type StatusFilter = "All" | QuotationStatus
-
-const STATUS_FILTERS: StatusFilter[] = [
+const QUOTATION_STATUS_FILTERS: Array<"All" | QuotationStatus> = [
   "All",
   "Draft",
   "Open",
@@ -77,7 +76,7 @@ function buildColumns(actions: {
   onCancelSingle: (name: string) => void
   onDeleteSingle: (name: string) => void
   onAmendSingle: (name: string) => void
-}): Column<Quotation>[] {
+}, onCellFilter?: (chip: RFilter) => void): Column<Quotation>[] {
   return [
     {
       key: "name",
@@ -91,7 +90,16 @@ function buildColumns(actions: {
           </div>
           <div className="min-w-0">
             <p className="font-semibold text-heading truncate">{q.name}</p>
-            <p className="text-xs text-muted truncate">{q.customer_name || q.party_name}</p>
+            <span
+              className="text-xs text-muted truncate cursor-pointer hover:text-primary-700 hover:underline block"
+              onClick={(e) => {
+                e.stopPropagation()
+                onCellFilter?.({ field: "party_name", label: "Party", operator: "=", value: q.party_name })
+              }}
+              title={`Filter by ${q.customer_name || q.party_name}`}
+            >
+              {q.customer_name || q.party_name}
+            </span>
           </div>
         </div>
       ),
@@ -205,25 +213,17 @@ interface QuotationTableProps {
   loading: boolean
   page: number
   onPageChange: (page: number) => void
-  activeFilter: string
-  onFilterChange: (filter: string) => void
   onRowClick: (quotation: Quotation) => void
-  customerSearch: string
-  onCustomerSearchChange: (v: string) => void
-  dateFrom: string
-  onDateFromChange: (v: string) => void
-  dateTo: string
-  onDateToChange: (v: string) => void
-  validTillFrom: string
-  onValidTillFromChange: (v: string) => void
-  validTillTo: string
-  onValidTillToChange: (v: string) => void
-  assignedTo: string
-  onAssigneeFilterChange: (v: string) => void
-  sortField: string
-  sortOrder: "asc" | "desc"
-  onSortChange: (field: string, order: "asc" | "desc") => void
-  onResetFilters: () => void
+  /** Status pill tabs (All/Draft/Open/...). */
+  filters?: string[]
+  activeFilter?: string
+  onFilterChange?: (filter: string) => void
+  filterChips?: RFilter[]
+  onFilterChipsChange?: (filterChips: RFilter[]) => void
+  onCellFilter?: (chip: RFilter) => void
+  partySearch?: (query: string) => Promise<{ items: Array<{ value: string; label: string; description: string }> }>
+  companySearch?: (query: string) => Promise<{ items: Array<{ value: string; label: string; description: string }> }>
+  sort?: QuotationSort
   hasActiveFilters: boolean
   selectable?: boolean
   selectedKeys?: Set<string>
@@ -254,26 +254,17 @@ export default function QuotationTable({
   loading,
   page,
   onPageChange,
+  filters,
   activeFilter,
   onFilterChange,
-  onRowClick,
-  customerSearch,
-  onCustomerSearchChange,
-  dateFrom,
-  onDateFromChange,
-  dateTo,
-  onDateToChange,
-  validTillFrom,
-  onValidTillFromChange,
-  validTillTo,
-  onValidTillToChange,
-  assignedTo,
-  onAssigneeFilterChange,
-  sortField,
-  sortOrder,
-  onSortChange,
-  onResetFilters,
+  filterChips,
+  onFilterChipsChange,
+  onCellFilter,
+  partySearch,
+  companySearch,
+  sort,
   hasActiveFilters,
+  onRowClick,
   selectable,
   selectedKeys,
   onSelectionChange,
@@ -359,71 +350,35 @@ export default function QuotationTable({
       </div>
 
       {/* Status pill tabs */}
-      <FilterPills
-        options={STATUS_FILTERS}
-        value={activeFilter}
-        onChange={(f) => {
-          onFilterChange(f)
-          onPageChange(1)
-        }}
-      />
+      <div className="flex items-center gap-2 flex-wrap">
+        {(filters ?? QUOTATION_STATUS_FILTERS).map((f) => (
+          <button
+            key={f}
+            type="button"
+            onClick={() => onFilterChange?.(f)}
+            className={cn(
+              "h-8 px-3 rounded-full text-xs font-semibold transition-colors",
+              (activeFilter ?? "All") === f
+                ? "bg-primary-100 text-primary-700"
+                : "text-muted hover:bg-gray-100 hover:text-body"
+            )}
+          >
+            {f}
+          </button>
+        ))}
+      </div>
 
-      {/* Customer search + date filters + sort */}
-      <ListFilterBar
-        controls={{
-          search: {
-            value: customerSearch,
-            onChange: onCustomerSearchChange,
-            placeholder: "Search customer / ID...",
-            width: "w-48",
-          },
-          dateRange: {
-            from: dateFrom,
-            to: dateTo,
-            onChange: (from, to) => {
-              onDateFromChange(from)
-              onDateToChange(to)
-            },
-          },
-          sort: {
-            field: sortField || "transaction_date",
-            order: sortOrder ?? "desc",
-            onSort: onSortChange,
-            options: [
-              { value: "transaction_date", label: "Date" },
-              { value: "party_name", label: "Customer" },
-              { value: "grand_total", label: "Amount" },
-              { value: "valid_till", label: "Valid Until" },
-            ],
-          },
-          chips: [
-            ...(validTillFrom || validTillTo
-              ? [{
-                  key: "validTill",
-                  label: `Valid until: ${validTillFrom || "…"} → ${validTillTo || "…"}`,
-                  icon: <Clock size={12} />,
-                  onClear: () => {
-                    onValidTillFromChange("")
-                    onValidTillToChange("")
-                  },
-                }]
-              : []),
-            ...(assignedTo
-              ? [{
-                  key: "assignee",
-                  label: `Assigned to: ${assignedTo}`,
-                  icon: <Users size={12} />,
-                  onClear: () => onAssigneeFilterChange(""),
-                }]
-              : []),
-          ],
-        }}
-        hasActiveFilters={hasActiveFilters}
-        onReset={onResetFilters}
+      {/* ERPNext-style filter bar + FilterGroup */}
+      <QuotationFilters
+        filters={filterChips ?? []}
+        onFiltersChange={(next) => onFilterChipsChange?.(next)}
+        partySearch={partySearch}
+        companySearch={companySearch}
+        sort={sort}
       />
 
       <DataTable
-        columns={buildColumns({ onSubmitSingle, onCancelSingle, onDeleteSingle, onAmendSingle })}
+        columns={buildColumns({ onSubmitSingle, onCancelSingle, onDeleteSingle, onAmendSingle }, onCellFilter)}
         data={allItems}
         keyExtractor={(q) => q.name}
         loading={loading}

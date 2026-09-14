@@ -3,16 +3,25 @@
 import { useState, useEffect } from "react"
 import { CheckCircle2, Clock, FileText, DollarSign, Send, XCircle, RotateCcw, Trash2, Download, Printer, UserRound, Tag } from "lucide-react"
 import DataTable, { type Column } from "@/components/ui/DataTable"
-import { Badge, ListFilterBar, Button, Avatar, ListBulkActions, FitText , FilterPills } from "@/components/ui"
+import { Badge, Button, Avatar, ListBulkActions, FitText } from "@/components/ui"
 import { type PaymentEntry, type PaymentEntryListResponse } from "@/services"
 import { paymentService } from "@/services"
 import { formatCurrency, formatDate, cn } from "@/lib/utils"
+import PaymentFilters, { type RFilter, type PaymentSort } from "./PaymentFilters"
 
-type StatusFilter = "All" | "Draft" | "Submitted" | "Cancelled"
+const PAYMENT_STATUS_FILTERS: string[] = ["All", "Draft", "Submitted", "Cancelled"]
 
-const STATUS_FILTERS: StatusFilter[] = ["All", "Draft", "Submitted", "Cancelled"]
+const statusVariant: Record<number, "default" | "success" | "warning" | "danger"> = {
+  0: "warning",
+  1: "success",
+  2: "danger",
+}
 
-const PAYMENT_TYPES = ["", "Receive", "Pay", "Internal Transfer"]
+const statusLabel: Record<number, string> = {
+  0: "Draft",
+  1: "Submitted",
+  2: "Cancelled",
+}
 
 function SummaryCard({
   label, value, sub, icon: Icon, iconClass, iconBg,
@@ -32,12 +41,6 @@ function SummaryCard({
       </div>
     </div>
   )
-}
-
-function statusIndicator(docstatus: number) {
-  if (docstatus === 1) return <Badge variant="success">Submitted</Badge>
-  if (docstatus === 2) return <Badge variant="danger">Cancelled</Badge>
-  return <Badge variant="warning">Draft</Badge>
 }
 
 // Parse ERPNext `_assign` (a JSON array string of user ids) into a user id list.
@@ -66,36 +69,21 @@ interface PaymentTableProps {
   onCancelSingle: (name: string) => void
   onDeleteSingle: (name: string) => void
   onAmendSingle: (name: string) => void
-  activeStatus: StatusFilter
-  onStatusFilterChange: (f: StatusFilter) => void
-  paymentTypeFilter: string
-  onPaymentTypeFilterChange: (v: string) => void
-  modeFilter: string
-  onModeFilterChange: (v: string) => void
-  partyTypeFilter: string
-  onPartyTypeFilterChange: (v: string) => void
-  partyTypeOptions: string[]
-  searchQuery: string
-  onSearchQueryChange: (v: string) => void
+  /** Status pill tabs (All/Draft/Submitted/Cancelled). */
+  filters?: string[]
+  activeFilter?: string
+  onFilterChange?: (filter: string) => void
+  filterChips?: RFilter[]
+  onFilterChipsChange?: (filterChips: RFilter[]) => void
+  onCellFilter?: (chip: RFilter) => void
+  partySearch?: (query: string) => Promise<{ items: Array<{ value: string; label: string; description: string }> }>
+  companySearch?: (query: string) => Promise<{ items: Array<{ value: string; label: string; description: string }> }>
+  sort?: PaymentSort
   onBulkExport: () => void
   onBulkPrint: () => void
   onBulkAssign: () => void
   onBulkClearAssign: () => void
   onBulkAddTags: () => void
-  sortField?: string
-  sortOrder?: "asc" | "desc"
-  onSortChange?: (field: string, order: "asc" | "desc") => void
-  dateFrom: string
-  onDateFromChange: (v: string) => void
-  dateTo: string
-  onDateToChange: (v: string) => void
-  assigneeFilter: string
-  onAssigneeFilterChange: (v: string) => void
-  nameFilter: string
-  onFilterId: (name: string) => void
-  onFilterType: (type: string) => void
-  onFilterStatus: (docstatus: number) => void
-  onResetFilters: () => void
   hasActiveFilters: boolean
   paginationMode?: "pages" | "loadMore"
   currentPageLength?: number
@@ -109,31 +97,16 @@ export default function PaymentTable({
   selectedPayments, onSelectionChange,
   onBulkSubmit, onBulkCancel, onBulkDelete,
   onSubmitSingle, onCancelSingle, onDeleteSingle, onAmendSingle,
-  activeStatus, onStatusFilterChange,
-  paymentTypeFilter, onPaymentTypeFilterChange,
-  modeFilter, onModeFilterChange,
-  partyTypeFilter, onPartyTypeFilterChange, partyTypeOptions,
-  searchQuery, onSearchQueryChange,
+  filters, activeFilter, onFilterChange,
+  filterChips, onFilterChipsChange, onCellFilter,
+  partySearch, companySearch, sort,
   onBulkExport, onBulkPrint, onBulkAssign, onBulkClearAssign, onBulkAddTags,
-  sortField, sortOrder, onSortChange,
-  dateFrom, onDateFromChange,
-  dateTo, onDateToChange,
-  assigneeFilter, onAssigneeFilterChange,
-  nameFilter, onFilterId, onFilterType, onFilterStatus,
-  onResetFilters, hasActiveFilters,
+  hasActiveFilters,
   paginationMode = "loadMore",
   currentPageLength,
   onPageLengthChange,
   onLoadMore,
 }: PaymentTableProps) {
-  const [modeOptions, setModeOptions] = useState<string[]>([])
-
-  useEffect(() => {
-    paymentService.getModeOfPaymentList().then(setModeOptions)
-  }, [])
-
-  // Resolve assignee user ids → full names for row avatars (ERPNext shows the
-  // name as a tooltip on hover). The list API returns only the ids.
   const [userNames, setUserNames] = useState<Record<string, { full_name?: string }>>({})
 
   useEffect(() => {
@@ -157,6 +130,17 @@ export default function PaymentTable({
 
   const totalCollected = data?.items?.reduce((s, p) => s + p.paid_amount, 0) ?? 0
 
+  const assigneeChips = (filterChips ?? []).filter((c) => c.field === "_assign")
+  const avatarActive = (uid: string) => assigneeChips.some((c) => c.value === uid)
+
+  const toggleAssignee = (uid: string) => {
+    if (avatarActive(uid)) {
+      onFilterChipsChange?.((filterChips ?? []).filter((c) => !(c.field === "_assign" && c.value === uid)))
+    } else {
+      onCellFilter?.({ field: "_assign", label: "Assigned To", operator: "like", value: uid })
+    }
+  }
+
   const paymentColumns: Column<PaymentEntry>[] = [
     {
       key: "party_name",
@@ -165,18 +149,27 @@ export default function PaymentTable({
       title: (p) => `Customer: ${p.party_name || p.party} · ${p.name}`,
       render: (p) => (
         <div className="min-w-0">
-          <p className="font-semibold text-heading truncate">{p.party_name || p.party}</p>
+          <span
+            className="text-sm text-body cursor-pointer hover:text-primary-700 hover:underline block truncate"
+            onClick={(e) => {
+              e.stopPropagation()
+              onCellFilter?.({ field: "party", label: "Party", operator: "=", value: p.party })
+            }}
+            title={`Filter by ${p.party_name || p.party}`}
+          >
+            {p.party_name || p.party}
+          </span>
           {/* ID behaves like ERPNext's detached ID column: clicking it filters */}
           <button
             type="button"
             onClick={(e) => {
               e.stopPropagation()
-              onFilterId(p.name)
+              onCellFilter?.({ field: "name", label: "ID", operator: "=", value: p.name })
             }}
             title="Filter by this ID (click row to open)"
             className={cn(
               "text-xs truncate max-w-full text-left rounded px-1 -mx-1 transition-colors cursor-pointer",
-              nameFilter === p.name
+              (filterChips ?? []).some((c) => c.field === "name" && c.value === p.name)
                 ? "bg-primary-50 text-primary-700 font-medium"
                 : "text-muted hover:text-primary-700 hover:bg-gray-100"
             )}
@@ -190,18 +183,18 @@ export default function PaymentTable({
       key: "status",
       header: "Status",
       width: "w-[11%]",
-      title: (p) => `Status: ${p.docstatus === 1 ? "Submitted" : p.docstatus === 2 ? "Cancelled" : "Draft"}`,
+      title: (p) => `Status: ${statusLabel[p.docstatus] ?? "Draft"}`,
       render: (p) => (
         <button
           type="button"
           onClick={(e) => {
             e.stopPropagation()
-            onFilterStatus(p.docstatus)
+            onCellFilter?.({ field: "status", label: "Status", operator: "=", value: statusLabel[p.docstatus] ?? "Draft" })
           }}
-          title={`Filter by ${p.docstatus === 1 ? "Submitted" : p.docstatus === 2 ? "Cancelled" : "Draft"}`}
+          title={`Filter by ${statusLabel[p.docstatus] ?? "Draft"}`}
           className="rounded-lg -m-1 p-1 transition-colors hover:bg-gray-100 cursor-pointer"
         >
-          {statusIndicator(p.docstatus)}
+          <Badge variant={statusVariant[p.docstatus] ?? "default"}>{statusLabel[p.docstatus] ?? "Draft"}</Badge>
         </button>
       ),
     },
@@ -215,13 +208,13 @@ export default function PaymentTable({
           type="button"
           onClick={(e) => {
             e.stopPropagation()
-            if (p.payment_type) onFilterType(p.payment_type)
+            if (p.payment_type) onCellFilter?.({ field: "payment_type", label: "Type", operator: "=", value: p.payment_type })
           }}
           title={p.payment_type ? `Filter by ${p.payment_type}` : undefined}
           disabled={!p.payment_type}
           className={cn(
             "text-sm rounded px-1 -mx-1 transition-colors",
-            paymentTypeFilter === p.payment_type
+            (filterChips ?? []).some((c) => c.field === "payment_type" && c.value === p.payment_type)
               ? "text-primary-700 font-semibold"
               : "text-muted hover:text-primary-700 hover:bg-gray-100",
             !p.payment_type && "cursor-default text-muted/50"
@@ -274,13 +267,13 @@ export default function PaymentTable({
           <div className="flex -space-x-2 items-center" onClick={(e) => e.stopPropagation()}>
             {visible.map((uid) => {
               const name = userNames[uid]?.full_name || uid
-              const active = assigneeFilter === uid
+              const active = avatarActive(uid)
               return (
                 <button
                   key={uid}
                   type="button"
                   title={name}
-                  onClick={() => onAssigneeFilterChange(active ? "" : uid)}
+                  onClick={() => toggleAssignee(uid)}
                   className={cn(
                     "rounded-full transition-transform hover:-translate-y-0.5 border-2",
                     active ? "border-primary-500 ring-2 ring-primary-500/30" : "border-surface"
@@ -447,77 +440,31 @@ export default function PaymentTable({
       </div>
 
       {/* Status pill tabs */}
-      <FilterPills options={STATUS_FILTERS} value={activeStatus} onChange={onStatusFilterChange} />
+      <div className="flex items-center gap-2 flex-wrap">
+        {(filters ?? PAYMENT_STATUS_FILTERS).map((f) => (
+          <button
+            key={f}
+            type="button"
+            onClick={() => onFilterChange?.(f)}
+            className={cn(
+              "h-8 px-3 rounded-full text-xs font-semibold transition-colors",
+              (activeFilter ?? "All") === f
+                ? "bg-primary-100 text-primary-700"
+                : "text-muted hover:bg-gray-100 hover:text-body"
+            )}
+          >
+            {f}
+          </button>
+        ))}
+      </div>
 
-      {/* Filter bar */}
-      <ListFilterBar
-        controls={{
-          selects: [
-            {
-              value: paymentTypeFilter,
-              onChange: onPaymentTypeFilterChange,
-              placeholder: "All Types",
-              options: PAYMENT_TYPES.filter(Boolean).map((t) => ({ value: t, label: t })),
-            },
-            {
-              value: modeFilter,
-              onChange: onModeFilterChange,
-              placeholder: "All Methods",
-              options: modeOptions.map((m) => ({ value: m, label: m })),
-            },
-            {
-              value: partyTypeFilter,
-              onChange: onPartyTypeFilterChange,
-              placeholder: "All Parties",
-              options: partyTypeOptions.map((t) => ({ value: t, label: t })),
-            },
-          ],
-          search: {
-            value: searchQuery,
-            onChange: onSearchQueryChange,
-            placeholder: "Search ID / party...",
-            width: "w-44",
-          },
-          dateRange: {
-            from: dateFrom,
-            to: dateTo,
-            onChange: (from, to) => {
-              onDateFromChange(from)
-              onDateToChange(to)
-            },
-          },
-          sort: {
-            field: sortField || "posting_date",
-            order: sortOrder ?? "desc",
-            onSort: onSortChange ?? (() => {}),
-            options: [
-              { value: "posting_date", label: "Posting Date" },
-              { value: "party_name", label: "Customer" },
-              { value: "paid_amount", label: "Amount" },
-              { value: "mode_of_payment", label: "Method" },
-            ],
-          },
-          chips: [
-            ...(nameFilter
-              ? [{
-                  key: "name",
-                  label: `ID: ${nameFilter}`,
-                  icon: <FileText size={12} />,
-                  onClear: () => onFilterId(nameFilter),
-                }]
-              : []),
-            ...(assigneeFilter
-              ? [{
-                  key: "assignee",
-                  label: `Assigned to: ${userNames[assigneeFilter]?.full_name || assigneeFilter}`,
-                  icon: <UserRound size={12} />,
-                  onClear: () => onAssigneeFilterChange(""),
-                }]
-              : []),
-          ],
-        }}
-        hasActiveFilters={hasActiveFilters}
-        onReset={onResetFilters}
+      {/* ERPNext-style filter bar + FilterGroup */}
+      <PaymentFilters
+        filters={filterChips ?? []}
+        onFiltersChange={(next) => onFilterChipsChange?.(next)}
+        partySearch={partySearch}
+        companySearch={companySearch}
+        sort={sort}
       />
 
       <section className="space-y-4">
@@ -537,9 +484,6 @@ export default function PaymentTable({
           currentPageLength={currentPageLength}
           onPageLengthChange={onPageLengthChange}
           onLoadMore={onLoadMore}
-          sortField={sortField}
-          sortOrder={sortOrder}
-          onSortChange={onSortChange}
           emptyState={
             <div className="flex flex-col items-center gap-2 py-4">
               <DollarSign size={32} className="text-muted opacity-40" />

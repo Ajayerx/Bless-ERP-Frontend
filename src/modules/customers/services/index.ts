@@ -1,5 +1,5 @@
 import { apiClient, apiClientWithBody, serverDownloadTemplate } from "@/services/api-client"
-import { postMethod, withDedup } from "@/services/frappe-client"
+import { postMethod } from "@/services/frappe-client"
 import { buildTimelineItems, toQuillHtml } from "@/modules/payments/services"
 import type { DocInfo, PaymentActivityItem, PaymentComment } from "@/modules/payments/types"
 import type {
@@ -97,54 +97,6 @@ interface CustomerGetdocBody {
 
 function buildGetdocUrl(name: string): string {
   return `/method/frappe.desk.form.load.getdoc?doctype=Customer&name=${encodeURIComponent(name)}`
-}
-
-interface ReportViewParams {
-  doctype: string
-  fields: string[]
-  filters?: unknown[]
-  start?: number
-  page_length?: number
-  order_by?: string
-}
-
-async function fetchReportView(
-  params: ReportViewParams
-): Promise<Array<Record<string, unknown>>> {
-  const body = await postMethod<{ keys?: string[]; values?: unknown }>(
-    "frappe.desk.reportview.get",
-    {
-      doctype: params.doctype,
-      fields: params.fields,
-      filters: params.filters ?? [],
-      order_by: params.order_by ?? "",
-      start: params.start ?? 0,
-      page_length: params.page_length ?? 20,
-      view: "List",
-      with_comment_count: 1,
-    }
-  )
-  // frappe.desk.reportview.get normally answers {keys, values}, but when zero
-  // rows match, compress() (frappe/desk/reportview.py) returns the bare empty
-  // list instead — so the unwrapped body can be [], null or a shape without a
-  // values array. Normalize before zipping keys onto rows.
-  if (!body || Array.isArray(body)) return []
-  const keys = Array.isArray(body.keys) ? body.keys : []
-  const rawValues = body.values
-  let values: unknown[][] = []
-  if (Array.isArray(rawValues)) {
-    values = rawValues as unknown[][]
-  } else if (rawValues && typeof rawValues === "object") {
-    values = Object.values(rawValues as Record<string, unknown[][]>).flat()
-  }
-  if (keys.length === 0) return []
-  return values.map((row) => {
-    const obj: Record<string, unknown> = {}
-    keys.forEach((key, index) => {
-      obj[key] = Array.isArray(row) ? row[index] : undefined
-    })
-    return obj
-  })
 }
 
 async function fetchLinkOptions(doctype: string, orderByField = "name", filters?: unknown[]): Promise<string[]> {
@@ -446,6 +398,19 @@ function toCustomerDocPayload(data: CustomerFormData): Record<string, unknown> {
   }
 }
 
+export interface CustomerListFilters {
+  search?: string
+  page?: number
+  pageSize?: number
+  start?: number
+  pageLength?: number
+  sortBy?: string
+  sortOrder?: "asc" | "desc"
+  /** Raw frappe filter tuples (`[field, operator, value]` or doctype-prefixed
+   * `[doctype, field, operator, value]`); AND'd together with any search. */
+  filters?: unknown[][]
+}
+
 export const customerService = {
   lookups: customerLookups,
   createAddress,
@@ -454,38 +419,31 @@ export const customerService = {
   validateLink,
   getPartyDetails,
 
-  async list(params: {
-    search?: string
-    page?: number
-    pageSize?: number
-    start?: number
-    pageLength?: number
-    filters?: unknown[]
-  }): Promise<CustomerListResponse> {
+  async list(params: CustomerListFilters = {}): Promise<CustomerListResponse> {
     const pageSize = params.pageLength ?? params.pageSize ?? 20
     const limit_start = params.start != null ? params.start : ((params.page ?? 1) - 1) * pageSize
     const searchFilters = params.search
-      ? [["customer_name", "like", `%${params.search}%`]]
+      ? [["Customer", "customer_name", "like", `%${params.search}%`]]
       : []
     const extraFilters = params.filters ?? []
-    const filters = [...searchFilters, ...extraFilters] as unknown[]
+    const filters = [...searchFilters, ...extraFilters]
     const queryFilters = filters.length > 0 ? filters : undefined
+    const order_by = params.sortBy
+      ? `${params.sortBy} ${params.sortOrder === "asc" ? "ASC" : "DESC"}`
+      : "customer_name ASC"
 
-    const dedupKey = `customer-list|${JSON.stringify(queryFilters ?? [])}|${limit_start}|${pageSize}`
-    const { rows, total } = await withDedup(dedupKey, 2000, async () => {
-      const [reportViewRows, count] = await Promise.all([
-        fetchReportView({
-          doctype: "Customer",
+    const [rows, total] = await Promise.all([
+      apiClient<CustomerRow[]>(
+        buildListUrl("Customer", {
           fields: CUSTOMER_FIELDS as string[],
           filters: queryFilters,
-          start: limit_start,
-          page_length: pageSize,
-          order_by: "modified desc",
-        }),
-        getCount("Customer", queryFilters as unknown[] | undefined),
-      ])
-      return { rows: reportViewRows as CustomerRow[], total: count }
-    })
+          limit_start,
+          limit_page_length: pageSize,
+          order_by,
+        })
+      ),
+      getCount("Customer", queryFilters),
+    ])
 
     const items = rows.map((row) => toCustomer(row, 0))
 
