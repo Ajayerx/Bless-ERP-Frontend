@@ -42,6 +42,18 @@ function renderPage() {
   )
 }
 
+function renderPageWithQuery(query: string) {
+  return render(
+    <MemoryRouter initialEntries={[`/sales-orders${query}`]}>
+      <ToastProvider>
+        <MessageDialogProvider>
+          <SalesOrders />
+        </MessageDialogProvider>
+      </ToastProvider>
+    </MemoryRouter>
+  )
+}
+
 function renderWorkspace(name: string) {
   return render(
     <MemoryRouter initialEntries={[`/sales-orders/${name}`]}>
@@ -88,11 +100,16 @@ describe("SalesOrders list page (ERPNext parity)", () => {
   it("renders rows with raw ERPNext status badges and docstatus-driven actions", async () => {
     renderPage()
 
-    // Raw status literals surface as badges (not the simplified mapped status).
+    // Submitted, past-due, under-delivered rows derive the ERPNext "Overdue"
+    // indicator (sales_order_list.js get_indicator); the stored status literal
+    // only drives the underlying doc semantics.
     await screen.findByText("SAL-ORD-2026-0001")
-    expect(screen.getAllByText("To Deliver and Bill").length).toBeGreaterThanOrEqual(4)
+    expect(screen.getAllByText("Overdue").length).toBeGreaterThanOrEqual(3)
+    expect(within(await rowFor("SAL-ORD-2026-0001")).getByText("Overdue")).toBeInTheDocument()
     expect(within(await rowFor("SAL-ORD-2026-0004")).getByText("Completed")).toBeInTheDocument()
-    // Cancelled row shows the raw status badge.
+    // Draft row surfaces the docstatus short-circuit badge, not the stored status.
+    expect(within(await rowFor("SAL-ORD-2026-0005")).getByText("Draft")).toBeInTheDocument()
+    // Cancelled row shows the derived indicator badge.
     expect(within(await rowFor("SAL-ORD-2026-0006")).getAllByText("Cancelled")).toHaveLength(1)
 
     // Draft row: Submit + Delete action buttons only.
@@ -160,7 +177,9 @@ describe("SalesOrders list page (ERPNext parity)", () => {
     })
 
     const refreshed = await rowFor("SAL-ORD-2026-0005")
-    await within(refreshed).findByText("To Deliver and Bill")
+    // After submit the row is submitted, under-delivered, and past its delivery
+    // date — the Status column derives "Overdue" from the indicator tuple.
+    await within(refreshed).findByText("Overdue")
     expect(within(refreshed).queryByText("Draft")).not.toBeInTheDocument()
   })
 
@@ -250,8 +269,8 @@ describe("SalesOrders list page (ERPNext parity)", () => {
     const dialog = await screen.findByRole("dialog")
     expect(within(dialog).getByText("Print Sales Orders")).toBeInTheDocument()
 
-    const preview = within(dialog).getByRole("button", { name: "Preview" })
-    await user.click(preview)
+    const print = within(dialog).getByRole("button", { name: "Print" })
+    await user.click(print)
 
     await waitFor(() => {
       expect(openSpy).toHaveBeenCalledTimes(1)
@@ -361,6 +380,284 @@ describe("SalesOrders list page (ERPNext parity)", () => {
   })
 })
 
+describe("SalesOrders list filters (ERPNext parity)", () => {
+  it("filters by ID in the always-visible inline bar (like)", async () => {
+    renderPage()
+    await screen.findByText("SAL-ORD-2026-0001")
+
+    await user.type(screen.getByLabelText("ID"), "SAL-ORD-2026-0005")
+
+    await waitFor(() => {
+      const req = lastRequest(
+        (r) => r.path === "/api/resource/Sales Order" && r.method === "GET" && r.query.limit_page_length !== "0"
+      )
+      expect(String(req?.query?.filters ?? "")).toContain('["Sales Order","name","like","%SAL-ORD-2026-0005%"]')
+    })
+    await waitFor(() => {
+      expect(screen.queryByText("SAL-ORD-2026-0001")).not.toBeInTheDocument()
+    })
+    expect(screen.getByText("SAL-ORD-2026-0005")).toBeInTheDocument()
+
+    await user.clear(screen.getByLabelText("ID"))
+    await waitFor(() => {
+      expect(screen.getByText("SAL-ORD-2026-0001")).toBeInTheDocument()
+    })
+  })
+
+  it("filters by Customer Name in the inline bar (like)", async () => {
+    renderPage()
+    await screen.findByText("SAL-ORD-2026-0001")
+
+    await user.type(screen.getByLabelText("Customer Name"), "maple")
+
+    await waitFor(() => {
+      const req = lastRequest(
+        (r) => r.path === "/api/resource/Sales Order" && r.method === "GET" && r.query.limit_page_length !== "0"
+      )
+      expect(String(req?.query?.filters ?? "")).toContain('["Sales Order","customer_name","like","%maple%"]')
+    })
+    await waitFor(() => {
+      expect(screen.queryByText("SAL-ORD-2026-0002")).not.toBeInTheDocument()
+    })
+    expect(screen.getByText("SAL-ORD-2026-0001")).toBeInTheDocument()
+  })
+
+  it("filters by Delivery Status and Billing Status selects", async () => {
+    renderPage()
+    await screen.findByText("SAL-ORD-2026-0001")
+
+    await user.click(screen.getByRole("button", { name: "Delivery Status" }))
+    await user.click(await screen.findByRole("button", { name: "Fully Delivered" }))
+    await waitFor(() => {
+      const req = lastRequest(
+        (r) => r.path === "/api/resource/Sales Order" && r.method === "GET" && r.query.limit_page_length !== "0"
+      )
+      expect(String(req?.query?.filters ?? "")).toContain('["Sales Order","delivery_status","=","Fully Delivered"]')
+    })
+    // The dropdown trigger text reflects the chosen value.
+    expect(screen.getByRole("button", { name: "Delivery Status" })).toHaveTextContent("Fully Delivered")
+    await waitFor(() => {
+      expect(screen.queryByText("SAL-ORD-2026-0001")).not.toBeInTheDocument()
+    })
+    expect(screen.getByText("SAL-ORD-2026-0004")).toBeInTheDocument()
+
+    await user.click(screen.getByRole("button", { name: "Billing Status" }))
+    await user.click(await screen.findByRole("button", { name: "Fully Billed" }))
+    await waitFor(() => {
+      const req = lastRequest(
+        (r) => r.path === "/api/resource/Sales Order" && r.method === "GET" && r.query.limit_page_length !== "0"
+      )
+      const f = String(req?.query?.filters ?? "")
+      expect(f).toContain('["Sales Order","delivery_status","=","Fully Delivered"]')
+      expect(f).toContain('["Sales Order","billing_status","=","Fully Billed"]')
+    })
+    expect(screen.getByRole("button", { name: "Billing Status" })).toHaveTextContent("Fully Billed")
+    expect(screen.getByText("SAL-ORD-2026-0004")).toBeInTheDocument()
+  })
+
+  it("filters by exact order date", async () => {
+    renderPage()
+    await screen.findByText("SAL-ORD-2026-0001")
+    await user.type(screen.getByLabelText("Date"), "2026-07-07")
+
+    await waitFor(() => {
+      const req = lastRequest(
+        (r) => r.path === "/api/resource/Sales Order" && r.method === "GET" && r.query.limit_page_length !== "0"
+      )
+      const f = String(req?.query?.filters ?? "")
+      expect(f).toContain('["Sales Order","transaction_date","=","2026-07-07"]')
+    })
+    await waitFor(() => {
+      expect(screen.queryByText("SAL-ORD-2026-0001")).not.toBeInTheDocument()
+    })
+    expect(screen.getByText("SAL-ORD-2026-0004")).toBeInTheDocument()
+    expect(screen.queryByText("SAL-ORD-2026-0003")).not.toBeInTheDocument()
+    expect(screen.queryByText("SAL-ORD-2026-0006")).not.toBeInTheDocument()
+    expect(screen.queryByText("SAL-ORD-2026-0005")).not.toBeInTheDocument()
+  })
+
+  it("drives the status filter from the quick pills", async () => {
+    renderPage()
+    await screen.findByText("SAL-ORD-2026-0001")
+
+    // The "To Deliver and Bill" pill expands to the ERPNext indicator tuple
+    // (per_delivered < 100 AND per_billed < 100 AND status != Closed).
+    await user.click(screen.getByRole("button", { name: "To Deliver and Bill" }))
+    await waitFor(() => {
+      const req = lastRequest(
+        (r) => r.path === "/api/resource/Sales Order" && r.method === "GET" && r.query.limit_page_length !== "0"
+      )
+      expect(String(req?.query?.filters ?? "")).toContain(
+        '["Sales Order","per_delivered","<",100],["Sales Order","per_billed","<",100],["Sales Order","status","!=","Closed"]'
+      )
+    })
+
+    await user.click(screen.getByRole("button", { name: "All" }))
+    await waitFor(() => {
+      const req = lastRequest(
+        (r) => r.path === "/api/resource/Sales Order" && r.method === "GET" && r.query.limit_page_length !== "0"
+      )
+      expect(String(req?.query?.filters ?? "")).not.toContain('"status"')
+    })
+  })
+
+  it("clicking an order number applies the ID filter without navigating", async () => {
+    renderPage()
+    await screen.findByText("SAL-ORD-2026-0001")
+
+    await user.click(screen.getByRole("button", { name: "Filter by ID SAL-ORD-2026-0004" }))
+
+    await waitFor(() => {
+      const req = lastRequest(
+        (r) => r.path === "/api/resource/Sales Order" && r.method === "GET" && r.query.limit_page_length !== "0"
+      )
+      expect(String(req?.query?.filters ?? "")).toContain('["Sales Order","name","=","SAL-ORD-2026-0004"]')
+    })
+
+    // The inline ID pill shows the applied value and only the matching row remains.
+    await waitFor(() => {
+      expect(screen.getByLabelText("ID")).toHaveValue("SAL-ORD-2026-0004")
+      expect(screen.queryByText("SAL-ORD-2026-0001")).not.toBeInTheDocument()
+    })
+    expect(screen.getByText("SAL-ORD-2026-0004")).toBeInTheDocument()
+
+    // Clicking a list value never opens the detail workspace.
+    expect(screen.queryByRole("button", { name: "Update Items" })).not.toBeInTheDocument()
+  })
+
+  it("clicking a status badge sets the status filter", async () => {
+    renderPage()
+    await screen.findByText("SAL-ORD-2026-0001")
+
+    await user.click(screen.getByRole("button", { name: "Filter by status Completed" }))
+
+    await waitFor(() => {
+      const req = lastRequest(
+        (r) => r.path === "/api/resource/Sales Order" && r.method === "GET" && r.query.limit_page_length !== "0"
+      )
+      expect(String(req?.query?.filters ?? "")).toContain('["Sales Order","status","=","Completed"]')
+    })
+
+    await waitFor(() => {
+      expect(screen.queryByText("SAL-ORD-2026-0001")).not.toBeInTheDocument()
+    })
+    expect(within(await rowFor("SAL-ORD-2026-0004")).getByText("Completed")).toBeInTheDocument()
+  })
+
+  it("clicking an Overdue badge applies the ERPNext composite overdue filter", async () => {
+    renderPage()
+    await screen.findByText("SAL-ORD-2026-0001")
+
+    // Multiple rows share the Overdue badge — pick the first.
+    await user.click(screen.getAllByRole("button", { name: "Filter by status Overdue" })[0])
+
+    await waitFor(() => {
+      const req = lastRequest(
+        (r) => r.path === "/api/resource/Sales Order" && r.method === "GET" && r.query.limit_page_length !== "0"
+      )
+      const f = String(req?.query?.filters ?? "")
+      expect(f).toContain('["Sales Order","per_delivered","<",100]')
+      expect(f).toContain('["Sales Order","delivery_date","<","Today"]')
+      expect(f).toContain('["Sales Order","status","!=","Closed"]')
+      expect(f).toContain('["Sales Order","docstatus","=",1]')
+    })
+
+    // Only the three overdue submitted orders remain; draft/cancelled rows are
+    // excluded by the docstatus=1 leg of the tuple.
+    await waitFor(() => {
+      expect(screen.queryByText("SAL-ORD-2026-0004")).not.toBeInTheDocument()
+      expect(screen.queryByText("SAL-ORD-2026-0005")).not.toBeInTheDocument()
+      expect(screen.queryByText("SAL-ORD-2026-0006")).not.toBeInTheDocument()
+    })
+    expect(screen.getByText("SAL-ORD-2026-0001")).toBeInTheDocument()
+    expect(screen.getByText("SAL-ORD-2026-0002")).toBeInTheDocument()
+    expect(screen.getByText("SAL-ORD-2026-0003")).toBeInTheDocument()
+  })
+
+  it("clicking a delivery date sets the delivery_date filter in the Delivery Date pill", async () => {
+    renderPage()
+    await screen.findByText("SAL-ORD-2026-0001")
+
+    await user.click(screen.getByRole("button", { name: "Filter by delivery date 2026-07-15" }))
+
+    await waitFor(() => {
+      const req = lastRequest(
+        (r) => r.path === "/api/resource/Sales Order" && r.method === "GET" && r.query.limit_page_length !== "0"
+      )
+      expect(String(req?.query?.filters ?? "")).toContain('["Sales Order","delivery_date","=","2026-07-15"]')
+    })
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("Delivery Date")).toHaveValue("15-07-2026")
+      expect(screen.queryByText("SAL-ORD-2026-0004")).not.toBeInTheDocument()
+    })
+    expect(screen.getByText("SAL-ORD-2026-0001")).toBeInTheDocument()
+  })
+
+  it("sorts by the selector field and toggles asc/desc", async () => {
+    renderPage()
+    await screen.findByText("SAL-ORD-2026-0001")
+
+    await user.selectOptions(screen.getByLabelText("Sort field"), "grand_total")
+    await waitFor(() => {
+      const req = lastRequest(
+        (r) => r.path === "/api/resource/Sales Order" && r.method === "GET" && r.query.limit_page_length !== "0"
+      )
+      expect(String(req?.query?.order_by ?? "")).toContain("grand_total")
+    })
+
+    await user.click(screen.getByRole("button", { name: "Sort grand_total desc" }))
+    await waitFor(() => {
+      const req = lastRequest(
+        (r) => r.path === "/api/resource/Sales Order" && r.method === "GET" && r.query.limit_page_length !== "0"
+      )
+      expect(String(req?.query?.order_by ?? "").toUpperCase()).toContain("GRAND_TOTAL ASC")
+    })
+  })
+
+  it("restores filters and sort from the URL query string", async () => {
+    const query =
+      "?filters=" +
+      encodeURIComponent(
+        JSON.stringify([{ field: "name", label: "ID", operator: "like", value: "SAL-ORD-2026-0005" }])
+      ) +
+      "&sort=grand_total%20asc"
+    renderPageWithQuery(query)
+    await screen.findByText("SAL-ORD-2026-0005")
+
+    expect(screen.getByLabelText("ID")).toHaveValue("SAL-ORD-2026-0005")
+
+    await waitFor(() => {
+      const req = lastRequest(
+        (r) => r.path === "/api/resource/Sales Order" && r.method === "GET" && r.query.limit_page_length !== "0"
+      )
+      expect(String(req?.query?.filters ?? "")).toContain('["Sales Order","name","like","%SAL-ORD-2026-0005%"]')
+      expect(String(req?.query?.order_by ?? "").toUpperCase()).toContain("GRAND_TOTAL ASC")
+    })
+  })
+
+  it("clears every filter from the inline bar with Clear all", async () => {
+    renderPage()
+    await screen.findByText("SAL-ORD-2026-0001")
+
+    await user.type(screen.getByLabelText("ID"), "maple")
+    await user.click(screen.getByRole("button", { name: "Delivery Status" }))
+    await user.click(await screen.findByRole("button", { name: "Fully Delivered" }))
+    await user.click(screen.getByText("Clear all"))
+
+    await waitFor(() => {
+      const req = lastRequest(
+        (r) => r.path === "/api/resource/Sales Order" && r.method === "GET" && r.query.limit_page_length !== "0"
+      )
+      expect(String(req?.query?.filters ?? "")).toBe("")
+    })
+    expect(screen.getByLabelText("ID")).toHaveValue("")
+    await waitFor(() => {
+      expect(screen.getByText("SAL-ORD-2026-0001")).toBeInTheDocument()
+    })
+  })
+})
+
 describe("SalesOrderWorkspace status dropdown (ERPNext parity)", () => {
   it("shows a Status dropdown with On Hold + Close for an active submitted order", async () => {
     renderWorkspace("SAL-ORD-2026-0001")
@@ -377,12 +674,13 @@ describe("SalesOrderWorkspace status dropdown (ERPNext parity)", () => {
     expect(screen.queryByTestId("save_button")).not.toBeInTheDocument()
 
     // Status control lives in the toolbar (button), right next to Update Items,
-    // while the title row keeps a plain static badge.
+    // while the title row keeps the ERPNext form-header indicator — a derived
+    // badge (here "Overdue", not the stored "To Deliver and Bill" literal).
     const updateItems = screen.getByRole("button", { name: "Update Items" })
     const trigger = screen.getByTitle("Change status")
     expect(trigger.parentElement).toBe(updateItems.parentElement)
     expect(trigger).toHaveTextContent("Status")
-    const badge = screen.getByText("TO DELIVER AND BILL", { selector: "span" })
+    const badge = screen.getByText("OVERDUE", { selector: "span" })
     expect(badge).toBeInTheDocument()
 
     await user.click(trigger)

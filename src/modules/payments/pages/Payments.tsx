@@ -3,15 +3,16 @@
 import { useEffect, useState, useCallback } from "react"
 import { useNavigate } from "react-router-dom"
 import { motion } from "framer-motion"
-import { DollarSign, FileText, BadgeCheck, AlertCircle, Download, Printer, UserRound, Tag } from "lucide-react"
+import { DollarSign, FileText, BadgeCheck, AlertCircle, Download, UserRound, Tag } from "lucide-react"
 import Topbar from "@/components/layout/Topbar"
-import { Button, Badge, Card, CardContent, ConfirmationDialog, Modal, ModalFooter, Input } from "@/components/ui"
+import { Button, Badge, Card, CardContent, ConfirmationDialog, Modal, ModalFooter, Input, BulkPrintDialog, type PrintSettings } from "@/components/ui"
 import PaymentTable from "../components/PaymentTable"
 import { paymentService, type SalesInvoice, type PaymentEntry, type PaymentEntryListResponse } from "@/services"
 import { buildExportFilters, PAYMENT_EXPORT_FIELDS, type PaymentListFilters } from "../services"
 import { useMessageDialog, messageFromError, LinkSearchField } from "@/components/ui"
 import { stripHtml } from "@/services/api-client"
 import { formatCurrency, formatDate, cn } from "@/lib/utils"
+import { openMultiPdfPrint } from "@/lib/multi-pdf-print"
 
 type StatusFilter = "All" | "Draft" | "Submitted" | "Cancelled"
 
@@ -64,12 +65,7 @@ export default function Payments() {
   const [exportFields, setExportFields] = useState<Record<string, string[]>>(() =>
     JSON.parse(JSON.stringify(PAYMENT_EXPORT_FIELDS))
   )
-  const PRINT_PAGE_SIZES = ["A4", "A3", "A5", "B5", "Letter", "Legal", "Ledger", "Executive"]
-  const [printFormats, setPrintFormats] = useState<string[]>([])
   const [printOpen, setPrintOpen] = useState(false)
-  const [printFormat, setPrintFormat] = useState("Standard")
-  const [printLetterhead, setPrintLetterhead] = useState("")
-  const [printPageSize, setPrintPageSize] = useState("A4")
   const [assignOpen, setAssignOpen] = useState(false)
   const [assignee, setAssignee] = useState("")
   const [tagsOpen, setTagsOpen] = useState(false)
@@ -330,11 +326,32 @@ export default function Payments() {
     setExportFields(JSON.parse(JSON.stringify(PAYMENT_EXPORT_FIELDS)))
   }
 
+  // ── Print helpers ───────────────────────────────────────────────────
   const handleOpenPrint = () => {
     setPrintOpen(true)
-    void paymentService.getPrintFormats().then((formats) => {
-      if (formats.length > 0) setPrintFormats(formats)
+  }
+
+  const handleBulkPrint = async (settings: PrintSettings) => {
+    if (selectedPayments.length === 0) return
+    const options = {
+      printFormat: settings.printFormat,
+      letterhead: settings.noLetterhead ? undefined : settings.letterhead,
+      pageSize: settings.pageSize || undefined,
+    }
+    await openMultiPdfPrint({
+      foregroundUrl: paymentService.buildMultiPdfUrl(selectedPayments, options),
+      backgroundUrl: settings.background
+        ? paymentService.buildMultiPdfUrl(selectedPayments, options, true)
+        : undefined,
+      onBlocked: () =>
+        showMessage({ message: "Popup blocked — allow pop-ups to preview and download the PDF.", indicator: "red" }),
+      onBackgroundFallback: () =>
+        showMessage({
+          message: "Background print isn't supported by this server — printing in the foreground.",
+          indicator: "red",
+        }),
     })
+    showMessage(`Opening PDF preview for ${selectedPayments.length} payment entr${selectedPayments.length === 1 ? "y" : "ies"}.`)
   }
 
   const handleBulkExport = async () => {
@@ -360,21 +377,6 @@ export default function Payments() {
     } finally {
       setActingToolbar(false)
     }
-  }
-
-  const handleBulkPrint = () => {
-    setPrintOpen(false)
-    const url = paymentService.buildMultiPdfUrl(selectedPayments, {
-      printFormat,
-      letterhead: printLetterhead || undefined,
-      pageSize: printPageSize || undefined,
-    })
-    const preview = window.open(url, "_blank")
-    if (!preview) {
-      showMessage({ message: "Popup blocked — allow pop-ups to preview and download the PDF.", indicator: "red" })
-      return
-    }
-    showMessage(`Opening PDF preview for ${selectedPayments.length} payment entr${selectedPayments.length === 1 ? "y" : "ies"}.`)
   }
 
   const handleBulkAssign = async (remove = false) => {
@@ -661,47 +663,15 @@ export default function Payments() {
       </Modal>
 
       {/* Print dialog */}
-      <Modal
+      <BulkPrintDialog
         open={printOpen}
-        onClose={() => setPrintOpen(false)}
+        onOpenChange={setPrintOpen}
         title="Print Payment Entries"
-        description={`Generate a PDF preview for ${selectedPayments.length} selected payment entr${selectedPayments.length === 1 ? "y" : "ies"}. A new tab opens with the PDF — download it from there (mirrors ERPNext).`}
-      >
-        <label className="block text-xs font-semibold text-muted mb-1.5">Print Format</label>
-        <select
-          value={printFormat}
-          onChange={(e) => setPrintFormat(e.target.value)}
-          className="w-full h-9 px-3 text-sm rounded-[10px] border border-border bg-surface text-body focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-400 transition-colors"
-        >
-          {printFormats.map((f) => (
-            <option key={f} value={f}>{f}</option>
-          ))}
-        </select>
-        <label className="block text-xs font-semibold text-muted mb-1.5 mt-3">Page Size</label>
-        <select
-          value={printPageSize}
-          onChange={(e) => setPrintPageSize(e.target.value)}
-          className="w-full h-9 px-3 text-sm rounded-[10px] border border-border bg-surface text-body focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-400 transition-colors"
-        >
-          {PRINT_PAGE_SIZES.map((s) => (
-            <option key={s} value={s}>{s}</option>
-          ))}
-        </select>
-
-        <label className="block text-xs font-semibold text-muted mb-1.5 mt-3">Letterhead</label>
-        <Input
-          value={printLetterhead}
-          onChange={(e) => setPrintLetterhead(e.target.value)}
-          placeholder="Leave blank for no letterhead"
-          className="w-full"
-        />
-        <ModalFooter>
-          <Button variant="ghost" onClick={() => setPrintOpen(false)}>Cancel</Button>
-          <Button onClick={handleBulkPrint}>
-            <Printer size={14} /> Preview
-          </Button>
-        </ModalFooter>
-      </Modal>
+        count={selectedPayments.length}
+        getPrintFormats={paymentService.getPrintFormats}
+        getLetterHeads={paymentService.letterHeads}
+        onPrint={handleBulkPrint}
+      />
 
       {/* Assign dialog */}
       <Modal

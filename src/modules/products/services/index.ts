@@ -79,6 +79,7 @@ export const productLookups = {
   accounts: () => fetchLinkOptions("Account", "name", [["is_group", "=", 0], ["account_type", "in", ["Income", "Expense", "Bank", "Cash"]]]),
   costCenters: () => fetchLinkOptions("Cost Center", "name", [["is_group", "=", 0]]),
   priceLists: () => fetchLinkOptions("Price List"),
+  letterHeads: () => fetchLinkOptions("Letter Head", "name", [["disabled", "=", 0]]),
 }
 
 const ITEM_FIELDS = [
@@ -440,7 +441,8 @@ export const productService = {
   // server concatenates all selected items into a single PDF (default format).
   buildMultiPdfUrl(
     names: string[],
-    options: { printFormat?: string; letterhead?: string; pageSize?: string } = {}
+    options: { printFormat?: string; letterhead?: string; pageSize?: string } = {},
+    background = false
   ): string {
     const params = new URLSearchParams()
     params.set("doctype", "Item")
@@ -449,7 +451,10 @@ export const productService = {
     params.set("no_letterhead", options.letterhead ? "0" : "1")
     if (options.letterhead) params.set("letterhead", options.letterhead)
     params.set("options", JSON.stringify({ "page-size": options.pageSize ?? "A4" }))
-    return `${API_CONFIG.baseUrl}/method/frappe.utils.print_format.download_multi_pdf?${params.toString()}`
+    const method = background
+      ? "frappe.utils.print_format.download_multi_pdf_async"
+      : "frappe.utils.print_format.download_multi_pdf"
+    return `${API_CONFIG.baseUrl}/method/${method}?${params.toString()}`
   },
 
   async getPrintFormats(): Promise<string[]> {

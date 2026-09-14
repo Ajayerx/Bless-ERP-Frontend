@@ -33,6 +33,8 @@ export interface SalesOrder {
   total: number
   perDelivered?: number
   perBilled?: number
+  /** ERPNext `skip_delivery_note` flag (drives the status indicator branch). */
+  skipDeliveryNote?: number
   fulfillmentStatus: "pending" | "partial" | "fulfilled" | "cancelled"
   createdAt: string
 }

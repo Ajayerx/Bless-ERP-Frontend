@@ -763,7 +763,23 @@ export function buildTimelineItems(
   return items.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
 }
 
+async function fetchOptions(doctype: string, filters?: unknown[]): Promise<string[]> {
+  const qp = new URLSearchParams()
+  qp.set("fields", JSON.stringify(["name"]))
+  qp.set("limit_page_length", "500")
+  if (filters) qp.set("filters", JSON.stringify(filters))
+  try {
+    const items = await apiClient<Array<{ name: string }>>(
+      `/resource/${encodeURIComponent(doctype)}?${qp.toString()}`
+    )
+    return items.map((i) => i.name)
+  } catch {
+    return []
+  }
+}
 export const paymentService = {
+  letterHeads: (): Promise<string[]> => fetchOptions("Letter Head", [["disabled", "=", 0]]),
+
   async list(params: PaymentListFilters = {}): Promise<PaymentEntryListResponse> {
     const page = params.page ?? 1
     const pageSize = params.pageLength ?? params.pageSize ?? 10
@@ -1131,7 +1147,8 @@ async getOutstandingReferences(args: GetOutstandingArgs): Promise<OutstandingRef
       letterhead?: string
       pageSize?: string
       customSize?: { height: number; width: number }
-    } = {}
+    } = {},
+    background = false
   ): string {
     const pdfOptions: Record<string, string> = {}
     if (options.customSize && options.customSize.height > 0 && options.customSize.width > 0) {
@@ -1147,7 +1164,10 @@ async getOutstandingReferences(args: GetOutstandingArgs): Promise<OutstandingRef
     params.set("no_letterhead", options.letterhead ? "0" : "1")
     if (options.letterhead) params.set("letterhead", options.letterhead)
     params.set("options", JSON.stringify(pdfOptions))
-    return `${API_CONFIG.baseUrl}/method/frappe.utils.print_format.download_multi_pdf?${params.toString()}`
+    const method = background
+      ? "frappe.utils.print_format.download_multi_pdf_async"
+      : "frappe.utils.print_format.download_multi_pdf"
+    return `${API_CONFIG.baseUrl}/method/${method}?${params.toString()}`
   },
 
   // Assignment via frappe.desk.form.assign_to (add_multiple / remove_multiple).

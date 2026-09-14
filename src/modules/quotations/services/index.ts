@@ -495,6 +495,7 @@ export const quotationService = {
   lookups: {
     currencies: (): Promise<string[]> => fetchOptions("Currency"),
     priceLists: (): Promise<string[]> => fetchOptions("Price List", [["selling", "=", 1]]),
+    letterHeads: (): Promise<string[]> => fetchOptions("Letter Head", [["disabled", "=", 0]]),
   },
 
   // ── List / single (used by list page; D4 adds reportview.get + tabs) ──
@@ -1390,6 +1391,7 @@ export const quotationService = {
       pageSize?: string
       customSize?: { height: number; width: number }
     } = {},
+    background = false,
   ): string {
     const pdfOptions: Record<string, string> = {}
     if (options.customSize && options.customSize.height > 0 && options.customSize.width > 0) {
@@ -1405,7 +1407,10 @@ export const quotationService = {
     params.set("no_letterhead", options.letterhead ? "0" : "1")
     if (options.letterhead) params.set("letterhead", options.letterhead)
     params.set("options", JSON.stringify(pdfOptions))
-    return `${API_CONFIG.baseUrl}/method/frappe.utils.print_format.download_multi_pdf?${params.toString()}`
+    const method = background
+      ? "frappe.utils.print_format.download_multi_pdf_async"
+      : "frappe.utils.print_format.download_multi_pdf"
+    return `${API_CONFIG.baseUrl}/method/${method}?${params.toString()}`
   },
 }
 

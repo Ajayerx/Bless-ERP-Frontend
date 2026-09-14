@@ -17,40 +17,58 @@ import {
   Package,
   Truck,
   Lock,
+  CircleAlert,
+  Info,
 } from "lucide-react"
 import DataTable, { type Column } from "@/components/ui/DataTable"
 import { Card, CardContent, Badge, FilterPills, ListBulkActions } from "@/components/ui"
-import { type SalesOrder, type SalesOrderListResponse, type SalesOrderStatus } from "@/services"
+import {
+  getSalesOrderIndicator,
+  type SalesOrder,
+  type SalesOrderListResponse,
+  type SalesOrderIndicator,
+  type SalesOrderIndicatorLabel,
+} from "@/services"
 import { formatCurrency, formatDate } from "@/lib/utils"
+import SalesOrderFilters, {
+  type SalesOrderSort,
+  type RFilter,
+} from "./SalesOrderFilters"
 
-const statusVariant: Record<SalesOrderStatus, "success" | "warning" | "danger" | "info" | "default"> = {
-  Draft: "warning",
-  "On Hold": "warning",
-  "To Deliver and Bill": "warning",
-  "To Bill": "warning",
-  "To Deliver": "warning",
-  Completed: "success",
-  Cancelled: "default",
-  Closed: "default",
-}
-
-const statusIcon: Record<SalesOrderStatus, React.ReactNode> = {
+const indicatorIcon: Record<SalesOrderIndicatorLabel, React.ReactNode> = {
   Draft: <Clock size={14} />,
+  Overdue: <CircleAlert size={14} />,
   "On Hold": <PauseCircle size={14} />,
   "To Deliver and Bill": <Package size={14} />,
-  "To Bill": <FileText size={14} />,
   "To Deliver": <Truck size={14} />,
+  "To Bill": <FileText size={14} />,
   Completed: <CheckCircle2 size={14} />,
   Cancelled: <XCircle size={14} />,
   Closed: <Lock size={14} />,
+  Submitted: <Info size={14} />,
 }
 
-function buildColumns(actions: {
-  onSubmitSingle: (name: string) => void
-  onCancelSingle: (name: string) => void
-  onDeleteSingle: (name: string) => void
-  onAmendSingle: (name: string) => void
-}): Column<SalesOrder>[] {
+function indicatorForLight(so: SalesOrder): SalesOrderIndicator {
+  return getSalesOrderIndicator({
+    docstatus: so.docstatus,
+    status: so.rawStatus,
+    skip_delivery_note: so.skipDeliveryNote,
+    per_delivered: so.perDelivered,
+    per_billed: so.perBilled,
+    grand_total: so.total,
+    delivery_date: so.deliveryDate,
+  })
+}
+
+function buildColumns(
+  actions: {
+    onSubmitSingle: (name: string) => void
+    onCancelSingle: (name: string) => void
+    onDeleteSingle: (name: string) => void
+    onAmendSingle: (name: string) => void
+  },
+  onCellFilter?: (chip: RFilter) => void,
+): Column<SalesOrder>[] {
   return [
     {
       key: "number",
@@ -63,7 +81,17 @@ function buildColumns(actions: {
             <ShoppingCart size={16} />
           </div>
           <div className="min-w-0">
-            <p className="font-semibold text-heading truncate">{so.number}</p>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation()
+                onCellFilter?.({ field: "name", label: "ID", operator: "=", value: so.name })
+              }}
+              aria-label={`Filter by ID ${so.name}`}
+              className="block max-w-full truncate font-semibold text-heading text-left cursor-pointer hover:text-primary-700 transition-colors"
+            >
+              {so.number}
+            </button>
             <p className="text-xs text-muted truncate">{so.customerName}</p>
           </div>
         </div>
@@ -81,18 +109,46 @@ function buildColumns(actions: {
       key: "deliveryDate",
       header: "Delivery",
       width: "w-[18%]",
-      render: (so) => <span className="text-sm text-muted">{formatDate(so.deliveryDate)}</span>,
+      render: (so) =>
+        so.deliveryDate ? (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation()
+              onCellFilter?.({ field: "delivery_date", label: "Delivery Date", operator: "=", value: so.deliveryDate })
+            }}
+            aria-label={`Filter by delivery date ${so.deliveryDate}`}
+            className="text-sm text-muted cursor-pointer hover:text-primary-700 transition-colors"
+          >
+            {formatDate(so.deliveryDate)}
+          </button>
+        ) : (
+          <span className="text-sm text-muted">{formatDate(so.deliveryDate)}</span>
+        ),
     },
     {
       key: "status",
       header: "Status",
       width: "w-[22%]",
-      render: (so) => (
-        <Badge variant={statusVariant[so.rawStatus] ?? "info"} className="gap-1">
-          {statusIcon[so.rawStatus]}
-          {so.rawStatus}
-        </Badge>
-      ),
+      render: (so) => {
+        const indicator = indicatorForLight(so)
+        return (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation()
+              onCellFilter?.({ field: "status", label: "Status", operator: "=", value: indicator.label })
+            }}
+            aria-label={`Filter by status ${indicator.label}`}
+            className="inline-flex cursor-pointer"
+          >
+            <Badge variant={indicator.variant} className="gap-1">
+              {indicatorIcon[indicator.label]}
+              {indicator.label}
+            </Badge>
+          </button>
+        )
+      },
     },
 
     {
@@ -156,8 +212,6 @@ function buildColumns(actions: {
 interface SalesOrderTableProps {
   data: SalesOrderListResponse | null
   loading: boolean
-  search: string
-  onSearch: (q: string) => void
   paginationMode?: "pages" | "loadMore"
   currentPageLength?: number
   onPageLengthChange?: (size: number) => void
@@ -166,6 +220,7 @@ interface SalesOrderTableProps {
   activeFilter: string
   onFilterChange: (filter: string) => void
   onRowClick?: (so: SalesOrder) => void
+  onCellFilter?: (chip: RFilter) => void
   selectable?: boolean
   selectedKeys?: Set<string>
   onSelectionChange?: (keys: Set<string>) => void
@@ -188,13 +243,16 @@ interface SalesOrderTableProps {
   onBulkAssign: () => void
   onBulkClearAssign: () => void
   onBulkAddTags: () => void
+  filterChips?: RFilter[]
+  onFilterChipsChange?: (filterChips: RFilter[]) => void
+  customerSearch?: (query: string) => Promise<{ items: Array<{ value: string; label: string; description: string }> }>
+  companySearch?: (query: string) => Promise<{ items: Array<{ value: string; label: string; description: string }> }>
+  sort?: SalesOrderSort
 }
 
 export default function SalesOrderTable({
   data,
   loading,
-  search,
-  onSearch,
   paginationMode,
   currentPageLength,
   onPageLengthChange,
@@ -203,6 +261,7 @@ export default function SalesOrderTable({
   activeFilter,
   onFilterChange,
   onRowClick,
+  onCellFilter,
   selectable,
   selectedKeys,
   onSelectionChange,
@@ -225,6 +284,11 @@ export default function SalesOrderTable({
   onBulkAssign,
   onBulkClearAssign,
   onBulkAddTags,
+  filterChips,
+  onFilterChipsChange,
+  customerSearch,
+  companySearch,
+  sort,
 }: SalesOrderTableProps) {
   const bulkToolbar = (
     <ListBulkActions
@@ -285,14 +349,18 @@ export default function SalesOrderTable({
         onChange={onFilterChange}
       />
 
+      <SalesOrderFilters
+        filters={filterChips ?? []}
+        onFiltersChange={(next) => onFilterChipsChange?.(next)}
+        customerSearch={customerSearch}
+        companySearch={companySearch}
+        sort={sort}
+      />
+
       <DataTable
-        columns={buildColumns({ onSubmitSingle, onCancelSingle, onDeleteSingle, onAmendSingle })}
+        columns={buildColumns({ onSubmitSingle, onCancelSingle, onDeleteSingle, onAmendSingle }, onCellFilter)}
         data={data?.items ?? []}
         keyExtractor={(so) => so.name}
-        searchable
-        searchPlaceholder="Search sales orders..."
-        searchQuery={search}
-        onSearch={onSearch}
         loading={loading}
         total={data?.total}
         pageSize={currentPageLength ?? 20}

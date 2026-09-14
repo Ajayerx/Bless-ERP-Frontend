@@ -6,14 +6,14 @@ import Topbar from "@/components/layout/Topbar"
 import {
   Button, BulkDeleteModal, type BulkDeleteItem,
   useToast, Modal, ModalFooter, Input, LinkSearchField, ListBulkActions, messageFromError,
+  BulkPrintDialog, type PrintSettings,
 } from "@/components/ui"
 import { useProducts } from "../hooks/useProducts"
 import ProductTable from "../components/ProductTable"
 import ProductImportModal from "../components/ProductImportModal"
 import { productService } from "@/services"
 import { PRODUCT_EXPORT_FIELDS } from "../services"
-
-const PRINT_PAGE_SIZES = ["A4", "A3", "A5", "B5", "Letter", "Legal", "Ledger", "Executive"]
+import { openMultiPdfPrint } from "@/lib/multi-pdf-print"
 
 export default function Products() {
   const navigate = useNavigate()
@@ -38,11 +38,7 @@ export default function Products() {
   const [tagsOpen, setTagsOpen] = useState(false)
   const [tagsInput, setTagsInput] = useState("")
   // Print dialog
-  const [printFormats, setPrintFormats] = useState<string[]>(["Standard"])
   const [printOpen, setPrintOpen] = useState(false)
-  const [printFormat, setPrintFormat] = useState("Standard")
-  const [printLetterhead, setPrintLetterhead] = useState("")
-  const [printPageSize, setPrintPageSize] = useState("A4")
 
   useEffect(() => {
     setSelectedKeys(new Set())
@@ -173,26 +169,26 @@ export default function Products() {
 
   const handleOpenPrint = () => {
     setPrintOpen(true)
-    void productService.getPrintFormats().then((formats) => {
-      if (formats.length > 0) setPrintFormats(formats)
-    })
   }
 
-  const handleBulkPrint = () => {
-    setPrintOpen(false)
+  const handleBulkPrint = async (settings: PrintSettings) => {
     if (!data || selectedKeys.size === 0) return
     const names = data.items.filter((p) => selectedKeys.has(p.name)).map((p) => p.name)
     if (names.length === 0) return
-    const url = productService.buildMultiPdfUrl(names, {
-      printFormat,
-      letterhead: printLetterhead || undefined,
-      pageSize: printPageSize || undefined,
-    })
-    const preview = window.open(url, "_blank")
-    if (!preview) {
-      addToast("Popup blocked — allow pop-ups to preview and download the PDF.", "error")
-      return
+    const options = {
+      printFormat: settings.printFormat,
+      letterhead: settings.noLetterhead ? undefined : settings.letterhead,
+      pageSize: settings.pageSize || undefined,
     }
+    await openMultiPdfPrint({
+      foregroundUrl: productService.buildMultiPdfUrl(names, options),
+      backgroundUrl: settings.background
+        ? productService.buildMultiPdfUrl(names, options, true)
+        : undefined,
+      onBlocked: () => addToast("Popup blocked — allow pop-ups to preview and download the PDF.", "error"),
+      onBackgroundFallback: () =>
+        addToast("Background print isn't supported by this server — printing in the foreground.", "error"),
+    })
     addToast(`Opening PDF preview for ${names.length} product${names.length === 1 ? "" : "s"}.`, "info")
   }
 
@@ -409,48 +405,15 @@ export default function Products() {
       </Modal>
 
       {/* Print dialog */}
-      <Modal
+      <BulkPrintDialog
         open={printOpen}
-        onClose={() => setPrintOpen(false)}
+        onOpenChange={setPrintOpen}
         title="Print Products"
-        description={`Generate a PDF preview for ${selectedKeys.size} selected product${selectedKeys.size === 1 ? "" : "s"}. A new tab opens with the PDF — download it from there (mirrors ERPNext).`}
-      >
-        <label className="block text-xs font-semibold text-muted mb-1.5">Print Format</label>
-        <select
-          value={printFormat}
-          onChange={(e) => setPrintFormat(e.target.value)}
-          className="w-full h-9 px-3 text-sm rounded-[10px] border border-border bg-surface text-body focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-400 transition-colors"
-        >
-          {printFormats.map((f) => (
-            <option key={f} value={f}>{f}</option>
-          ))}
-        </select>
-
-        <label className="block text-xs font-semibold text-muted mb-1.5 mt-3">Page Size</label>
-        <select
-          value={printPageSize}
-          onChange={(e) => setPrintPageSize(e.target.value)}
-          className="w-full h-9 px-3 text-sm rounded-[10px] border border-border bg-surface text-body focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-400 transition-colors"
-        >
-          {PRINT_PAGE_SIZES.map((s) => (
-            <option key={s} value={s}>{s}</option>
-          ))}
-        </select>
-
-        <label className="block text-xs font-semibold text-muted mb-1.5 mt-3">Letterhead</label>
-        <Input
-          value={printLetterhead}
-          onChange={(e) => setPrintLetterhead(e.target.value)}
-          placeholder="Leave blank for no letterhead"
-          className="w-full"
-        />
-        <ModalFooter>
-          <Button variant="ghost" onClick={() => setPrintOpen(false)}>Cancel</Button>
-          <Button onClick={handleBulkPrint}>
-            <Printer size={14} /> Preview
-          </Button>
-        </ModalFooter>
-      </Modal>
+        count={selectedKeys.size}
+        getPrintFormats={productService.getPrintFormats}
+        getLetterHeads={productService.lookups.letterHeads}
+        onPrint={handleBulkPrint}
+      />
 
       <BulkDeleteModal
         open={showDeleteModal}

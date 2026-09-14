@@ -26,6 +26,16 @@ export type {
   SalesOrderDocStatus,
 } from "../types"
 
+export {
+  getSalesOrderIndicator,
+  SALES_ORDER_INDICATOR_LABELS,
+  INDICATOR_FILTER_TUPLES,
+  type SalesOrderIndicator,
+  type SalesOrderIndicatorInput,
+  type SalesOrderIndicatorLabel,
+  type SalesOrderIndicatorVariant,
+} from "./indicator"
+
 const DOCTYPE = "Sales Order"
 
 /** Local-date ISO string (YYYY-MM-DD) for the desk get_item_details envelope. */
@@ -137,7 +147,7 @@ const LIST_FIELDS = [
   "name", "title", "customer", "customer_name", "transaction_date",
   "delivery_date", "order_type", "company", "currency", "grand_total", "rounded_total",
   "status", "docstatus", "amended_from", "per_delivered", "per_billed",
-  "owner", "creation", "modified", "modified_by", "_assign", "_user_tags",
+  "skip_delivery_note", "owner", "creation", "modified", "modified_by", "_assign", "_user_tags",
 ]
 
 const cint = (v: unknown): number => (Number(v) ? 1 : 0)
@@ -195,6 +205,7 @@ function mapDoc(doc: Record<string, unknown>): SalesOrder {
     total: dnum(doc.grand_total),
     perDelivered: dnum(doc.per_delivered),
     perBilled: dnum(doc.per_billed),
+    skipDeliveryNote: dnum(doc.skip_delivery_note),
     fulfillmentStatus: mapFulfillment(doc),
     createdAt: String(doc.creation ?? doc.transaction_date ?? ""),
   }
@@ -625,11 +636,11 @@ export const salesOrderService = {
   lookups: {
     currencies: (): Promise<string[]> => fetchOptions("Currency"),
     priceLists: (): Promise<string[]> => fetchOptions("Price List", [["selling", "=", 1]]),
+    letterHeads: (): Promise<string[]> => fetchOptions("Letter Head", [["disabled", "=", 0]]),
   },
 
   // ── List / single ─────────────────────────────────────────────────
   async list(params: {
-    search?: string
     page?: number
     pageSize?: number
     status?: string
@@ -641,30 +652,24 @@ export const salesOrderService = {
     assignedTo?: string
     sortBy?: string
     sortOrder?: "asc" | "desc"
+    /** Raw frappe filter tuples in ERPNext's list-view wire format
+     * `[doctype, field, operator, value]` (AND'd with the typed params). */
+    filters?: unknown[][]
   }): Promise<SalesOrderListResponse> {
     const pageSize = params.pageSize ?? 10
     const limit_start = ((params.page ?? 1) - 1) * pageSize
     const filters: unknown[] = []
 
     if (params.status && params.status !== "all" && params.status !== "All") {
-      filters.push(["status", "=", params.status])
+      filters.push([DOCTYPE, "status", "=", params.status])
     }
-    if (params.customerId) filters.push(["customer", "=", params.customerId])
-    if (params.transactionDateFrom) filters.push(["transaction_date", ">=", params.transactionDateFrom])
-    if (params.transactionDateTo) filters.push(["transaction_date", "<=", params.transactionDateTo])
-    if (params.deliveryDateFrom) filters.push(["delivery_date", ">=", params.deliveryDateFrom])
-    if (params.deliveryDateTo) filters.push(["delivery_date", "<=", params.deliveryDateTo])
-    if (params.assignedTo) filters.push(["_assign", "like", `%${params.assignedTo}%`])
-
-    const orFilters: unknown[] = []
-    if (params.search) {
-      const like = `%${params.search}%`
-      orFilters.push(
-        ["name", "like", like],
-        ["customer_name", "like", like],
-        ["customer", "like", like],
-      )
-    }
+    if (params.customerId) filters.push([DOCTYPE, "customer", "=", params.customerId])
+    if (params.transactionDateFrom) filters.push([DOCTYPE, "transaction_date", ">=", params.transactionDateFrom])
+    if (params.transactionDateTo) filters.push([DOCTYPE, "transaction_date", "<=", params.transactionDateTo])
+    if (params.deliveryDateFrom) filters.push([DOCTYPE, "delivery_date", ">=", params.deliveryDateFrom])
+    if (params.deliveryDateTo) filters.push([DOCTYPE, "delivery_date", "<=", params.deliveryDateTo])
+    if (params.assignedTo) filters.push([DOCTYPE, "_assign", "like", `%${params.assignedTo}%`])
+    if (params.filters && params.filters.length > 0) filters.push(...params.filters)
 
     const order_by = params.sortBy
       ? `${params.sortBy} ${params.sortOrder === "asc" ? "ASC" : "DESC"}`
@@ -675,13 +680,12 @@ export const salesOrderService = {
         buildListUrl({
           fields: LIST_FIELDS,
           filters: filters.length > 0 ? filters : undefined,
-          orFilters: orFilters.length > 0 ? orFilters : undefined,
           limit_page_length: pageSize,
           limit_start,
           order_by,
         })
       ),
-      getCount(filters.length > 0 ? filters : undefined, orFilters.length > 0 ? orFilters : undefined),
+      getCount(filters.length > 0 ? filters : undefined),
     ])
 
     return {
@@ -903,6 +907,47 @@ export const salesOrderService = {
           txt: query,
           page_length: "10",
           filters: JSON.stringify({ user_type: "System User", enabled: 1 }),
+        }).toString()
+    )
+    return (results ?? []).map((u) => ({
+      value: u.value,
+      label: u.label ?? u.value,
+      description: u.description ?? "",
+    }))
+  },
+
+  // frappe.desk.search.search_link for the list "Customer" filter chip.
+  async searchCustomers(
+    query: string,
+  ): Promise<Array<{ value: string; label: string; description: string }>> {
+    const results = await apiClient<{ value: string; label?: string; description?: string }[]>(
+      `/method/frappe.desk.search.search_link?` +
+        new URLSearchParams({
+          doctype: "Customer",
+          txt: query,
+          page_length: "10",
+          ignore_user_permissions: "0",
+          filters: JSON.stringify({ disabled: 0 }),
+        }).toString()
+    )
+    return (results ?? []).map((u) => ({
+      value: u.value,
+      label: u.label ?? u.value,
+      description: u.description ?? "",
+    }))
+  },
+
+  // frappe.desk.search.search_link for the list "Company" filter chip.
+  async searchCompanies(
+    query: string,
+  ): Promise<Array<{ value: string; label: string; description: string }>> {
+    const results = await apiClient<{ value: string; label?: string; description?: string }[]>(
+      `/method/frappe.desk.search.search_link?` +
+        new URLSearchParams({
+          doctype: "Company",
+          txt: query,
+          page_length: "10",
+          ignore_user_permissions: "0",
         }).toString()
     )
     return (results ?? []).map((u) => ({
@@ -1597,6 +1642,7 @@ export const salesOrderService = {
       pageSize?: string
       customSize?: { height: number; width: number }
     } = {},
+    background = false,
   ): string {
     const pdfOptions: Record<string, string> = {}
     if (options.customSize && options.customSize.height > 0 && options.customSize.width > 0) {
@@ -1612,7 +1658,10 @@ export const salesOrderService = {
     params.set("no_letterhead", options.letterhead ? "0" : "1")
     if (options.letterhead) params.set("letterhead", options.letterhead)
     params.set("options", JSON.stringify(pdfOptions))
-    return `${API_CONFIG.baseUrl}/method/frappe.utils.print_format.download_multi_pdf?${params.toString()}`
+    const method = background
+      ? "frappe.utils.print_format.download_multi_pdf_async"
+      : "frappe.utils.print_format.download_multi_pdf"
+    return `${API_CONFIG.baseUrl}/method/${method}?${params.toString()}`
   },
 
   async getPrintFormats(): Promise<string[]> {

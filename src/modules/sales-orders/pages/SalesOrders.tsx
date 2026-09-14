@@ -1,24 +1,27 @@
 "use client"
 
 import { useEffect, useState, useCallback, useMemo } from "react"
-import { useNavigate } from "react-router-dom"
+import { useNavigate, useSearchParams } from "react-router-dom"
 import { motion } from "framer-motion"
-import { Plus, Download, Printer, UserRound } from "lucide-react"
+import { Plus, Download, UserRound } from "lucide-react"
 import Topbar from "@/components/layout/Topbar"
-import { Button, Modal, ModalFooter, Input, ConfirmationDialog } from "@/components/ui"
+import { Button, Modal, ModalFooter, Input, ConfirmationDialog, BulkPrintDialog, type PrintSettings } from "@/components/ui"
 import { useMessageDialog, messageFromError, LinkSearchField } from "@/components/ui"
-import { salesOrderService, SALES_ORDER_EXPORT_FIELDS, type SalesOrder, type SalesOrderListResponse, type SalesOrderStatus } from "@/services"
+import { salesOrderService, SALES_ORDER_EXPORT_FIELDS, type SalesOrder, type SalesOrderListResponse, type SalesOrderIndicatorLabel } from "@/services"
 import SalesOrderTable from "../components/SalesOrderTable"
+import { rFilterToArgs, type RFilter } from "../components/SalesOrderFilters"
+import { openMultiPdfPrint } from "@/lib/multi-pdf-print"
 
-type Filter = SalesOrderStatus | "All"
+type Filter = SalesOrderIndicatorLabel | "All"
 
 const FILTERS: Filter[] = [
   "All",
   "Draft",
+  "Overdue",
   "On Hold",
   "To Deliver and Bill",
-  "To Bill",
   "To Deliver",
+  "To Bill",
   "Completed",
   "Cancelled",
   "Closed",
@@ -35,15 +38,32 @@ function downloadBlob(blob: Blob, filename: string) {
 
 export default function SalesOrders() {
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const { showMessage } = useMessageDialog()
   const [data, setData] = useState<SalesOrderListResponse | null>(null)
   const [allItems, setAllItems] = useState<SalesOrder[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
-  const [search, setSearch] = useState("")
+  const [filters, setFilters] = useState<RFilter[]>(() => {
+    try {
+      const raw = searchParams.get("filters")
+      if (!raw) return []
+      const parsed = JSON.parse(raw)
+      return Array.isArray(parsed) ? (parsed as RFilter[]) : []
+    } catch {
+      return []
+    }
+  })
+  const [sortBy, setSortBy] = useState(() => {
+    const field = searchParams.get("sort")?.split(" ")[0]
+    return field || "transaction_date"
+  })
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">(() => {
+    const order = searchParams.get("sort")?.split(" ")[1]
+    return order === "asc" ? "asc" : "desc"
+  })
   const [start, setStart] = useState(0)
   const [pageLength, setPageLength] = useState(20)
-  const [activeFilter, setActiveFilter] = useState<Filter>("All")
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set())
   const [actingToolbar, setActingToolbar] = useState(false)
 
@@ -68,12 +88,24 @@ export default function SalesOrders() {
 
   // Print dialog
   const [printOpen, setPrintOpen] = useState(false)
-  const [printFormat, setPrintFormat] = useState("Standard")
-  const [printLetterhead, setPrintLetterhead] = useState("")
-  const [printPageSize, setPrintPageSize] = useState("")
-  const [printFormats, setPrintFormats] = useState<string[]>(["Standard"])
 
-  const hasActiveFilters = search !== "" || activeFilter !== "All"
+  const statusChip = filters.find((f) => f.field === "status" && f.operator === "=")
+  const activeFilter: Filter = (statusChip?.value as Filter) ?? "All"
+  const filtersArgs = useMemo(() => filters.flatMap(rFilterToArgs), [filters])
+  const hasActiveFilters = filters.length > 0
+
+  // Persist filters/sort in the URL like ERPNext's list view.
+  useEffect(() => {
+    const next: Record<string, string> = {}
+    if (filters.length > 0) next.filters = JSON.stringify(filters)
+    if (sortBy !== "transaction_date" || sortOrder !== "desc") next.sort = `${sortBy} ${sortOrder}`
+    const current = Object.fromEntries(searchParams.entries())
+    const same =
+      Object.keys(next).length === Object.keys(current).length &&
+      Object.entries(next).every(([k, v]) => current[k] === v)
+    if (same) return
+    setSearchParams(next, { replace: true })
+  }, [filters, sortBy, sortOrder]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const fetchData = useCallback(
     async (append = false) => {
@@ -81,10 +113,11 @@ export default function SalesOrders() {
       setError("")
       try {
         const result = await salesOrderService.list({
-          search,
           page: Math.floor((append ? start : 0) / pageLength) + 1,
           pageSize: pageLength,
-          status: activeFilter === "All" ? undefined : activeFilter,
+          filters: filtersArgs,
+          sortBy,
+          sortOrder,
         })
         setData(result)
         setAllItems((prev) => (append ? [...prev, ...result.items] : result.items))
@@ -96,15 +129,16 @@ export default function SalesOrders() {
         setLoading(false)
       }
     },
-    [search, start, pageLength, activeFilter]
+    [start, pageLength, filtersArgs, sortBy, sortOrder]
   )
 
   useEffect(() => {
     setStart(0)
     fetchData(false)
   }, [ // eslint-disable-line react-hooks/exhaustive-deps
-    search,
-    activeFilter,
+    filtersArgs,
+    sortBy,
+    sortOrder,
     pageLength,
   ])
 
@@ -114,6 +148,27 @@ export default function SalesOrders() {
 
   const handlePageLengthChange = (size: number) => {
     setPageLength(size)
+  }
+
+  // Status pills mutate the "Status = x" chip, keeping one source of truth.
+  const handleFilterPill = (f: string) => {
+    setFilters((prev) => {
+      const rest = prev.filter((x) => !(x.field === "status" && x.operator === "="))
+      if (f === "All") return rest
+      return [...rest, { field: "status", label: "Status", operator: "=", value: f }]
+    })
+  }
+
+  // ERPNext list parity: clicking a list value applies it as a filter on that
+  // field, replacing any existing filter on the same field (like list_view.js's
+  // filter_area.remove(...) followed by add(...)).
+  const handleCellFilter = useCallback((chip: RFilter) => {
+    setFilters((prev) => [...prev.filter((x) => x.field !== chip.field), chip])
+  }, [])
+
+  const handleSort = (field: string, order: "asc" | "desc") => {
+    setSortBy(field)
+    setSortOrder(order)
   }
 
   const selectedItems = useMemo(() => {
@@ -256,10 +311,7 @@ export default function SalesOrders() {
   }
 
   const buildExportFilters = (): unknown[] | undefined => {
-    const filters: unknown[] = []
-    if (activeFilter !== "All") filters.push(["status", "=", activeFilter])
-    if (search) filters.push(["name", "like", `%${search}%`])
-    return filters.length > 0 ? filters : undefined
+    return filtersArgs.length > 0 ? filtersArgs : undefined
   }
 
   const exportScopeFilters = (): unknown[] | undefined => {
@@ -289,25 +341,23 @@ export default function SalesOrders() {
   }
 
   // ── Print helpers ───────────────────────────────────────────────────
-  const handleOpenPrint = async () => {
-    try {
-      const formats = await salesOrderService.getPrintFormats()
-      setPrintFormats(formats)
-    } catch { /* ignore */ }
-    setPrintOpen(true)
-  }
-
-  const handleBulkPrint = () => {
+  const handleBulkPrint = async (settings: PrintSettings) => {
     const printable = Array.from(selectedKeys)
     if (printable.length === 0) return
-    const url = salesOrderService.buildMultiPdfUrl(printable, {
-      printFormat,
-      letterhead: printLetterhead || undefined,
-      pageSize: printPageSize || undefined,
+    const options = {
+      printFormat: settings.printFormat,
+      letterhead: settings.noLetterhead ? undefined : settings.letterhead,
+      pageSize: settings.pageSize || undefined,
+    }
+    await openMultiPdfPrint({
+      foregroundUrl: salesOrderService.buildMultiPdfUrl(printable, options),
+      backgroundUrl: settings.background
+        ? salesOrderService.buildMultiPdfUrl(printable, options, true)
+        : undefined,
+      onBlocked: () => showMessage("Pop-up blocked — please allow pop-ups for this site."),
+      onBackgroundFallback: () =>
+        showMessage("Background print isn't supported by this server — printing in the foreground."),
     })
-    const preview = window.open(url, "_blank")
-    if (!preview) showMessage("Pop-up blocked — please allow pop-ups for this site.")
-    setPrintOpen(false)
   }
 
   // ── Bulk assign / tags ──────────────────────────────────────────────
@@ -384,16 +434,20 @@ export default function SalesOrders() {
         <SalesOrderTable
           data={data ? { ...data, items: allItems } : data}
           loading={loading || actingToolbar}
-          search={search}
-          onSearch={(q) => { setSearch(q); setStart(0) }}
           filters={FILTERS}
           activeFilter={activeFilter}
-          onFilterChange={(f) => { setActiveFilter(f as Filter); setStart(0) }}
+          onFilterChange={handleFilterPill}
+          filterChips={filters}
+          onFilterChipsChange={setFilters}
+          customerSearch={(q) => salesOrderService.searchCustomers(q).then((items) => ({ items }))}
+          companySearch={(q) => salesOrderService.searchCompanies(q).then((items) => ({ items }))}
+          sort={{ field: sortBy, order: sortOrder, onChange: handleSort }}
           paginationMode="loadMore"
           currentPageLength={pageLength}
           onPageLengthChange={handlePageLengthChange}
           onLoadMore={handleLoadMore}
           onRowClick={(so) => navigate(`/sales-orders/${so.id}`)}
+          onCellFilter={handleCellFilter}
           selectable
           selectedKeys={selectedKeys}
           onSelectionChange={setSelectedKeys}
@@ -412,7 +466,7 @@ export default function SalesOrders() {
           onBulkDelete={() => setConfirmAction({ type: "bulk-delete" })}
           onBulkClose={() => setConfirmAction({ type: "bulk-close" })}
           onBulkExport={() => setExportOpen(true)}
-          onBulkPrint={handleOpenPrint}
+          onBulkPrint={() => setPrintOpen(true)}
           onBulkAssign={() => { setAssignee(""); setAssignOpen(true) }}
           onBulkClearAssign={() => handleBulkAssign(true)}
           onBulkAddTags={() => { setTagsInput(""); setTagsOpen(true) }}
@@ -573,52 +627,15 @@ export default function SalesOrders() {
         </Modal>
 
         {/* Print Dialog */}
-        <Modal
+        <BulkPrintDialog
           open={printOpen}
-          onClose={() => setPrintOpen(false)}
+          onOpenChange={setPrintOpen}
           title="Print Sales Orders"
-          description={`Generate a PDF preview for ${selectedKeys.size} selected sales order${selectedKeys.size === 1 ? "" : "s"}. A new tab opens with the PDF — download it from there (mirrors ERPNext).`}
-        >
-          <label className="block text-xs font-semibold text-muted mb-1.5">Print Format</label>
-          <select
-            value={printFormat}
-            onChange={(e) => setPrintFormat(e.target.value)}
-            className="w-full h-9 px-3 text-sm rounded-[10px] border border-border bg-surface text-body focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-400 transition-colors"
-          >
-            {printFormats.map((f) => (
-              <option key={f} value={f}>{f}</option>
-            ))}
-          </select>
-          <label className="block text-xs font-semibold text-muted mb-1.5 mt-3">Page Size</label>
-          <select
-            value={printPageSize}
-            onChange={(e) => setPrintPageSize(e.target.value)}
-            className="w-full h-9 px-3 text-sm rounded-[10px] border border-border bg-surface text-body focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-400 transition-colors"
-          >
-            <option value="">Default (A4)</option>
-            <option value="A4">A4</option>
-            <option value="A3">A3</option>
-            <option value="A5">A5</option>
-            <option value="B5">B5</option>
-            <option value="Letter">Letter</option>
-            <option value="Legal">Legal</option>
-            <option value="Ledger">Ledger</option>
-            <option value="Executive">Executive</option>
-          </select>
-          <label className="block text-xs font-semibold text-muted mb-1.5 mt-3">Letterhead</label>
-          <Input
-            value={printLetterhead}
-            onChange={(e) => setPrintLetterhead(e.target.value)}
-            placeholder="Leave blank for no letterhead"
-            className="w-full"
-          />
-          <ModalFooter>
-            <Button variant="ghost" onClick={() => setPrintOpen(false)}>Cancel</Button>
-            <Button onClick={handleBulkPrint}>
-              <Printer size={14} /> Preview
-            </Button>
-          </ModalFooter>
-        </Modal>
+          count={selectedKeys.size}
+          getPrintFormats={salesOrderService.getPrintFormats}
+          getLetterHeads={salesOrderService.lookups.letterHeads}
+          onPrint={handleBulkPrint}
+        />
       </motion.div>
     </>
   )

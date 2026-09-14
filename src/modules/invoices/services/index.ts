@@ -1447,7 +1447,8 @@ export const invoiceService = {
       printFormat?: string
       letterhead?: string
       pageSize?: string
-    } = {}
+    } = {},
+    background = false
   ): string {
     const params = new URLSearchParams()
     params.set("doctype", "Sales Invoice")
@@ -1456,7 +1457,10 @@ export const invoiceService = {
     params.set("no_letterhead", options.letterhead ? "0" : "1")
     if (options.letterhead) params.set("letterhead", options.letterhead)
     params.set("options", JSON.stringify({ "page-size": options.pageSize ?? "A4" }))
-    return `${API_CONFIG.baseUrl}/method/frappe.utils.print_format.download_multi_pdf?${params.toString()}`
+    const method = background
+      ? "frappe.utils.print_format.download_multi_pdf_async"
+      : "frappe.utils.print_format.download_multi_pdf"
+    return `${API_CONFIG.baseUrl}/method/${method}?${params.toString()}`
   },
 
   async sendEmail(name: string, data: {

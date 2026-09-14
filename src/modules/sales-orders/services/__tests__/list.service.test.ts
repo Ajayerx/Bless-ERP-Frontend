@@ -67,6 +67,7 @@ describe("salesOrderService.list() mapDoc (rawStatus / docstatus parity)", () =>
         docstatus: 0,
         per_delivered: 0,
         per_billed: 0,
+        skip_delivery_note: 1,
       },
     ]
     const apiClient = vi.fn(async (url: string) => {
@@ -86,6 +87,7 @@ describe("salesOrderService.list() mapDoc (rawStatus / docstatus parity)", () =>
     expect(item.status).toBe("draft")
     expect(item.fulfillmentStatus).toBe("pending")
     expect(item.total).toBe(4300)
+    expect(item.skipDeliveryNote).toBe(1)
   })
 
   it("maps submitted rows to the raw ERPNext status literal and docstatus 1", async () => {
@@ -142,7 +144,7 @@ describe("salesOrderService.list() mapDoc (rawStatus / docstatus parity)", () =>
     expect(result.items[0].fulfillmentStatus).toBe("cancelled")
   })
 
-  it("filters by status literal and wires the search as or_filters", async () => {
+  it("filters by status literal in ERPNext's doctype-prefixed wire format", async () => {
     const apiCalls: string[] = []
     const apiClient = vi.fn(async (url: string) => {
       apiCalls.push(url)
@@ -151,14 +153,12 @@ describe("salesOrderService.list() mapDoc (rawStatus / docstatus parity)", () =>
     mockApiClient({ apiClient })
     const { salesOrderService } = await import("../index")
 
-    await salesOrderService.list({ search: "maple", status: "Draft", page: 1, pageSize: 10 })
+    await salesOrderService.list({ status: "Draft", page: 1, pageSize: 10 })
 
     const listUrl = apiCalls[0]
-    const decoded = decodeURIComponent(listUrl)
-    expect(decoded).toContain('filters=[["status","=","Draft"]]')
-    expect(decoded).toContain(
-      'or_filters=[["name","like","%maple%"],["customer_name","like","%maple%"],["customer","like","%maple%"]]'
-    )
+    const decoded = decodeURIComponent(listUrl).replace(/\+/g, " ")
+    expect(decoded).toContain('filters=[["Sales Order","status","=","Draft"]]')
+    expect(decoded).not.toContain("or_filters")
     expect(listUrl).toContain("limit_start=0")
     expect(listUrl).toContain("limit_page_length=10")
   })
@@ -176,6 +176,31 @@ describe("salesOrderService.list() mapDoc (rawStatus / docstatus parity)", () =>
 
     expect(apiCalls[0]).toContain("limit_start=20")
     expect(apiCalls[0]).toContain("limit_page_length=20")
+  })
+
+  it("passes ERPNext list-view 4-tuples [doctype, field, operator, value] through", async () => {
+    const apiCalls: string[] = []
+    const apiClient = vi.fn(async (url: string) => {
+      apiCalls.push(url)
+      return []
+    })
+    mockApiClient({ apiClient })
+    const { salesOrderService } = await import("../index")
+
+    await salesOrderService.list({
+      page: 1,
+      pageSize: 20,
+      filters: [
+        ["Sales Order", "grand_total", ">=", "100"],
+        ["Sales Order", "transaction_date", "between", "2026-01-01|2026-12-31"],
+      ],
+    })
+
+    const decoded = decodeURIComponent(apiCalls[0]).replace(/\+/g, " ")
+    expect(decoded).toContain(
+      'filters=[["Sales Order","grand_total",">=","100"],["Sales Order","transaction_date","between","2026-01-01|2026-12-31"]]'
+    )
+    expect(decoded).not.toContain("or_filters")
   })
 })
 

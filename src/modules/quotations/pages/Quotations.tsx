@@ -3,12 +3,13 @@
 import { useEffect, useState, useCallback, useMemo } from "react"
 import { useNavigate } from "react-router-dom"
 import { motion } from "framer-motion"
-import { Plus, Download, Printer, UserRound } from "lucide-react"
+import { Plus, Download, UserRound } from "lucide-react"
 import Topbar from "@/components/layout/Topbar"
-import { Button, Modal, ModalFooter, Input, ConfirmationDialog } from "@/components/ui"
+import { Button, Modal, ModalFooter, Input, ConfirmationDialog, BulkPrintDialog, type PrintSettings } from "@/components/ui"
 import { useMessageDialog, messageFromError, LinkSearchField } from "@/components/ui"
 import { quotationService, QUOTATION_EXPORT_FIELDS, type Quotation, type QuotationListResponse } from "@/services"
 import QuotationTable from "../components/QuotationTable"
+import { openMultiPdfPrint } from "@/lib/multi-pdf-print"
 
 const QUOTATION_SORT_STORAGE_KEY = "blesserp_quotations_sort"
 const MESSAGE_DIVIDER = '<hr class="my-2 border-0 border-t border-gray-200" />'
@@ -56,10 +57,6 @@ export default function Quotations() {
 
   // Print dialog
   const [printOpen, setPrintOpen] = useState(false)
-  const [printFormat, setPrintFormat] = useState("Standard")
-  const [printLetterhead, setPrintLetterhead] = useState("")
-  const [printPageSize, setPrintPageSize] = useState("")
-  const [printFormats, setPrintFormats] = useState<string[]>(["Standard"])
 
   // Filter state
   const [customerSearch, setCustomerSearch] = useState("")
@@ -341,25 +338,23 @@ export default function Quotations() {
   }
 
   // ── Print helpers ───────────────────────────────────────────────────
-  const handleOpenPrint = async () => {
-    try {
-      const formats = await quotationService.getPrintFormats()
-      setPrintFormats(formats)
-    } catch { /* ignore */ }
-    setPrintOpen(true)
-  }
-
-  const handleBulkPrint = () => {
+  const handleBulkPrint = async (settings: PrintSettings) => {
     const printable = Array.from(selectedKeys)
     if (printable.length === 0) return
-    const url = quotationService.buildMultiPdfUrl(printable, {
-      printFormat,
-      letterhead: printLetterhead || undefined,
-      pageSize: printPageSize || undefined,
+    const options = {
+      printFormat: settings.printFormat,
+      letterhead: settings.noLetterhead ? undefined : settings.letterhead,
+      pageSize: settings.pageSize || undefined,
+    }
+    await openMultiPdfPrint({
+      foregroundUrl: quotationService.buildMultiPdfUrl(printable, options),
+      backgroundUrl: settings.background
+        ? quotationService.buildMultiPdfUrl(printable, options, true)
+        : undefined,
+      onBlocked: () => showMessage("Pop-up blocked — please allow pop-ups for this site."),
+      onBackgroundFallback: () =>
+        showMessage("Background print isn't supported by this server — printing in the foreground."),
     })
-    const preview = window.open(url, "_blank")
-    if (!preview) showMessage("Pop-up blocked — please allow pop-ups for this site.")
-    setPrintOpen(false)
   }
 
   // ── Bulk assign / tags (unchanged logic) ────────────────────────────
@@ -498,7 +493,7 @@ export default function Quotations() {
           onBulkCancel={() => setConfirmAction({ type: "bulk-cancel" })}
           onBulkDelete={() => setConfirmAction({ type: "bulk-delete" })}
           onBulkExport={() => setExportOpen(true)}
-          onBulkPrint={handleOpenPrint}
+          onBulkPrint={() => setPrintOpen(true)}
           onBulkAssign={() => { setAssignee(""); setAssignOpen(true) }}
           onBulkClearAssign={() => handleBulkAssign(true)}
           onBulkAddTags={() => { setTagsInput(""); setTagsOpen(true) }}
@@ -658,52 +653,15 @@ export default function Quotations() {
         </Modal>
 
         {/* Print Dialog */}
-        <Modal
+        <BulkPrintDialog
           open={printOpen}
-          onClose={() => setPrintOpen(false)}
+          onOpenChange={setPrintOpen}
           title="Print Quotations"
-          description={`Generate a PDF preview for ${selectedKeys.size} selected quotation${selectedKeys.size === 1 ? "" : "s"}. A new tab opens with the PDF — download it from there (mirrors ERPNext).`}
-        >
-          <label className="block text-xs font-semibold text-muted mb-1.5">Print Format</label>
-          <select
-            value={printFormat}
-            onChange={(e) => setPrintFormat(e.target.value)}
-            className="w-full h-9 px-3 text-sm rounded-[10px] border border-border bg-surface text-body focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-400 transition-colors"
-          >
-            {printFormats.map((f) => (
-              <option key={f} value={f}>{f}</option>
-            ))}
-          </select>
-          <label className="block text-xs font-semibold text-muted mb-1.5 mt-3">Page Size</label>
-          <select
-            value={printPageSize}
-            onChange={(e) => setPrintPageSize(e.target.value)}
-            className="w-full h-9 px-3 text-sm rounded-[10px] border border-border bg-surface text-body focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-400 transition-colors"
-          >
-            <option value="">Default (A4)</option>
-            <option value="A4">A4</option>
-            <option value="A3">A3</option>
-            <option value="A5">A5</option>
-            <option value="B5">B5</option>
-            <option value="Letter">Letter</option>
-            <option value="Legal">Legal</option>
-            <option value="Ledger">Ledger</option>
-            <option value="Executive">Executive</option>
-          </select>
-          <label className="block text-xs font-semibold text-muted mb-1.5 mt-3">Letterhead</label>
-          <Input
-            value={printLetterhead}
-            onChange={(e) => setPrintLetterhead(e.target.value)}
-            placeholder="Leave blank for no letterhead"
-            className="w-full"
-          />
-          <ModalFooter>
-            <Button variant="ghost" onClick={() => setPrintOpen(false)}>Cancel</Button>
-            <Button onClick={handleBulkPrint}>
-              <Printer size={14} /> Preview
-            </Button>
-          </ModalFooter>
-        </Modal>
+          count={selectedKeys.size}
+          getPrintFormats={quotationService.getPrintFormats}
+          getLetterHeads={quotationService.lookups.letterHeads}
+          onPrint={handleBulkPrint}
+        />
       </motion.div>
     </>
   )

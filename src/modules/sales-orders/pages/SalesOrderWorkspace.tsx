@@ -63,23 +63,26 @@ import SalesOrderForm, { type SalesOrderFormHandle } from "../components/SalesOr
 import SalesOrderMetaPanel from "../components/SalesOrderMetaPanel"
 import UpdateItemsDialog from "../components/UpdateItemsDialog"
 import GetItemsFromTrigger from "../components/GetItemsFromTrigger"
-import type { SalesOrderDoc, SalesOrderMappedDoc, SalesOrderStatus } from "../types"
+import type { SalesOrderDoc, SalesOrderMappedDoc } from "../types"
 import { formatDate } from "@/lib/utils"
-
-const statusVariant: Record<SalesOrderStatus, "success" | "info" | "warning" | "danger" | "default"> = {
-  Draft: "default",
-  "On Hold": "warning",
-  "To Deliver and Bill": "info",
-  "To Bill": "info",
-  "To Deliver": "info",
-  Completed: "success",
-  Cancelled: "danger",
-  Closed: "default",
-}
+import { getSalesOrderIndicator, type SalesOrderIndicator } from "@/services"
 
 interface SalesOrderWorkspaceProps {
   mode: "new" | "existing"
   id?: string
+}
+
+function indicatorForDoc(doc: SalesOrderDoc | null | undefined): SalesOrderIndicator | null {
+  if (!doc) return null
+  return getSalesOrderIndicator({
+    docstatus: doc.docstatus,
+    status: doc.status,
+    skip_delivery_note: doc.skip_delivery_note,
+    per_delivered: doc.per_delivered,
+    per_billed: doc.per_billed,
+    grand_total: doc.grand_total,
+    delivery_date: doc.delivery_date,
+  })
 }
 
 // make_mapped_doc returns an UNSAVED prefilled doc (no server name). Routes
@@ -472,6 +475,9 @@ export default function SalesOrderWorkspace({ mode, id }: SalesOrderWorkspacePro
   const isOnHold = status === "On Hold"
   const isClosed = status === "Closed"
   const isCompleted = status === "Completed"
+  // ERPNext shows the derived indicator in the form header (frappe.get_indicator),
+  // distinct from the stored `status` that drives document behaviour.
+  const indicator = indicatorForDoc(salesOrder)
 
   // ERPNext can_update_items(): a submitted SO's items can still be updated
   // unless it is Closed or fully delivered & billed.
@@ -762,9 +768,9 @@ export default function SalesOrderWorkspace({ mode, id }: SalesOrderWorkspacePro
               </p>
             </div>
           </div>
-          {salesOrder && (
-            <Badge variant={statusVariant[salesOrder.status] ?? "default"} className="px-3 py-1 text-sm">
-              {salesOrder.status?.toUpperCase()}
+          {salesOrder && indicator && (
+            <Badge variant={indicator.variant} className="px-3 py-1 text-sm">
+              {indicator.label.toUpperCase()}
             </Badge>
           )}
         </div>

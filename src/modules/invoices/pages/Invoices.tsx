@@ -5,11 +5,12 @@ import { useNavigate } from "react-router-dom"
 import { motion } from "framer-motion"
 import { Plus, CheckCheck, X, Printer, Download, Trash2, UserRound, Tag } from "lucide-react"
 import Topbar from "@/components/layout/Topbar"
-import { Button, useToast, Modal, ModalFooter, Input, ListBulkActions } from "@/components/ui"
+import { Button, useToast, Modal, ModalFooter, Input, ListBulkActions, BulkPrintDialog, type PrintSettings } from "@/components/ui"
 import { useMessageDialog, messageFromError, LinkSearchField } from "@/components/ui"
 import { invoiceService, type SalesInvoice, type SalesInvoiceListResponse } from "@/services"
 import { INVOICE_EXPORT_FIELDS } from "../services"
 import InvoiceTable from "../components/InvoiceTable"
+import { openMultiPdfPrint } from "@/lib/multi-pdf-print"
 
 type StatusFilter = "All" | "Paid" | "Unpaid" | "Overdue" | "Draft" | "Cancelled"
 
@@ -42,6 +43,10 @@ export default function Invoices() {
   const [exportFields, setExportFields] = useState<Record<string, string[]>>(() =>
     JSON.parse(JSON.stringify(INVOICE_EXPORT_FIELDS))
   )
+
+  // Print dialog
+  const [printOpen, setPrintOpen] = useState(false)
+  const [printableNames, setPrintableNames] = useState<string[]>([])
 
   // Filter state
   const [customerSearch, setCustomerSearch] = useState("")
@@ -225,7 +230,7 @@ export default function Invoices() {
     }
   }
 
-  const handleBulkPrint = () => {
+  const handleOpenPrint = () => {
     // Cancelled invoices are blocked by Frappe's printview (403), and
     // download_multi_pdf skips docs it cannot render — drop them up front so
     // the user knows why the merged PDF may be shorter than the selection.
@@ -237,7 +242,26 @@ export default function Invoices() {
       showMessage(`Skipped ${skipped} cancelled invoice${skipped === 1 ? "" : "s"} — cancelled documents cannot be printed.`)
     }
     if (printable.length === 0) return
-    window.open(invoiceService.buildMultiPdfUrl(printable), "_blank")
+    setPrintableNames(printable)
+    setPrintOpen(true)
+  }
+
+  const handleBulkPrint = async (settings: PrintSettings) => {
+    if (printableNames.length === 0) return
+    const options = {
+      printFormat: settings.printFormat,
+      letterhead: settings.noLetterhead ? undefined : settings.letterhead,
+      pageSize: settings.pageSize || undefined,
+    }
+    await openMultiPdfPrint({
+      foregroundUrl: invoiceService.buildMultiPdfUrl(printableNames, options),
+      backgroundUrl: settings.background
+        ? invoiceService.buildMultiPdfUrl(printableNames, options, true)
+        : undefined,
+      onBlocked: () => showMessage("Pop-up blocked — please allow pop-ups for this site."),
+      onBackgroundFallback: () =>
+        showMessage("Background print isn't supported by this server — printing in the foreground."),
+    })
   }
 
   const handleBulkAssign = async (remove = false) => {
@@ -447,7 +471,7 @@ export default function Invoices() {
                 {
                   label: "Print",
                   icon: <Printer size={14} />,
-                  onClick: handleBulkPrint,
+                  onClick: handleOpenPrint,
                 },
                 {
                   label: "Assign to…",
@@ -507,6 +531,17 @@ export default function Invoices() {
             </Button>
           </ModalFooter>
         </Modal>
+
+        {/* Print dialog */}
+        <BulkPrintDialog
+          open={printOpen}
+          onOpenChange={setPrintOpen}
+          title="Print Sales Invoices"
+          count={printableNames.length}
+          getPrintFormats={invoiceService.getPrintFormats}
+          getLetterHeads={invoiceService.lookups.letterHeads}
+          onPrint={handleBulkPrint}
+        />
 
         {/* Tags dialog */}
         <Modal

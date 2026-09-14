@@ -171,12 +171,12 @@ export function withItemNames(name: string, items?: unknown[]): Record<string, u
 
 // ── Sales Orders (list rows, ERPNext shape) ─────────────────────────
 export const salesOrders = [
-  { name: "SAL-ORD-2026-0001", customer: "CUST-0001", customer_name: "Maple Leaf Bakery", transaction_date: "2026-07-02", delivery_date: "2026-07-15", grand_total: 2450.00, status: "To Deliver and Bill", docstatus: 1, per_delivered: 0, per_billed: 0, owner: "admin@blesserp.com", creation: "2026-07-02T10:15:00", modified: "2026-07-02T10:15:00", modified_by: "admin@blesserp.com", _assign: '["jane.doe@blesserp.com"]' },
-  { name: "SAL-ORD-2026-0002", customer: "CUST-0003", customer_name: "Blue Mountain Supplies", transaction_date: "2026-07-04", delivery_date: "2026-07-18", grand_total: 3720.00, status: "To Deliver and Bill", docstatus: 1, per_delivered: 0, per_billed: 0, owner: "admin@blesserp.com", creation: "2026-07-04T10:00:00", modified: "2026-07-04T10:00:00", modified_by: "admin@blesserp.com" },
-  { name: "SAL-ORD-2026-0003", customer: "CUST-0005", customer_name: "Red Maple Imports", transaction_date: "2026-07-06", delivery_date: "2026-07-20", grand_total: 4150.00, status: "To Deliver and Bill", docstatus: 1, per_delivered: 0, per_billed: 0, owner: "admin@blesserp.com", creation: "2026-07-06T09:00:00", modified: "2026-07-06T09:00:00", modified_by: "admin@blesserp.com" },
-  { name: "SAL-ORD-2026-0004", customer: "CUST-0006", customer_name: "Pacific Coast Distributors", transaction_date: "2026-07-07", delivery_date: "2026-07-21", grand_total: 6780.00, status: "Completed", docstatus: 1, per_delivered: 100, per_billed: 100, owner: "admin@blesserp.com", creation: "2026-07-07T10:00:00", modified: "2026-07-07T10:00:00", modified_by: "admin@blesserp.com" },
-  { name: "SAL-ORD-2026-0005", customer: "CUST-0009", customer_name: "Golden Harvest Organic", transaction_date: "2026-07-10", delivery_date: "2026-07-24", grand_total: 4300.00, status: "Draft", docstatus: 0, per_delivered: 0, per_billed: 0, owner: "admin@blesserp.com", creation: "2026-07-10T10:45:00", modified: "2026-07-10T10:45:00", modified_by: "admin@blesserp.com" },
-  { name: "SAL-ORD-2026-0006", customer: "CUST-0004", customer_name: "Great Lakes Trading", transaction_date: "2026-07-08", delivery_date: "2026-07-22", grand_total: 860.00, status: "Cancelled", docstatus: 2, per_delivered: 0, per_billed: 0, owner: "admin@blesserp.com", creation: "2026-07-08T12:00:00", modified: "2026-07-12T09:30:00", modified_by: "admin@blesserp.com" },
+  { name: "SAL-ORD-2026-0001", customer: "CUST-0001", customer_name: "Maple Leaf Bakery", transaction_date: "2026-07-02", delivery_date: "2026-07-15", grand_total: 2450.00, status: "To Deliver and Bill", docstatus: 1, per_delivered: 0, per_billed: 0, skip_delivery_note: 0, company: "BlessERP Inc.", delivery_status: "Not Delivered", billing_status: "Not Billed", owner: "admin@blesserp.com", creation: "2026-07-02T10:15:00", modified: "2026-07-02T10:15:00", modified_by: "admin@blesserp.com", _assign: '["jane.doe@blesserp.com"]' },
+  { name: "SAL-ORD-2026-0002", customer: "CUST-0003", customer_name: "Blue Mountain Supplies", transaction_date: "2026-07-04", delivery_date: "2026-07-18", grand_total: 3720.00, status: "To Deliver and Bill", docstatus: 1, per_delivered: 0, per_billed: 0, skip_delivery_note: 0, company: "BlessERP Inc.", delivery_status: "Not Delivered", billing_status: "Not Billed", owner: "admin@blesserp.com", creation: "2026-07-04T10:00:00", modified: "2026-07-04T10:00:00", modified_by: "admin@blesserp.com" },
+  { name: "SAL-ORD-2026-0003", customer: "CUST-0005", customer_name: "Red Maple Imports", transaction_date: "2026-07-06", delivery_date: "2026-07-20", grand_total: 4150.00, status: "To Deliver and Bill", docstatus: 1, per_delivered: 0, per_billed: 0, skip_delivery_note: 0, company: "BlessERP Inc.", delivery_status: "Not Delivered", billing_status: "Not Billed", owner: "admin@blesserp.com", creation: "2026-07-06T09:00:00", modified: "2026-07-06T09:00:00", modified_by: "admin@blesserp.com" },
+  { name: "SAL-ORD-2026-0004", customer: "CUST-0006", customer_name: "Pacific Coast Distributors", transaction_date: "2026-07-07", delivery_date: "2026-07-21", grand_total: 6780.00, status: "Completed", docstatus: 1, per_delivered: 100, per_billed: 100, skip_delivery_note: 0, company: "BlessERP Inc.", delivery_status: "Fully Delivered", billing_status: "Fully Billed", owner: "admin@blesserp.com", creation: "2026-07-07T10:00:00", modified: "2026-07-07T10:00:00", modified_by: "admin@blesserp.com" },
+  { name: "SAL-ORD-2026-0005", customer: "CUST-0009", customer_name: "Golden Harvest Organic", transaction_date: "2026-07-10", delivery_date: "2026-07-24", grand_total: 4300.00, status: "Draft", docstatus: 0, per_delivered: 0, per_billed: 0, skip_delivery_note: 0, company: "BlessERP Inc.", delivery_status: "Not Delivered", billing_status: "Not Billed", owner: "admin@blesserp.com", creation: "2026-07-10T10:45:00", modified: "2026-07-10T10:45:00", modified_by: "admin@blesserp.com" },
+  { name: "SAL-ORD-2026-0006", customer: "CUST-0004", customer_name: "Great Lakes Trading", transaction_date: "2026-07-08", delivery_date: "2026-07-22", grand_total: 860.00, status: "Cancelled", docstatus: 2, per_delivered: 0, per_billed: 0, skip_delivery_note: 0, company: "BlessERP Inc.", delivery_status: "Not Delivered", billing_status: "Not Billed", owner: "admin@blesserp.com", creation: "2026-07-08T12:00:00", modified: "2026-07-12T09:30:00", modified_by: "admin@blesserp.com" },
 ]
 
 // ── Draft Purchase Orders ────────────────────────────────────────────
@@ -265,31 +265,74 @@ function applyOrderBy(rows: Record<string, unknown>[], orderBy: string): Record<
   })
 }
 
-export function matchesFilter(row: Record<string, unknown>, filters: unknown[]): boolean {
+/** Local-date "YYYY-MM-DD" for ERPNext's `today` filter keyword. */
+function localTodayIso(): string {
+  const now = new Date()
+  const m = String(now.getMonth() + 1).padStart(2, "0")
+  const d = String(now.getDate()).padStart(2, "0")
+  return `${now.getFullYear()}-${m}-${d}`
+}
+
+function compareValues(a: unknown, b: unknown): number {
+  const na = typeof a === "number" ? a : Number(a)
+  const nb = typeof b === "number" ? b : Number(b)
+  if (Number.isFinite(na) && Number.isFinite(nb)) return na - nb
+  // ERPNext filter keywords like `today` resolve to the current server date
+  // before comparison (frappe.utils.today), so a raw "Today" must not fall
+  // through to string comparison (every ISO date would sort before it).
+  const sa = typeof a === "string" && /^today$/i.test(a) ? localTodayIso() : String(a)
+  const sb = typeof b === "string" && /^today$/i.test(b) ? localTodayIso() : String(b)
+  const da = new Date(sa)
+  const db = new Date(sb)
+  if (!isNaN(da.getTime()) && !isNaN(db.getTime())) return da.getTime() - db.getTime()
+  return sa.localeCompare(sb)
+}
+
+export function matchesFilter(row: Record<string, unknown>, filters: unknown[], doctype?: string): boolean {
   for (const raw of filters) {
     if (!Array.isArray(raw)) continue
     const f = raw as unknown[]
     if (f[0] === "OR") {
       const orGroups = f.slice(1) as unknown[][]
-      const orMatched = orGroups.some((g) => matchesFilter(row, g))
+      const orMatched = orGroups.some((g) => matchesFilter(row, g, doctype))
       if (!orMatched) return false
       continue
     }
-    if (f.length < 3) continue
-    const [field, operator, value] = f as [string, string, unknown]
+    // ERPNext list chips are [doctype, fieldname, operator, value] tuples
+    // (base_list.js get_filters_for_args slices filter.slice(0, 4)).
+    let idx = 0
+    if (doctype && f[0] === doctype && f.length >= 4) idx = 1
+    if (f.length < idx + 3) continue
+    const [field, operator, value] = [f[idx], f[idx + 1], f[idx + 2]] as [string, string, unknown]
     const rowVal = row[field]
     if (operator === "=") {
       // eslint-disable-next-line eqeqeq
       if (rowVal != value) return false
+    } else if (operator === "!=") {
+      // eslint-disable-next-line eqeqeq
+      if (rowVal == value) return false
     } else if (operator === "like" && typeof value === "string") {
       if (!String(rowVal).toLowerCase().includes(value.replace(/%/g, "").toLowerCase())) return false
+    } else if (operator === "not like" && typeof value === "string") {
+      if (String(rowVal).toLowerCase().includes(value.replace(/%/g, "").toLowerCase())) return false
     } else if (operator === "in" && Array.isArray(value)) {
-      if (!value.includes(rowVal)) return false
-    } else if (operator === ">" && typeof value === "number") {
-      if (Number(rowVal) <= value) return false
+      if (!value.some((v) => v == rowVal)) return false // eslint-disable-line eqeqeq
+    } else if (operator === "not in" && Array.isArray(value)) {
+      if (value.some((v) => v == rowVal)) return false // eslint-disable-line eqeqeq
+    } else if (operator === ">") {
+      if (compareValues(rowVal, value) <= 0) return false
+    } else if (operator === ">=") {
+      if (compareValues(rowVal, value) < 0) return false
+    } else if (operator === "<") {
+      if (compareValues(rowVal, value) >= 0) return false
+    } else if (operator === "<=") {
+      if (compareValues(rowVal, value) > 0) return false
     } else if (operator === "between" && Array.isArray(value) && value.length === 2) {
-      const d = new Date(String(rowVal))
-      if (d < new Date(String(value[0])) || d > new Date(String(value[1]))) return false
+      if (compareValues(rowVal, value[0]) < 0 || compareValues(rowVal, value[1]) > 0) return false
+    } else if (operator === "is") {
+      const wantsSet = String(value).toLowerCase() === "set"
+      const isSet = rowVal != null && String(rowVal) !== ""
+      if (wantsSet !== isSet) return false
     }
   }
   return true
@@ -300,11 +343,12 @@ export function matchesFilter(row: Record<string, unknown>, filters: unknown[]):
 export function matchesFilterSet(
   row: Record<string, unknown>,
   filters: unknown[],
-  orFilters: unknown[]
+  orFilters: unknown[],
+  doctype?: string
 ): boolean {
-  if (filters.length > 0 && !matchesFilter(row, filters)) return false
+  if (filters.length > 0 && !matchesFilter(row, filters, doctype)) return false
   if (orFilters.length > 0) {
-    const orMatched = orFilters.some((f) => matchesFilter(row, [f]))
+    const orMatched = orFilters.some((f) => matchesFilter(row, [f], doctype))
     if (!orMatched) return false
   }
   return true
@@ -646,7 +690,7 @@ export const frappeLookupHandlers = [
     if (rows) {
       const { filters, orFilters, orderBy, limitPageLength, limitStart } = parseQSParams(request.url)
       let filtered = filters.length > 0 || orFilters.length > 0
-        ? rows.filter((r) => matchesFilterSet(r, filters, orFilters))
+        ? rows.filter((r) => matchesFilterSet(r, filters, orFilters, doctype))
         : rows
       filtered = applyOrderBy(filtered, orderBy)
       if (limitPageLength > 0) {
