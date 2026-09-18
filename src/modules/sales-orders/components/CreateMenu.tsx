@@ -12,6 +12,7 @@ import {
   type CreateAction,
   type CreateOutcome,
   type CreateResult,
+  type MappedDoc,
 } from "../config/createTargets"
 import { salesOrderService } from "../services"
 import type { SalesOrderDoc } from "../types"
@@ -66,6 +67,11 @@ export default function CreateMenu({ doc, onDocCreated }: CreateMenuProps) {
       navigate(routed)
       return
     }
+    // Unsaved mapped doc → open the module's create form prefilled (open_mapped_doc semantics).
+    if (outcome.doc && action.createRoute) {
+      navigate(action.createRoute(outcome.doc), { state: { mappedDoc: outcome.doc } })
+      return
+    }
     const detail = outcome.names?.length ? outcome.names.join(", ") : outcome.name
     showMessage(
       detail
@@ -79,7 +85,7 @@ export default function CreateMenu({ doc, onDocCreated }: CreateMenuProps) {
   }
 
   const runSimple = async (action: CreateAction) => {
-    const simpleCall = (): Promise<CreateResult> => {
+    const simpleCall = (): Promise<MappedDoc> => {
       switch (action.kind as SimpleActionKind) {
         case "sales-invoice":
           return salesOrderService.makeSalesInvoice(doc.name)
@@ -102,7 +108,7 @@ export default function CreateMenu({ doc, onDocCreated }: CreateMenuProps) {
     }
     try {
       const result = await simpleCall()
-      handleOutcome(action, { doctype: result.doctype, name: result.name })
+      handleOutcome(action, { doctype: result.doctype ?? "", name: result.name, doc: result })
     } catch (err) {
       reportError(action, err)
     }
@@ -141,7 +147,7 @@ export default function CreateMenu({ doc, onDocCreated }: CreateMenuProps) {
   const runSimpleMapped = async (action: CreateAction) => {
     try {
       const result = await salesOrderService.makeDeliveryNote(doc.name)
-      handleOutcome(action, { doctype: result.doctype, name: result.name })
+      handleOutcome(action, { doctype: result.doctype ?? "Delivery Note", name: result.name, doc: result })
     } catch (err) {
       reportError(action, err)
     }
@@ -156,7 +162,7 @@ export default function CreateMenu({ doc, onDocCreated }: CreateMenuProps) {
         dates.length ? { delivery_dates: dates, for_reserved_stock: false } : undefined,
       )
       onDocCreated?.()
-      handleOutcome(action, { doctype: result.doctype, name: result.name })
+      handleOutcome(action, { doctype: result.doctype ?? "Delivery Note", name: result.name, doc: result })
     } catch (err) {
       reportError(action, err)
     } finally {

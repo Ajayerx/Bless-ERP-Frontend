@@ -88,6 +88,7 @@ export interface InvoiceFormData {
   isCashOrNonTradeDiscount?: boolean;
   discountAccount?: string;
   writeOffAmount?: number;
+  outstandingAmount?: number;
   writeOffAccount?: string;
   writeOffCostCenter?: string;
   writeOffOutstandingAmountAutomatically?: boolean;
@@ -1525,6 +1526,9 @@ export default function InvoiceForm({
                     Is Rate Adjustment Entry (Debit Note)
                   </label>
                 </div>
+                <p className="text-xs text-muted">
+                  Issue a debit note with 0 qty against an existing Sales Invoice
+                </p>
                 {formData.amendedFrom && (
                   <div>
                     <label className={labelClass}>Amended From</label>
@@ -2038,9 +2042,10 @@ export default function InvoiceForm({
               const effectiveRoundingAdjustment =
                 formData.roundingAdjustment ??
                 (effectiveRoundedTotal - (grandTotal ?? 0))
-              // ERPNext computes outstanding only on save; new docs show 0
               const effectiveOutstanding =
-                mode === "new" ? 0 : (outstandingAmount ?? effectiveRoundedTotal)
+                formData.outstandingAmount ??
+                outstandingAmount ??
+                (mode === "new" ? 0 : effectiveRoundedTotal)
               const effectiveTotalAdvance =
                 totalAdvance ??
                 formData.totalAdvance ??
@@ -2362,11 +2367,11 @@ export default function InvoiceForm({
             })()}
           </CollapsibleSection>
 
-          {/* ERPNext "Tax Breakup" — last section of the Details tab. Stored
-              server HTML when present, otherwise the live computed itemised
-              breakdown rendered as a proper table. Only shown on saved
-              invoices (ERPNext populates it after calculation/save). */}
-          {mode === "existing" && (
+          {/* ERPNext "Taxes and Charges Calculation" — last section of the Details
+              tab. Stored server HTML when present, otherwise the live computed
+              itemised breakdown rendered as a proper table. Shown on drafts
+              (mapped from Sales Orders) and saved invoices alike. */}
+          {(breakupRows.length > 0 || storedTaxBreakupHtml) && (
             <ItemisedTaxBreakup
               rows={breakupRows}
               storedHtml={storedTaxBreakupHtml}

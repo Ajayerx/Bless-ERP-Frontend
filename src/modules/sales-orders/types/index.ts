@@ -78,6 +78,10 @@ export interface SalesOrderItemForm {
   projected_qty?: number
   delivered_qty?: number
   reserved_qty?: number
+  billed_qty?: number
+  billed_amt?: number
+  returned_qty?: number
+  closed?: number
   qty: number
   price_list_rate: number
   rate: number

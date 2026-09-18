@@ -27,7 +27,6 @@ import type {
 import type { LineItemForm } from "../components/InvoiceLineItems"
 import { useCustomerSelection } from "./useCustomerSelection"
 import { applySetWarehouseToItems } from "../utils/applySetWarehouse"
-import { validateInvoice, getErrorMessages } from "../validation"
 
 export interface InvoiceCompanyDefaults {
   company: string
@@ -114,8 +113,10 @@ function invToFormData(inv: SalesInvoice): InvoiceFormData {
     poDate: inv.po_date?.slice(0, 10),
     paymentTermsTemplate: inv.payment_terms_template,
     currency: inv.currency,
+    conversionRate: inv.conversion_rate ?? 1,
     sellingPriceList: inv.selling_price_list,
     priceListCurrency: inv.price_list_currency,
+    plcConversionRate: inv.plc_conversion_rate ?? 1,
     ignorePricingRule: inv.ignore_pricing_rule,
     applyDiscountOn: inv.apply_discount_on,
     discountAmount: inv.discount_amount,
@@ -134,6 +135,12 @@ function invToFormData(inv: SalesInvoice): InvoiceFormData {
     taxCategory: inv.tax_category,
     taxesAndCharges: inv.taxes_and_charges,
     partyAccountCurrency: inv.party_account_currency,
+    territory: inv.territory,
+    campaign: inv.campaign,
+    source: inv.source,
+    shippingRule: inv.shipping_rule,
+    incoterm: inv.incoterm,
+    namedPlace: inv.named_place,
     salesPartner: inv.sales_partner,
     commissionRate: inv.commission_rate,
     salesTeam: inv.sales_team?.map((m) => ({
@@ -220,6 +227,7 @@ function invToFormData(inv: SalesInvoice): InvoiceFormData {
     changeAmount: inv.change_amount,
     baseWriteOffAmount: inv.base_write_off_amount,
     totalAdvance: inv.total_advance,
+    outstandingAmount: inv.outstanding_amount,
     unrealizedProfitLossAccount: inv.unrealized_profit_loss_account,
     againstIncomeAccount: inv.against_income_account,
     totalCommission: inv.total_commission,
@@ -367,6 +375,8 @@ export function useInvoiceWorkspace({
             const now = new Date()
             return `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`
           })(),
+          conversionRate: 1,
+          plcConversionRate: 1,
         }
       : {
           customer: "",
@@ -600,6 +610,8 @@ export function useInvoiceWorkspace({
               productName: item.item_name || item.item_code,
               description: item.description || undefined,
               sku: item.item_code,
+              salesOrder: item.sales_order || undefined,
+              soDetail: item.so_detail || undefined,
               quantity: item.qty,
               price: item.rate,
               total: item.amount ?? calcTotal(item.qty, item.rate),
@@ -633,16 +645,19 @@ export function useInvoiceWorkspace({
         cancelled = true
       }
     } else {
-      const stateCopy = location.state as { copyFrom?: SalesInvoice } | null
-      const copyFrom = stateCopy?.copyFrom
+      const stateMapped = location.state as { mappedDoc?: SalesInvoice; copyFrom?: SalesInvoice } | null
+      const copyFrom = stateMapped?.copyFrom
+      const mappedDoc = stateMapped?.mappedDoc
       const isReturnParam = searchParams.get("is_return") === "1"
       const returnAgainst = searchParams.get("return_against")
 
-      const sourcePromise: Promise<SalesInvoice | null> = copyFrom
-        ? Promise.resolve(copyFrom)
-        : isReturnParam && returnAgainst
-          ? invoiceService.getById(returnAgainst).catch(() => null)
-          : Promise.resolve(null)
+      const sourcePromise: Promise<SalesInvoice | null> = mappedDoc
+        ? Promise.resolve(mappedDoc)
+        : copyFrom
+          ? Promise.resolve(copyFrom)
+          : isReturnParam && returnAgainst
+            ? invoiceService.getById(returnAgainst).catch(() => null)
+            : Promise.resolve(null)
 
       Promise.all([getCompanyDefaults(), sourcePromise])
         .then(([defaults, source]) => {
@@ -667,8 +682,10 @@ export function useInvoiceWorkspace({
                   productId: item.item_code,
                   productName: item.item_name || item.item_code,
                   description: item.description || undefined,
-                  sku: item.item_code,
-                  quantity: qty,
+sku: item.item_code,
+                salesOrder: item.sales_order || undefined,
+                soDetail: item.so_detail || undefined,
+                quantity: qty,
                   price: item.rate,
                   total: item.amount ?? calcTotal(qty, item.rate),
                   uom: item.uom || "Nos",
@@ -690,6 +707,7 @@ export function useInvoiceWorkspace({
                 }
               }),
             )
+            setEditableTaxRows(invoiceTaxesToEditable(source.taxes ?? []))
             if (source.taxes_and_charges) {
               invoiceService
                 .getTaxTemplateDetails(source.taxes_and_charges)
@@ -999,6 +1017,8 @@ export function useInvoiceWorkspace({
         productName: (item.item_name as string) || "",
         description: (item.description as string) || undefined,
         sku: item.item_code as string,
+        salesOrder: (item.sales_order as string) || undefined,
+        soDetail: (item.so_detail as string) || undefined,
         quantity: Number(item.qty ?? item.stock_qty ?? 1),
         price: Number(item.rate ?? 0),
         total: Number(item.amount ?? 0),
@@ -1355,6 +1375,8 @@ export function useInvoiceWorkspace({
           item_code: item.sku || item.productName,
           item_name: item.productName,
           description: item.description || undefined,
+          sales_order: item.salesOrder || undefined,
+          so_detail: item.soDetail || undefined,
           qty: item.quantity,
           uom: item.uom,
           conversion_factor: item.conversionFactor ?? 1,
@@ -1422,15 +1444,6 @@ export function useInvoiceWorkspace({
   }
 
   const handleSave = async () => {
-    const fd = formDataRef.current
-    const li = lineItemsRef.current
-    const errors = validateInvoice(fd, li, companyDefaults)
-    setFieldErrors(errors)
-    const msgs = getErrorMessages(errors)
-    if (msgs.length > 0) {
-      setErrorMessages(msgs)
-      return
-    }
     setSaving(true)
     setError("")
     setErrorMessages([])

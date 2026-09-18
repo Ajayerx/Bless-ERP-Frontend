@@ -36,38 +36,34 @@ export function rFilterToArgs(r: RFilter): unknown[][] {
 
 export type { RFilter, FilterOperator, FilterFieldDef }
 
-// ERPNext Quotation list filters — always visible on the list page.
+// ERPNext Quotation list filters — always visible on the list page (the
+// doctype's in_standard_filter fields: quotation_to, party_name, order_type;
+// plus the name/title/date search fields).
 const INLINE_FIELDS: FilterFieldDef[] = [
   { field: "name", label: "ID", type: "text" },
   { field: "title", label: "Title", type: "text" },
+  {
+    field: "quotation_to",
+    label: "Quotation To",
+    type: "select",
+    options: ["Customer", "Lead"],
+  },
   { field: "party_name", label: "Party", type: "link" },
-  { field: "company", label: "Company", type: "link" },
   { field: "transaction_date", label: "Date", type: "date" },
   {
-    field: "status",
-    label: "Status",
+    field: "order_type",
+    label: "Order Type",
     type: "select",
-    options: ["Draft", "Open", "Replied", "Partially Ordered", "Ordered", "Lost", "Cancelled", "Expired"],
+    options: ["Sales", "Maintenance"],
   },
 ]
 
 /** Fields available in the advanced filter popover (any filterable field). */
 export const QUOTATION_ADVANCED_FILTER_FIELDS: FilterFieldDef[] = [
   ...INLINE_FIELDS,
+  { field: "company", label: "Company", type: "link" },
   { field: "valid_till", label: "Valid Until", type: "date" },
   { field: "grand_total", label: "Grand Total", type: "number" },
-  {
-    field: "order_type",
-    label: "Order Type",
-    type: "select",
-    options: ["Sales", "Maintenance", "Shopping Cart"],
-  },
-  {
-    field: "quotation_to",
-    label: "Quotation To",
-    type: "select",
-    options: ["Customer", "Lead", "Prospect"],
-  },
   { field: "currency", label: "Currency", type: "link" },
   { field: "owner", label: "Owner", type: "link" },
   { field: "creation", label: "Created On", type: "date" },
@@ -99,10 +95,17 @@ type LinkLookup = (query: string) => Promise<{
   items: Array<{ value: string; label: string; description: string }>
 }>
 
+// ERPNext list parity: `party_name` (Dynamic Link → quotation_to) searches the
+// doctype named by the selected quotation_to standard filter, so the lookup is
+// type-parameterized.
+type PartyTypeLinkLookup = (quotationTo: string, query: string) => Promise<{
+  items: Array<{ value: string; label: string; description: string }>
+}>
+
 interface QuotationFiltersProps {
   filters: RFilter[]
   onFiltersChange: (filters: RFilter[]) => void
-  partySearch?: LinkLookup
+  partySearch?: PartyTypeLinkLookup
   companySearch?: LinkLookup
   sort?: QuotationSort
   className?: string
@@ -295,6 +298,7 @@ export default function QuotationFilters({
         {INLINE_FIELDS.map((def) => {
           const current = filterFor(def.field)
           if (def.type === "link") {
+            const selectedQuotationTo = filterFor("quotation_to")?.value ?? ""
             return (
               <div key={def.field} className="min-w-0" title={def.field}>
                 <LinkSearchField
@@ -303,8 +307,12 @@ export default function QuotationFilters({
                     setFieldFilter(def.field, def, v ? { operator: "=", value: v } : undefined)
                   }
                   searchFn={
-                    (def.field === "party_name" ? partySearch : companySearch) ??
-                    (() => Promise.resolve({ items: [] }))
+                    def.field === "party_name"
+                      ? (q) =>
+                          partySearch
+                            ? partySearch(selectedQuotationTo, q)
+                            : Promise.resolve({ items: [] })
+                      : (companySearch ?? (() => Promise.resolve({ items: [] })))
                   }
                   placeholder={def.label}
                   clearIconMode="hover"

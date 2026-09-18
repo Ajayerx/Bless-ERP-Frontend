@@ -686,3 +686,48 @@ describe("buildDeskApplyPriceListDoc (full desk doc envelope)", () => {
     expect(item.owner).toBeUndefined()
   })
 })
+
+describe("quotationService.searchParties (list party_name Dynamic Link parity)", () => {
+  it("searches the doctype named by quotation_to and posts the desk ControlLink envelope", async () => {
+    captured = []
+    await quotationService.searchParties("Lead", "Summit")
+    expect(captured).toHaveLength(1)
+    const call = lastCall()
+    expect(call.url).toBe("/api/method/frappe.desk.search.search_link")
+    const body = decodeBody(call.init)
+    expect(body.get("doctype")).toBe("Lead")
+    expect(body.get("txt")).toBe("Summit")
+    expect(body.get("reference_doctype")).toBe("Quotation")
+    expect(body.get("ignore_user_permissions")).toBe("false")
+    expect(body.get("page_length")).toBe("10")
+  })
+
+  it("searches Customer for quotation_to = Customer", async () => {
+    captured = []
+    await quotationService.searchParties("Customer", "Maple")
+    expect(lastCall().url).toBe("/api/method/frappe.desk.search.search_link")
+    expect(decodeBody(lastCall().init).get("doctype")).toBe("Customer")
+  })
+
+  it("returns no items and fires no request when quotation_to is empty or not Customer/Lead", async () => {
+    captured = []
+    await expect(quotationService.searchParties("", "Al")).resolves.toEqual({ items: [] })
+    await expect(quotationService.searchParties("Prospect", "Al")).resolves.toEqual({ items: [] })
+    await expect(quotationService.searchParties("Company", "ACME")).resolves.toEqual({ items: [] })
+    expect(captured).toHaveLength(0)
+  })
+
+  it("maps the search_link payload onto { items }", async () => {
+    captured = []
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL) => {
+      captured.push({ url: String(_input), init: {} })
+      return new Response(
+        JSON.stringify({ message: [{ value: "LEAD-0001", label: "LEAD-0001", description: "" }] }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      )
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    const result = await quotationService.searchParties("Lead", "Summit")
+    expect(result).toEqual({ items: [{ value: "LEAD-0001", label: "LEAD-0001", description: "" }] })
+  })
+})

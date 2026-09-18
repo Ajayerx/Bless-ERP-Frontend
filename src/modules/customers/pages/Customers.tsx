@@ -24,10 +24,6 @@ import QuickAddCustomerModal from "../components/QuickAddCustomerModal";
 import CustomerImportModal from "../components/CustomerImportModal";
 import { rFilterToArgs, type RFilter } from "../components/CustomerFilters";
 
-type StatusFilter = "All" | "Active" | "Disabled" | "Frozen";
-
-const STATUS_FILTERS: StatusFilter[] = ["All", "Active", "Disabled", "Frozen"];
-
 export default function Customers() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -80,8 +76,6 @@ export default function Customers() {
     return order === "desc" ? "desc" : "asc"
   })
 
-  const statusChip = filters.find((f) => f.field === "status" && f.operator === "=")
-  const activeFilter: StatusFilter = (statusChip?.value as StatusFilter) ?? "All"
   const filtersArgs = useMemo(() => filters.flatMap(rFilterToArgs), [filters])
   const hasActiveFilters = filters.length > 0
 
@@ -136,15 +130,6 @@ export default function Customers() {
     setAllItems([]);
     setPageLength(size);
   };
-
-  // Status pills mutate the "Status = x" chip, keeping one source of truth.
-  const handleFilterPill = (f: string) => {
-    setFilters((prev) => {
-      const rest = prev.filter((x) => !(x.field === "status" && x.operator === "="))
-      if (f === "All") return rest
-      return [...rest, { field: "status", label: "Status", operator: "=", value: f }]
-    })
-  }
 
   // ERPNext list parity: clicking a list value applies it as a filter.
   const handleCellFilter = useCallback((chip: RFilter) => {
@@ -446,9 +431,6 @@ export default function Customers() {
           data={tableData}
           loading={loading}
           onRowClick={(customer) => navigate(`/customers/${customer.name}`)}
-          filters={STATUS_FILTERS}
-          activeFilter={activeFilter}
-          onFilterChange={handleFilterPill}
           filterChips={filters}
           onFilterChipsChange={setFilters}
           onCellFilter={handleCellFilter}

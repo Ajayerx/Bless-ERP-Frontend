@@ -1,7 +1,7 @@
 "use client"
 
 import { FileText, DollarSign, AlertTriangle, CheckCircle2, Users } from "lucide-react"
-import { Button, Badge, FitText } from "@/components/ui"
+import { Button, Badge, FitText, FilterPills } from "@/components/ui"
 import DataTable, { type Column } from "@/components/ui/DataTable"
 import { type SalesInvoice, type SalesInvoiceListResponse } from "@/services"
 import { formatCurrency, cn, formatDate } from "@/lib/utils"
@@ -151,7 +151,7 @@ interface InvoiceTableProps {
   loading: boolean
   onRowClick: (inv: SalesInvoice) => void
   onRecordPayment: (inv: SalesInvoice) => void
-  /** Status filter pills (All/Paid/Unpaid/Overdue/Draft/Cancelled). */
+  /** Status filter pills (the full ERPNext Sales Invoice status set). */
   filters?: string[]
   activeFilter?: string
   onFilterChange?: (filter: string) => void
@@ -241,26 +241,12 @@ export default function InvoiceTable({
         />
       </div>
 
-      {/* Status pill tabs */}
-      {filters && (
-        <div className="flex items-center gap-2 flex-wrap">
-          {filters.map((f) => (
-            <button
-              key={f}
-              type="button"
-              onClick={() => onFilterChange?.(f)}
-              className={cn(
-                "h-8 px-3 rounded-full text-xs font-semibold transition-colors",
-                (activeFilter ?? "All") === f
-                  ? "bg-primary-100 text-primary-700"
-                  : "text-muted hover:bg-gray-100 hover:text-body"
-              )}
-            >
-              {f}
-            </button>
-          ))}
-        </div>
-      )}
+      {/* Status pill tabs (ERPNext Sales Invoice indicator statuses) */}
+      <FilterPills
+        options={filters ?? []}
+        value={activeFilter ?? "All"}
+        onChange={onFilterChange ? (f) => onFilterChange(f) : () => {}}
+      />
 
       {/* ERPNext-style filter bar + FilterGroup */}
       <InvoiceFilters

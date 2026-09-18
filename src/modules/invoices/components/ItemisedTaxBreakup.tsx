@@ -35,7 +35,7 @@ export default function ItemisedTaxBreakup({
   // computable rows, wrapped so the surrounding styled card keeps it tidy.
   if (!rows.length) {
     if (!storedHtml || !storedHtml.trim()) return null;
-    return (
+return (
       <CollapsibleSection title="Tax Breakup">
         <div className="rounded-lg border border-border p-2 overflow-x-auto">
           <div className="tax-break-up" dangerouslySetInnerHTML={{ __html: storedHtml }} />

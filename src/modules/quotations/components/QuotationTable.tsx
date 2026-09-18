@@ -1,7 +1,7 @@
 "use client"
 
 import { FileText, CheckCircle2, Clock, XCircle, ArrowRight, TrendingDown, Send, RotateCcw, Trash2, Download, Printer, UserRound, Tag } from "lucide-react"
-import { Badge, FitText, ListBulkActions } from "@/components/ui"
+import { Badge, FitText, ListBulkActions, FilterPills } from "@/components/ui"
 import DataTable, { type Column } from "@/components/ui/DataTable"
 import { type Quotation, type QuotationListResponse } from "@/services"
 import type { QuotationStatus } from "../types"
@@ -12,7 +12,6 @@ const QUOTATION_STATUS_FILTERS: Array<"All" | QuotationStatus> = [
   "All",
   "Draft",
   "Open",
-  "Replied",
   "Partially Ordered",
   "Ordered",
   "Lost",
@@ -221,7 +220,7 @@ interface QuotationTableProps {
   filterChips?: RFilter[]
   onFilterChipsChange?: (filterChips: RFilter[]) => void
   onCellFilter?: (chip: RFilter) => void
-  partySearch?: (query: string) => Promise<{ items: Array<{ value: string; label: string; description: string }> }>
+  partySearch?: (partyType: string, query: string) => Promise<{ items: Array<{ value: string; label: string; description: string }> }>
   companySearch?: (query: string) => Promise<{ items: Array<{ value: string; label: string; description: string }> }>
   sort?: QuotationSort
   hasActiveFilters: boolean
@@ -349,24 +348,12 @@ export default function QuotationTable({
         />
       </div>
 
-      {/* Status pill tabs */}
-      <div className="flex items-center gap-2 flex-wrap">
-        {(filters ?? QUOTATION_STATUS_FILTERS).map((f) => (
-          <button
-            key={f}
-            type="button"
-            onClick={() => onFilterChange?.(f)}
-            className={cn(
-              "h-8 px-3 rounded-full text-xs font-semibold transition-colors",
-              (activeFilter ?? "All") === f
-                ? "bg-primary-100 text-primary-700"
-                : "text-muted hover:bg-gray-100 hover:text-body"
-            )}
-          >
-            {f}
-          </button>
-        ))}
-      </div>
+      {/* Status pill tabs (ERPNext Quotation indicator statuses) */}
+      <FilterPills
+        options={filters ?? QUOTATION_STATUS_FILTERS}
+        value={activeFilter ?? "All"}
+        onChange={(f) => onFilterChange?.(f)}
+      />
 
       {/* ERPNext-style filter bar + FilterGroup */}
       <QuotationFilters

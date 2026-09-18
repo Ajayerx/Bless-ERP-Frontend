@@ -15,10 +15,6 @@ import { stripHtml } from "@/services/api-client"
 import { formatCurrency, formatDate, cn } from "@/lib/utils"
 import { openMultiPdfPrint } from "@/lib/multi-pdf-print"
 
-type StatusFilter = "All" | "Draft" | "Submitted" | "Cancelled"
-
-const STATUS_FILTERS: StatusFilter[] = ["All", "Draft", "Submitted", "Cancelled"]
-
 const MESSAGE_DIVIDER = '<hr class="my-2 border-0 border-t border-gray-200" />'
 
 export default function Payments() {
@@ -63,8 +59,6 @@ export default function Payments() {
     return order === "asc" ? "asc" : "desc"
   })
 
-  const statusChip = filters.find((f) => f.field === "status" && f.operator === "=")
-  const activeFilter: StatusFilter = (statusChip?.value as StatusFilter) ?? "All"
   const filtersArgs = useMemo(() => filters.flatMap(rFilterToArgs), [filters])
   const hasActiveFilters = filters.length > 0
 
@@ -149,15 +143,6 @@ export default function Payments() {
 
   const handleRecordPayment = (inv: SalesInvoice) => {
     navigate(`/payments/new?invoice=${inv.name}`)
-  }
-
-  // Status pills mutate the "Status = x" chip, keeping one source of truth.
-  const handleFilterPill = (f: string) => {
-    setFilters((prev) => {
-      const rest = prev.filter((x) => !(x.field === "status" && x.operator === "="))
-      if (f === "All") return rest
-      return [...rest, { field: "status", label: "Status", operator: "=", value: f }]
-    })
   }
 
   // ERPNext list parity: clicking a list value applies it as a filter.
@@ -434,13 +419,10 @@ export default function Payments() {
           onCancelSingle={(name) => setConfirmAction({ type: "single-cancel", target: name })}
           onDeleteSingle={(name) => setConfirmAction({ type: "single-delete", target: name })}
           onAmendSingle={(name) => setConfirmAction({ type: "single-amend", target: name })}
-          filters={STATUS_FILTERS}
-          activeFilter={activeFilter}
-          onFilterChange={handleFilterPill}
           filterChips={filters}
           onFilterChipsChange={setFilters}
           onCellFilter={handleCellFilter}
-          partySearch={(q) => paymentService.searchParties(q)}
+          partySearch={(partyType, q) => paymentService.searchParties(partyType, q)}
           companySearch={(q) => paymentService.searchCompanies(q)}
           sort={{ field: sortBy, order: sortOrder, onChange: handleSort }}
           onBulkExport={() => setExportOpen(true)}

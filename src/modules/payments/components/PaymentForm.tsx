@@ -9,7 +9,7 @@ import { validateLink } from "@/services/frappe-client"
 import { getCompanyDefaults } from "@/services/company"
 import { ApiError } from "@/services/api-client"
 import { useMessageDialog, useToast, messageFromError } from "@/components/ui"
-import { cn } from "@/lib/utils"
+import { cn, formatFixed, formatFloatInput, parseAmountInput } from "@/lib/utils"
 import { useAutoGrowTextarea } from "@/hooks/useAutoGrowTextarea"
 import LinkField from "./LinkField"
 import GetOutstandingDialog, { type GetOutstandingFilters } from "./GetOutstandingDialog"
@@ -60,6 +60,88 @@ function formatCurrency(n: number | null | undefined, currency?: string): string
   }
 }
 
+type MoneyFormatter = (n: number) => string
+
+function formatAmountFinal(n: number): string {
+  return n ? formatFixed(n, 2) : ""
+}
+
+function formatAmountLive(n: number): string {
+  return n ? formatFloatInput(n, 2) : ""
+}
+
+function formatRateValue(n: number): string {
+  return n ? formatFloatInput(n, 9) : ""
+}
+
+// Editable currency/float input that mirrors ERPNext's ControlFloat behaviour:
+// the raw digits stay in the field while typing, then ~500ms after the last
+// keystroke (frappe's debounced input handler) the value reformats with comma
+// grouping; blur/formulaic updates force the final formatted form. parse()
+// strips the grouping separators back to a number.
+function useMoneyInput(
+  value: number,
+  formatLive: MoneyFormatter,
+  formatFinal: MoneyFormatter,
+  onCommit: (n: number) => void,
+  onBlurExtra?: () => void,
+) {
+  const [text, setText] = useState("")
+  const [editing, setEditing] = useState(false)
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const commitRef = useRef(onCommit)
+  const blurExtraRef = useRef(onBlurExtra)
+
+  useEffect(() => {
+    commitRef.current = onCommit
+    blurExtraRef.current = onBlurExtra
+  })
+
+  useEffect(() => {
+    if (!editing) setText(value ? formatFinal(value) : "")
+  }, [value, editing, formatFinal])
+
+  useEffect(
+    () => () => {
+      if (timer.current) clearTimeout(timer.current)
+    },
+    []
+  )
+
+  const handleChange = (raw: string) => {
+    setText(raw)
+    const n = parseAmountInput(raw)
+    commitRef.current(n)
+    if (timer.current) clearTimeout(timer.current)
+    timer.current = setTimeout(() => {
+      timer.current = null
+      setText(n ? formatLive(n) : "")
+    }, 500)
+  }
+
+  const handleFocus = (e: React.FocusEvent<HTMLInputElement>) => {
+    setEditing(true)
+    e.currentTarget.select()
+  }
+
+  const handleBlur = () => {
+    if (timer.current) {
+      clearTimeout(timer.current)
+      timer.current = null
+    }
+    setEditing(false)
+    setText(value ? formatFinal(value) : "")
+    blurExtraRef.current?.()
+  }
+
+  return {
+    value: text,
+    onChange: (e: React.ChangeEvent<HTMLInputElement>) => handleChange(e.target.value),
+    onFocus: handleFocus,
+    onBlur: handleBlur,
+  }
+}
+
 export type PaymentFormMode = "new" | "existing"
 
 export type PaymentToolbarAction = "submit" | "cancel" | "delete" | "amend" | "print" | "email" | "duplicate"
@@ -70,6 +152,7 @@ export interface PaymentFormHandle {
 
 export interface PaymentFormProps {
   initialValues?: PaymentEntry
+  mappedDoc?: PaymentEntry
   invoice?: SalesInvoice | null
   onSaved: (paymentName: string) => void
   onCancel: () => void
@@ -103,6 +186,7 @@ const labelClass = "block text-[13px] font-medium text-body/70 mb-1.5"
 
 export default forwardRef<PaymentFormHandle, PaymentFormProps>(function PaymentForm({
   initialValues,
+  mappedDoc,
   invoice,
   onSaved,
   onCancel,
@@ -461,6 +545,104 @@ export default forwardRef<PaymentFormHandle, PaymentFormProps>(function PaymentF
       } else {
         setTaxes([])
       }
+    } else if (mappedDoc) {
+      // open_mapped_doc prefill (SO → Payment Entry): hydrate form from the
+      // unsaved mapped doc without setting initialValues (so isAmend stays false).
+      const v = mappedDoc
+      setNamingSeries(v.naming_series || "ACC-PAY-.YYYY.-")
+      setPaymentType((v.payment_type as PaymentType) || "Receive")
+      setPostingDate(v.posting_date || new Date().toISOString().slice(0, 10))
+      setModeOfPayment(v.mode_of_payment || "")
+      setCompany(v.company)
+      setPartyType(v.party_type || "Customer")
+      setParty(v.party)
+      setPartyName(v.party_name || "")
+      setPartyBalance(v.party_balance ?? null)
+      setBankAccount(v.bank_account || "")
+      setBankName(v.bank || "")
+      setBankAccountNo(v.bank_account_no || "")
+      setPartyBankAccount(v.party_bank_account || "")
+      setContactPerson(v.contact_person || "")
+      setContactEmail(v.contact_email || "")
+      setPaidFrom(v.paid_from)
+      setPaidFromCurrency(v.paid_from_account_currency)
+      setPaidFromBalance(v.paid_from_account_balance ?? null)
+      setPaidFromType(v.paid_from_account_type || "")
+      setPaidTo(v.paid_to)
+      setPaidToCurrency(v.paid_to_account_currency)
+      setPaidToBalance(v.paid_to_account_balance ?? null)
+      setPaidToType(v.paid_to_account_type || "")
+      setPaidAmount(v.paid_amount)
+      setReceivedAmount(v.received_amount)
+      setSourceExchangeRate(v.source_exchange_rate || 1)
+      setTargetExchangeRate(v.target_exchange_rate || 1)
+      setReferenceNo(v.reference_no || "")
+      setReferenceDate(v.reference_date || "")
+      setClearanceDate(v.clearance_date || "")
+      setCustomRemarks(!!v.custom_remarks)
+      setRemarks(v.remarks || "")
+      setCostCenter(v.cost_center || "")
+      setProject(v.project || "")
+      setLetterHead(v.letter_head || "")
+      setPrintHeading(v.print_heading || "")
+      setIsOpening(v.is_opening === "Yes")
+      setBookAdvancePayments(!!v.book_advance_payments_in_separate_party_account)
+      setReconcileOnAdvancePaymentDate(!!v.reconcile_on_advance_payment_date)
+      setSalesTaxesTemplate(v.sales_taxes_and_charges_template || "")
+      setPurchaseTaxesTemplate(v.purchase_taxes_and_charges_template || "")
+      setApplyTaxWithholding(!!v.apply_tax_withholding_amount)
+      setTaxWithholdingCategory(v.tax_withholding_category || "")
+
+      if (v.references && v.references.length > 0) {
+        setReferences(v.references.map((r) => ({
+          reference_doctype: r.reference_doctype,
+          reference_name: r.reference_name,
+          due_date: r.due_date,
+          total_amount: r.total_amount,
+          outstanding_amount: r.outstanding_amount,
+          allocated_amount: r.allocated_amount,
+          exchange_rate: r.exchange_rate,
+          exchange_gain_loss: r.exchange_gain_loss,
+          account: r.account,
+        })))
+      } else {
+        setReferences([])
+      }
+
+      if (v.deductions && v.deductions.length > 0) {
+        setDeductions(v.deductions.map((d) => ({
+          id: createDeductionId(),
+          account: d.account,
+          cost_center: d.cost_center,
+          amount: d.amount,
+          description: d.description || "",
+          is_exchange_gain_loss: d.is_exchange_gain_loss,
+        })))
+        setShowDeductions(true)
+      } else {
+        setDeductions([])
+        setShowDeductions(false)
+      }
+
+      if (v.taxes && v.taxes.length > 0) {
+        setTaxes(v.taxes.map((t) => ({
+          charge_type: t.charge_type,
+          row_id: t.row_id,
+          account_head: t.account_head,
+          description: t.description,
+          rate: t.rate,
+          tax_amount: t.tax_amount,
+          total: t.total,
+          add_deduct_tax: t.add_deduct_tax || "Add",
+          included_in_paid_amount: t.included_in_paid_amount,
+          cost_center: t.cost_center,
+          project: t.project,
+          currency: t.currency,
+        })))
+        setShowTaxes(true)
+      } else {
+        setTaxes([])
+      }
     } else if (invoice) {
       setPartyType("Customer")
       setParty(invoice.customer)
@@ -516,7 +698,7 @@ export default forwardRef<PaymentFormHandle, PaymentFormProps>(function PaymentF
       companyRef.current = null
     }
 
-    if (!initialValues) {
+    if (!initialValues && !mappedDoc) {
       setNamingSeries("ACC-PAY-.YYYY.-")
       setPaymentType("Receive")
       setPostingDate(new Date().toISOString().slice(0, 10))
@@ -545,7 +727,7 @@ export default forwardRef<PaymentFormHandle, PaymentFormProps>(function PaymentF
       setCustomRemarks(false)
     }
     setError("")
-  }, [initialValues, invoice])
+  }, [initialValues, invoice, mappedDoc])
 
   // --- Dirty tracking (drives the Update/Cancel toggle in the header) ---
   const initialDirtyRef = useRef(false)
@@ -1015,6 +1197,48 @@ export default forwardRef<PaymentFormHandle, PaymentFormProps>(function PaymentF
       return reallocateReferences(entryAmount, refs)
     },
     [paymentType, partyType, company, party, isPay, receivedAmount, deductions, isExisting, initialValues, reallocateReferences]
+  )
+
+  const paidAmountInput = useMoneyInput(
+    paidAmount,
+    formatAmountLive,
+    formatAmountFinal,
+    (n) => {
+      setPaidAmount(n)
+      if (!showReceivedAmount) setReceivedAmount(n)
+    },
+    () => {
+      if (!isReadOnly) {
+        const entryAmount = isReceive || !showReceivedAmount ? paidAmount : receivedAmount
+        serverAllocateReferences(entryAmount, references, true).then(setReferences).catch(() => {})
+      }
+    }
+  )
+
+  const receivedAmountInput = useMoneyInput(
+    receivedAmount,
+    formatAmountLive,
+    formatAmountFinal,
+    (n) => setReceivedAmount(n),
+    () => {
+      if (!isReadOnly && isPay) {
+        serverAllocateReferences(receivedAmount, references, true).then(setReferences).catch(() => {})
+      }
+    }
+  )
+
+  const sourceRateInput = useMoneyInput(
+    sourceExchangeRate,
+    formatRateValue,
+    formatRateValue,
+    (n) => setSourceExchangeRate(n || 1)
+  )
+
+  const targetRateInput = useMoneyInput(
+    targetExchangeRate,
+    formatRateValue,
+    formatRateValue,
+    (n) => setTargetExchangeRate(n || 1)
   )
 
   const handleFetchOutstanding = useCallback(
@@ -1844,25 +2068,14 @@ export default forwardRef<PaymentFormHandle, PaymentFormProps>(function PaymentF
       {showAmountSection && (
         <div className="bg-gray-50/50 rounded-[14px] p-4 space-y-3 border border-border/50">
           <p className="text-sm font-semibold text-heading pb-2.5 border-b border-border/60 mb-0.5">Amount</p>
-          <div className={cn("grid grid-cols-1 gap-3", showReceivedAmount && "lg:grid-cols-2")}>
+          <div className="grid grid-cols-2 gap-3">
             <div className="space-y-3">
               <div>
                 <label className={labelClass}>Paid Amount ({paidFromCurrency || companyCurrency}) <span className="text-danger-500">*</span></label>
                 <input
-                  type="number" min={0} step={0.01}
-                  value={paidAmount || ""}
+                  type="text" inputMode="decimal"
+                  {...paidAmountInput}
                   data-testid="paid_amount"
-                  onChange={(e) => {
-                    const v = parseFloat(e.target.value) || 0
-                    setPaidAmount(v)
-                    if (!showReceivedAmount) setReceivedAmount(v)
-                  }}
-                  onBlur={() => {
-                    if (!isReadOnly) {
-                      const entryAmount = isReceive || !showReceivedAmount ? paidAmount : receivedAmount
-                      serverAllocateReferences(entryAmount, references, true).then(setReferences).catch(() => {})
-                    }
-                  }}
                   disabled={isReadOnly}
                   className={inputClass}
                 />
@@ -1871,9 +2084,8 @@ export default forwardRef<PaymentFormHandle, PaymentFormProps>(function PaymentF
                 <div>
                   <label className={labelClass}>Source Exchange Rate</label>
                   <input
-                    type="number" min={0} step={0.00000001}
-                    value={sourceExchangeRate}
-                    onChange={(e) => setSourceExchangeRate(parseFloat(e.target.value) || 1)}
+                    type="text" inputMode="decimal"
+                    {...sourceRateInput}
                     disabled={isReadOnly}
                     className={inputClass}
                   />
@@ -1887,34 +2099,25 @@ export default forwardRef<PaymentFormHandle, PaymentFormProps>(function PaymentF
                 </div>
               )}
             </div>
-            {showReceivedAmount && (
-              <div className="space-y-3">
+            <div className="space-y-3">
+              {showReceivedAmount && (
                 <div>
                   <label className={labelClass}>Received Amount ({paidToCurrency || companyCurrency}) <span className="text-danger-500">*</span></label>
                   <input
-                    type="number" min={0} step={0.01}
-                    value={receivedAmount || ""}
+                    type="text" inputMode="decimal"
+                    {...receivedAmountInput}
                     data-testid="received_amount"
-                    onChange={(e) => {
-                      const v = parseFloat(e.target.value) || 0
-                      setReceivedAmount(v)
-                    }}
-                    onBlur={() => {
-                      if (!isReadOnly && isPay) {
-                        serverAllocateReferences(receivedAmount, references, true).then(setReferences).catch(() => {})
-                      }
-                    }}
                     disabled={isReadOnly}
                     className={inputClass}
                   />
                 </div>
-                {showTargetRate && (
+              )}
+              {showTargetRate && (
                   <div>
                     <label className={labelClass}>Target Exchange Rate</label>
                     <input
-                      type="number" min={0} step={0.00000001}
-                      value={targetExchangeRate}
-                      onChange={(e) => setTargetExchangeRate(parseFloat(e.target.value) || 1)}
+                      type="text" inputMode="decimal"
+                      {...targetRateInput}
                       disabled={isReadOnly}
                       className={inputClass}
                     />
@@ -1928,7 +2131,6 @@ export default forwardRef<PaymentFormHandle, PaymentFormProps>(function PaymentF
                   </div>
                 )}
               </div>
-            )}
           </div>
         </div>
       )}

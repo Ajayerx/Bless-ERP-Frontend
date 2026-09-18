@@ -36,24 +36,40 @@ export function rFilterToArgs(r: RFilter): unknown[][] {
 
 export type { RFilter, FilterOperator, FilterFieldDef }
 
-// ERPNext Sales Invoice list filters — always visible on the list page.
+// ERPNext Sales Invoice list filters — always visible on the list page (the
+// doctype's in_standard_filter fields: customer, company, status; plus the
+// name/title search fields).
 const INLINE_FIELDS: FilterFieldDef[] = [
   { field: "name", label: "ID", type: "text" },
   { field: "title", label: "Title", type: "text" },
   { field: "customer", label: "Customer", type: "link" },
   { field: "company", label: "Company", type: "link" },
-  { field: "posting_date", label: "Posting Date", type: "date" },
   {
     field: "status",
     label: "Status",
     type: "select",
-    options: ["Draft", "Submitted", "Paid", "Unpaid", "Overdue", "Cancelled", "Return", "Credit Note Issued"],
+    options: [
+      "Draft",
+      "Cancelled",
+      "Submitted",
+      "Paid",
+      "Partly Paid",
+      "Unpaid",
+      "Overdue",
+      "Return",
+      "Credit Note Issued",
+      "Internal Transfer",
+      "Unpaid and Discounted",
+      "Partly Paid and Discounted",
+      "Overdue and Discounted",
+    ],
   },
 ]
 
 /** Fields available in the advanced filter popover (any filterable SI field). */
 export const SI_ADVANCED_FILTER_FIELDS: FilterFieldDef[] = [
   ...INLINE_FIELDS,
+  { field: "posting_date", label: "Posting Date", type: "date" },
   { field: "due_date", label: "Due Date", type: "date" },
   { field: "grand_total", label: "Grand Total", type: "number" },
   { field: "outstanding_amount", label: "Outstanding Amount", type: "number" },

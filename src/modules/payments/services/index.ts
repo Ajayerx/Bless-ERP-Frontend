@@ -1219,20 +1219,20 @@ async getOutstandingReferences(args: GetOutstandingArgs): Promise<OutstandingRef
     }
   },
 
+  // ERPNext list parity: `party` is a Dynamic Link → party_type. On the list,
+  // frappe's ControlDynamicLink resolves the search doctype from the selected
+  // `party_type` standard-filter value (a name in `tabParty Type` — standard
+  // seed Customer/Supplier/Employee) and searches ONLY that doctype. With no
+  // party_type selected, get_options() returns "" and link.js bails → no
+  // results. The search_link envelope mirrors ControlLink (reference_doctype =
+  // the list doctype); link_fieldname is not a search_link server param.
   async searchParties(
+    partyType: string,
     query: string,
   ): Promise<{ items: Array<{ value: string; label: string; description: string }> }> {
-    const [customers, suppliers] = await Promise.all([
-      this.searchLink("Customer", query, { reference_doctype: "Payment Entry", link_fieldname: "party" }),
-      this.searchLink("Supplier", query, { reference_doctype: "Payment Entry", link_fieldname: "party" }),
-    ])
-    const seen = new Set<string>()
-    const items = [...customers.items, ...suppliers.items].filter((i) => {
-      if (seen.has(i.value)) return false
-      seen.add(i.value)
-      return true
-    })
-    return { items }
+    const PARTY_TYPES = new Set(["Customer", "Supplier", "Employee"])
+    if (!PARTY_TYPES.has(partyType)) return { items: [] }
+    return this.searchLink(partyType, query, { reference_doctype: "Payment Entry" })
   },
 
   async searchCompanies(

@@ -12,13 +12,12 @@ import QuotationTable from "../components/QuotationTable"
 import { rFilterToArgs, type RFilter } from "../components/QuotationFilters"
 import { openMultiPdfPrint } from "@/lib/multi-pdf-print"
 
-type StatusFilter = "All" | "Draft" | "Open" | "Replied" | "Partially Ordered" | "Ordered" | "Lost" | "Cancelled" | "Expired"
+type StatusFilter = "All" | "Draft" | "Open" | "Partially Ordered" | "Ordered" | "Lost" | "Cancelled" | "Expired"
 
 const STATUS_FILTERS: StatusFilter[] = [
   "All",
   "Draft",
   "Open",
-  "Replied",
   "Partially Ordered",
   "Ordered",
   "Lost",
@@ -409,7 +408,7 @@ export default function Quotations() {
           onFilterChipsChange={setFilters}
           onRowClick={(quotation) => navigate(`/quotations/${quotation.name}`)}
           onCellFilter={handleCellFilter}
-          partySearch={(q) => quotationService.searchCustomers(q)}
+          partySearch={(quotationTo, q) => quotationService.searchParties(quotationTo, q)}
           companySearch={(q) => quotationService.searchCompanies(q)}
           sort={{ field: sortBy, order: sortOrder, onChange: handleSort }}
           hasActiveFilters={hasActiveFilters}

@@ -2618,7 +2618,7 @@ export function invoiceTaxesToEditable(taxes: SalesInvoiceTax[]): EditableTaxRow
     net_amount: 0,
     total: t.total ?? 0,
     included_in_print_rate: !!t.included_in_print_rate,
-    row_id: undefined,
+    row_id: t.row_id,
     category: t.category,
   }))
 }

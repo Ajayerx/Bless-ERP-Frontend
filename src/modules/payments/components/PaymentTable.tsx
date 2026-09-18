@@ -9,8 +9,6 @@ import { paymentService } from "@/services"
 import { formatCurrency, formatDate, cn } from "@/lib/utils"
 import PaymentFilters, { type RFilter, type PaymentSort } from "./PaymentFilters"
 
-const PAYMENT_STATUS_FILTERS: string[] = ["All", "Draft", "Submitted", "Cancelled"]
-
 const statusVariant: Record<number, "default" | "success" | "warning" | "danger"> = {
   0: "warning",
   1: "success",
@@ -69,14 +67,11 @@ interface PaymentTableProps {
   onCancelSingle: (name: string) => void
   onDeleteSingle: (name: string) => void
   onAmendSingle: (name: string) => void
-  /** Status pill tabs (All/Draft/Submitted/Cancelled). */
-  filters?: string[]
-  activeFilter?: string
-  onFilterChange?: (filter: string) => void
+  /** ERPNext does not define a Payment Entry status indicator — no pill tabs. */
   filterChips?: RFilter[]
   onFilterChipsChange?: (filterChips: RFilter[]) => void
   onCellFilter?: (chip: RFilter) => void
-  partySearch?: (query: string) => Promise<{ items: Array<{ value: string; label: string; description: string }> }>
+  partySearch?: (partyType: string, query: string) => Promise<{ items: Array<{ value: string; label: string; description: string }> }>
   companySearch?: (query: string) => Promise<{ items: Array<{ value: string; label: string; description: string }> }>
   sort?: PaymentSort
   onBulkExport: () => void
@@ -97,7 +92,6 @@ export default function PaymentTable({
   selectedPayments, onSelectionChange,
   onBulkSubmit, onBulkCancel, onBulkDelete,
   onSubmitSingle, onCancelSingle, onDeleteSingle, onAmendSingle,
-  filters, activeFilter, onFilterChange,
   filterChips, onFilterChipsChange, onCellFilter,
   partySearch, companySearch, sort,
   onBulkExport, onBulkPrint, onBulkAssign, onBulkClearAssign, onBulkAddTags,
@@ -437,25 +431,6 @@ export default function PaymentTable({
           iconClass="text-danger-600"
           iconBg="bg-danger-50"
         />
-      </div>
-
-      {/* Status pill tabs */}
-      <div className="flex items-center gap-2 flex-wrap">
-        {(filters ?? PAYMENT_STATUS_FILTERS).map((f) => (
-          <button
-            key={f}
-            type="button"
-            onClick={() => onFilterChange?.(f)}
-            className={cn(
-              "h-8 px-3 rounded-full text-xs font-semibold transition-colors",
-              (activeFilter ?? "All") === f
-                ? "bg-primary-100 text-primary-700"
-                : "text-muted hover:bg-gray-100 hover:text-body"
-            )}
-          >
-            {f}
-          </button>
-        ))}
       </div>
 
       {/* ERPNext-style filter bar + FilterGroup */}

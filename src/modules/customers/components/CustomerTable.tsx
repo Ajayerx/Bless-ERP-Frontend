@@ -7,8 +7,6 @@ import { cn } from "@/lib/utils"
 import { type Customer, type CustomerListResponse } from "@/services"
 import CustomerFilters, { type RFilter, type CustomerSort } from "./CustomerFilters"
 
-const CUSTOMER_STATUS_FILTERS: string[] = ["All", "Active", "Disabled", "Frozen"]
-
 function statusOf(c: Customer): "Active" | "Disabled" | "Frozen" {
   if (c.is_frozen) return "Frozen"
   if (c.disabled) return "Disabled"
@@ -25,10 +23,7 @@ interface CustomerTableProps {
   data: CustomerListResponse | null
   loading: boolean
   onRowClick?: (customer: Customer) => void
-  /** Status pill tabs (All/Active/Disabled/Frozen). */
-  filters?: string[]
-  activeFilter?: string
-  onFilterChange?: (filter: string) => void
+  /** ERPNext does not define a Customer status indicator — no pill tabs. */
   filterChips?: RFilter[]
   onFilterChipsChange?: (filterChips: RFilter[]) => void
   onCellFilter?: (chip: RFilter) => void
@@ -50,9 +45,6 @@ export default function CustomerTable({
   data,
   loading,
   onRowClick,
-  filters,
-  activeFilter,
-  onFilterChange,
   filterChips,
   onFilterChipsChange,
   onCellFilter,
@@ -214,25 +206,6 @@ export default function CustomerTable({
           </span>
         </div>
       )}
-
-      {/* Status pill tabs */}
-      <div className="flex items-center gap-2 flex-wrap">
-        {(filters ?? CUSTOMER_STATUS_FILTERS).map((f) => (
-          <button
-            key={f}
-            type="button"
-            onClick={() => onFilterChange?.(f)}
-            className={cn(
-              "h-8 px-3 rounded-full text-xs font-semibold transition-colors",
-              (activeFilter ?? "All") === f
-                ? "bg-primary-100 text-primary-700"
-                : "text-muted hover:bg-gray-100 hover:text-body"
-            )}
-          >
-            {f}
-          </button>
-        ))}
-      </div>
 
       {/* ERPNext-style filter bar + FilterGroup */}
       <CustomerFilters

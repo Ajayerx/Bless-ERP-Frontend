@@ -34,6 +34,18 @@ export interface CreateResult {
 }
 
 /**
+ * Raw mapped doc returned by ERPNext `make_mapped_doc` / `make_*` endpoints.
+ * The real server returns an UNSAVED doc dict (empty `name`, `__islocal: 1`)
+ * that `open_mapped_doc` opens as a prefilled create form. Saved create
+ * endpoints (`make_work_orders`, per-supplier POs, ...) still return names.
+ */
+export interface MappedDoc {
+  doctype?: string
+  name?: string
+  [key: string]: unknown
+}
+
+/**
  * Normalised outcome of a Create action. Simple mapped/services return a single
  * (possibly unsaved, unnamed) doc; Work Orders and per-supplier Purchase Orders
  * create multiple docs and carry `names`.
@@ -42,6 +54,8 @@ export interface CreateOutcome {
   doctype: string
   name?: string
   names?: string[]
+  /** Raw (usually unsaved) mapped doc returned by the broker endpoint. */
+  doc?: MappedDoc
 }
 
 export type CreateActionKind =
@@ -67,13 +81,19 @@ export interface CreateAction {
   icon: LucideIcon
   available: (doc: SalesOrderDoc) => boolean
   /**
-   * Frontend route for a created document — set only when a module exists for
-   * its doctype (Sales Invoice → /invoices/:id, Payment Request & Payment
-   * Entry → /payments/:id). Actions without a route keep the "create then warn"
+   * Frontend route for a **saved** created document — set only when a module
+   * exists for its doctype (Sales Invoice → /invoices/:id, Payment Entry →
+   * /payments/:id). Actions without a route keep the "create then warn"
    * behaviour: the backend doc is created and a warning notes the module is
    * not available in this app yet.
    */
   route?: (created: CreateResult) => string
+  /**
+   * Frontend create-form route for an **unsaved** mapped doc (ERPNext
+   * `open_mapped_doc` semantics): navigate with `{ state: { mappedDoc } }` so
+   * the target module opens a prefilled create form instead of warning.
+   */
+  createRoute?: (doc: MappedDoc) => string
 }
 
 function isSale(orderType: string): boolean {
@@ -149,6 +169,42 @@ export function paymentAvailable(doc: SalesOrderDoc): boolean {
   return doc.per_billed < 100
 }
 
+// Port of `get_pending_qty_criterion` (ERPNext Sales Order): an item still has
+// unbilled ordered qty AND (unbilled delivered qty OR an undelivered balance).
+const pendingQtyCriterion = (item: SalesOrderDoc["items"][number]): boolean => {
+  const round6 = (n: number) => Math.round((n + Number.EPSILON) * 1e6) / 1e6
+  const qty = item.qty ?? 0
+  const billedQty = item.billed_qty ?? 0
+  const returnedQty = item.returned_qty ?? 0
+  const deliveredQty = item.delivered_qty ?? 0
+  const hasUnbilledOrderedQty = round6(qty - billedQty) > 0
+  const hasUnbilledDeliveredQty =
+    round6(qty - returnedQty - billedQty) > 0 || round6(deliveredQty - billedQty) > 0
+  return hasUnbilledOrderedQty && hasUnbilledDeliveredQty
+}
+
+/**
+ * Port of `get_potentially_billable_item_criterion` (ERPNext Sales Order, used
+ * by `sales_order.js` to gate the "Sales Invoice" Create button). An item is
+ * billable when it is not closed and is either a zero-qty unit-price row
+ * (rate-adjustment / debit-note path) or has quantity yet to bill with amount
+ * headroom. Subcontracting (`doc.is_subcontracted`) is not modelled here, so
+ * only the billable-items branch applies.
+ */
+export function hasPotentiallyBillableItems(doc: SalesOrderDoc): boolean {
+  const allowance = 0
+  const hasUnitPriceItems = (doc.has_unit_price_items ?? 0) === 1
+  return doc.items.some((item) => {
+    if ((item.closed ?? 0) === 1) return false
+    const amount = item.amount ?? 0
+    const baseAmount = item.base_amount ?? 0
+    const billedAmt = item.billed_amt ?? 0
+    const hasAmountHeadroom = baseAmount === 0 || Math.abs(billedAmt) < Math.abs(amount) * (1 + allowance / 100)
+    const isUnitPriceRow = hasUnitPriceItems && (item.qty ?? 0) === 0
+    return isUnitPriceRow || ((item.qty ?? 0) !== 0 && hasAmountHeadroom && pendingQtyCriterion(item))
+  })
+}
+
 /** Distinct item delivery dates — >1 drives the Delivery Note date-selector dialog. */
 export function uniqueDeliveryDates(doc: SalesOrderDoc): string[] {
   return Array.from(
@@ -183,8 +239,9 @@ export const CREATE_ACTIONS: CreateAction[] = [
     kind: "sales-invoice",
     label: "Sales Invoice",
     icon: Receipt,
-    available: (doc) => doc.status !== "On Hold" && doc.per_billed < 100,
+    available: (doc) => doc.status !== "On Hold" && hasPotentiallyBillableItems(doc),
     route: (created) => `/invoices/${created.name}`,
+    createRoute: () => "/invoices/new",
   },
   {
     key: "material-request",
@@ -242,7 +299,6 @@ export const CREATE_ACTIONS: CreateAction[] = [
     label: "Payment Request",
     icon: CreditCard,
     available: (doc) => createMenuAvailable(doc) && paymentAvailable(doc),
-    route: (created) => `/payments/${created.name}`,
   },
   {
     key: "payment",
@@ -251,6 +307,7 @@ export const CREATE_ACTIONS: CreateAction[] = [
     icon: Landmark,
     available: (doc) => createMenuAvailable(doc) && paymentAvailable(doc),
     route: (created) => `/payments/${created.name}`,
+    createRoute: () => "/payments/new",
   },
 ]
 

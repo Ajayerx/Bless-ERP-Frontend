@@ -49,6 +49,21 @@ export function formatFixed(n: number, precision: number): string {
   }).format(n)
 }
 
+// ERPNext-style editable Currency/Float input helpers. Currency fields display
+// grouped integers with fixed decimals (formatFixed above); Float fields keep
+// up to `precision` fractional digits with no forced trailing zeros, and
+// parseAmountInput strips the grouping separators back to a number.
+export function formatFloatInput(n: number, precision = 9): string {
+  return new Intl.NumberFormat("en-US", {
+    maximumFractionDigits: precision,
+  }).format(n)
+}
+
+export function parseAmountInput(raw: string): number {
+  const cleaned = raw.replace(/,/g, "").trim()
+  return cleaned === "" ? 0 : parseFloat(cleaned) || 0
+}
+
 export function timeAgo(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime()
   const mins = Math.floor(diff / 60000)

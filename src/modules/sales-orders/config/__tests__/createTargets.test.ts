@@ -9,6 +9,7 @@ import {
   projectAvailable,
   internalPurchaseOrderAvailable,
   paymentAvailable,
+  hasPotentiallyBillableItems,
   uniqueDeliveryDates,
   createActionLabel,
   CREATE_ACTIONS,
@@ -181,6 +182,56 @@ describe("paymentAvailable", () => {
   })
 })
 
+describe("hasPotentiallyBillableItems", () => {
+  it("is true for an open row with quantity yet to bill and amount headroom", () => {
+    expect(hasPotentiallyBillableItems(baseDoc())).toBe(true)
+    expect(
+      hasPotentiallyBillableItems(
+        baseDoc({
+          items: [baseItem({ qty: 10, base_amount: 100, billed_qty: 4, billed_amt: 40 })],
+        }),
+      ),
+    ).toBe(true)
+  })
+
+  it("hides when the item is closed", () => {
+    expect(hasPotentiallyBillableItems(baseDoc({ items: [baseItem({ closed: 1 })] }))).toBe(false)
+  })
+
+  it("hides when the full quantity has already been invoiced", () => {
+    expect(
+      hasPotentiallyBillableItems(baseDoc({ items: [baseItem({ qty: 10, billed_qty: 10, billed_amt: 100 })] })),
+    ).toBe(false)
+  })
+
+  it("hides when the amount has been fully billed", () => {
+    expect(
+      hasPotentiallyBillableItems(
+        baseDoc({
+          items: [baseItem({ qty: 10, base_amount: 100, amount: 1000, billed_qty: 1, billed_amt: 1000 })],
+        }),
+      ),
+    ).toBe(false)
+  })
+
+  it("keeps zero-qty unit-price rows (rate-adjustment / debit-note path)", () => {
+    expect(
+      hasPotentiallyBillableItems(
+        baseDoc({
+          has_unit_price_items: 1,
+          items: [baseItem({ qty: 0, amount: 1000, base_amount: 1000 })],
+        }),
+      ),
+    ).toBe(true)
+  })
+
+  it("treats a 0-qty row as non-billable when no unit-price items exist", () => {
+    expect(
+      hasPotentiallyBillableItems(baseDoc({ has_unit_price_items: 0, items: [baseItem({ qty: 0 })] })),
+    ).toBe(false)
+  })
+})
+
 describe("uniqueDeliveryDates", () => {
   it("returns distinct, non-empty item delivery dates preserving order", () => {
     expect(
@@ -218,21 +269,37 @@ describe("CREATE_ACTIONS", () => {
     expect(payment?.available(baseDoc())).toBe(true)
   })
 
-  it("routes Sales Invoice and payments into existing modules only", () => {
+  it("routes saved Sales Invoice / Payment into the modules; warns for Payment Request", () => {
     const invoice = CREATE_ACTIONS.find((a) => a.kind === "sales-invoice")
+    const payment = CREATE_ACTIONS.find((a) => a.kind === "payment")
     const paymentRequest = CREATE_ACTIONS.find((a) => a.kind === "payment-request")
     expect(invoice?.route?.({ doctype: "Sales Invoice", name: "SINV-2026-0001" })).toBe(
       "/invoices/SINV-2026-0001",
     )
-    expect(paymentRequest?.route?.({ doctype: "Payment Request", name: "PRQ-0001" })).toBe(
-      "/payments/PRQ-0001",
+    expect(invoice?.createRoute?.({ doctype: "Sales Invoice", customer_name: "A", items: [] })).toBe(
+      "/invoices/new",
     )
+    expect(payment?.route?.({ doctype: "Payment Entry", name: "ACC-PAY-2026-0001" })).toBe(
+      "/payments/ACC-PAY-2026-0001",
+    )
+    expect(payment?.createRoute?.({ doctype: "Payment Entry", party: "CUST-0001" })).toBe(
+      "/payments/new",
+    )
+    // Payment Request is not surfaced in this SPA, so it must never route.
+    expect(paymentRequest?.route).toBeUndefined()
+    expect(paymentRequest?.createRoute).toBeUndefined()
   })
 
   it("gates Purchase Order on non-internal customers", () => {
     const purchaseOrder = CREATE_ACTIONS.find((a) => a.kind === "purchase-order")
     expect(purchaseOrder?.available(baseDoc())).toBe(true)
     expect(purchaseOrder?.available(baseDoc({ is_internal_customer: 1 }))).toBe(false)
+  })
+
+  it("gates Sales Invoice on the item-level billability criterion", () => {
+    const invoice = CREATE_ACTIONS.find((a) => a.kind === "sales-invoice")
+    expect(invoice?.available(baseDoc())).toBe(true)
+    expect(invoice?.available(baseDoc({ items: [baseItem({ qty: 0, billed_qty: 0 })] }))).toBe(false)
   })
 
   it("resolves dynamic labels for the internal / inter-company PO", () => {

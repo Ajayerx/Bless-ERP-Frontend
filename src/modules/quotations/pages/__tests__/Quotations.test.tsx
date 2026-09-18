@@ -107,29 +107,6 @@ describe("Quotations list page (ERPNext parity)", () => {
     expect(screen.getByText("SAL-QTN-2026-0001")).toBeInTheDocument()
   })
 
-  it("filters by Status from the inline select", async () => {
-    renderPage()
-    await screen.findByText("SAL-QTN-2026-0001")
-
-    await user.click(screen.getByRole("button", { name: "Status" }))
-    // The inline Status select exposes the same options as the quick pills
-    // (which are always rendered), so pick the row inside the popover.
-    const options = await screen.findAllByRole("button", { name: "Ordered" })
-    await user.click(options[options.length - 1])
-
-    await waitFor(() => {
-      expect(String(listReq()?.query?.filters ?? "")).toContain(
-        '["Quotation","status","=","Ordered"]'
-      )
-    })
-    // The dropdown trigger reflects the chosen value.
-    expect(screen.getByRole("button", { name: "Status" })).toHaveTextContent("Ordered")
-    await waitFor(() => {
-      expect(screen.queryByText("SAL-QTN-2026-0001")).not.toBeInTheDocument()
-    })
-    expect(screen.getByText("SAL-QTN-2026-0003")).toBeInTheDocument()
-  })
-
   it("adds an advanced filter via the FilterGroup popover (grand_total >= 2000)", async () => {
     renderPage()
     await screen.findByText("SAL-QTN-2026-0001")
@@ -156,16 +133,16 @@ describe("Quotations list page (ERPNext parity)", () => {
   it("seeds the advanced filter popover from active URL filters", async () => {
     renderPageWithQuery(
       `?filters=${encodeURIComponent(
-        JSON.stringify([{ field: "status", label: "Status", operator: "=", value: "Open" }])
+        JSON.stringify([{ field: "name", label: "ID", operator: "=", value: "SAL-QTN-2026-0001" }])
       )}`
     )
     await screen.findByText("SAL-QTN-2026-0001")
 
     await user.click(screen.getByRole("button", { name: "Advanced Filter" }))
     await waitFor(() => {
-      expect(screen.getByLabelText("Filter field")).toHaveValue("status")
+      expect(screen.getByLabelText("Filter field")).toHaveValue("name")
     })
-    expect(screen.getByLabelText("Filter value")).toHaveValue("Open")
+    expect(screen.getByLabelText("Filter value")).toHaveValue("SAL-QTN-2026-0001")
   })
 
   it("restores filters and sort from the URL query string", async () => {
@@ -205,5 +182,44 @@ describe("Quotations list page (ERPNext parity)", () => {
     await waitFor(() => {
       expect(screen.getByText("SAL-QTN-2026-0001")).toBeInTheDocument()
     })
+  })
+
+  it("searches Party against the doctype chosen in Quotation To (ERPNext Dynamic Link parity)", async () => {
+    renderPage()
+    await screen.findByText("SAL-QTN-2026-0001")
+    const partyInput = screen.getByPlaceholderText("Party")
+    const searchFor = (txt: string) =>
+      lastRequest(
+        (r) =>
+          r.path === "/api/method/frappe.desk.search.search_link" &&
+          String(r.body?.txt ?? "").startsWith(txt)
+      )
+
+    // No quotation_to selected → get_options() returns "" → no request, no results.
+    await user.type(partyInput, "LEAD")
+    await waitFor(() => {
+      expect(screen.getByText("No results found")).toBeInTheDocument()
+    })
+    expect(searchFor("LEAD")).toBeUndefined()
+    await user.clear(partyInput)
+
+    // Lead → party_name search targets the Lead doctype only.
+    await user.click(screen.getByLabelText("Quotation To"))
+    await user.click(screen.getByRole("button", { name: "Lead" }))
+    await user.type(screen.getByPlaceholderText("Party"), "LEAD")
+    await waitFor(() => {
+      expect(searchFor("LEAD")).toBeTruthy()
+    })
+    expect(String(searchFor("LEAD")?.body?.doctype ?? "")).toBe("Lead")
+
+    // Back to Customer → search targets the Customer doctype.
+    await user.click(screen.getByLabelText("Quotation To"))
+    await user.click(screen.getByRole("button", { name: "Customer" }))
+    await user.clear(screen.getByPlaceholderText("Party"))
+    await user.type(screen.getByPlaceholderText("Party"), "Alph")
+    await waitFor(() => {
+      expect(searchFor("Alph")).toBeTruthy()
+    })
+    expect(String(searchFor("Alph")?.body?.doctype ?? "")).toBe("Customer")
   })
 })

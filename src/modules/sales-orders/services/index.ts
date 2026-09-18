@@ -3,6 +3,7 @@ import { postMethod, postMethodRaw } from "@/services/frappe-client"
 import { API_CONFIG } from "@/config/api.config"
 import { buildTimelineItems, toQuillHtml } from "@/modules/payments/services"
 import type { DocInfo, PaymentActivityItem, PaymentComment } from "@/modules/payments/types"
+import type { MappedDoc } from "../config/createTargets"
 import {
   type SalesOrder,
   type SalesOrderListResponse,
@@ -1400,25 +1401,29 @@ export const salesOrderService = {
   },
 
   // ── Create menu (make_mapped_doc + status / reservation) ───────────
+  // ERPNext `make_mapped_doc` returns an UNSAVED prefilled doc dict (no name),
+  // which the frontend opens as a create form (open_mapped_doc semantics).
+  // Saved endpoints (work orders / raw material request / per-supplier POs)
+  // still return inserted names.
   async makeDeliveryNote(
     sourceName: string,
     args?: { delivery_dates?: string[]; for_reserved_stock?: boolean; skip_item_mapping?: boolean },
-  ): Promise<{ doctype: string; name: string }> {
-    return apiClient<{ doctype: string; name: string }>(
+  ): Promise<MappedDoc> {
+    return apiClient<MappedDoc>(
       "/method/frappe.model.mapper.make_mapped_doc",
       { method: "POST", body: JSON.stringify({ method: "erpnext.selling.doctype.sales_order.sales_order.make_delivery_note", source_name: sourceName, ...(args ? { args: JSON.stringify(args) } : {}) }) },
     )
   },
 
-  async makeSalesInvoice(sourceName: string): Promise<{ doctype: string; name: string }> {
-    return apiClient<{ doctype: string; name: string }>(
+  async makeSalesInvoice(sourceName: string): Promise<MappedDoc> {
+    return apiClient<MappedDoc>(
       "/method/frappe.model.mapper.make_mapped_doc",
       { method: "POST", body: JSON.stringify({ method: "erpnext.selling.doctype.sales_order.sales_order.make_sales_invoice", source_name: sourceName }) },
     )
   },
 
-  async makeMaterialRequest(sourceName: string): Promise<{ doctype: string; name: string }> {
-    return apiClient<{ doctype: string; name: string }>(
+  async makeMaterialRequest(sourceName: string): Promise<MappedDoc> {
+    return apiClient<MappedDoc>(
       "/method/frappe.model.mapper.make_mapped_doc",
       { method: "POST", body: JSON.stringify({ method: "erpnext.selling.doctype.sales_order.sales_order.make_material_request", source_name: sourceName }) },
     )
@@ -1465,8 +1470,8 @@ export const salesOrderService = {
     )
   },
 
-  async makeProject(sourceName: string): Promise<{ doctype: string; name: string }> {
-    return apiClient<{ doctype: string; name: string }>(
+  async makeProject(sourceName: string): Promise<MappedDoc> {
+    return apiClient<MappedDoc>(
       "/method/frappe.model.mapper.make_mapped_doc",
       { method: "POST", body: JSON.stringify({ method: "erpnext.selling.doctype.sales_order.sales_order.make_project", source_name: sourceName }) },
     )
@@ -1489,38 +1494,38 @@ export const salesOrderService = {
     )
   },
 
-  async makeInterCompanyPurchaseOrder(sourceName: string): Promise<{ doctype: string; name: string }> {
-    return apiClient<{ doctype: string; name: string }>(
+  async makeInterCompanyPurchaseOrder(sourceName: string): Promise<MappedDoc> {
+    return apiClient<MappedDoc>(
       "/method/frappe.model.mapper.make_mapped_doc",
       { method: "POST", body: JSON.stringify({ method: "erpnext.selling.doctype.sales_order.sales_order.make_inter_company_purchase_order", source_name: sourceName }) },
     )
   },
 
-  async makeMaintenanceSchedule(sourceName: string): Promise<{ doctype: string; name: string }> {
-    return apiClient<{ doctype: string; name: string }>(
+  async makeMaintenanceSchedule(sourceName: string): Promise<MappedDoc> {
+    return apiClient<MappedDoc>(
       "/method/frappe.model.mapper.make_mapped_doc",
       { method: "POST", body: JSON.stringify({ method: "erpnext.selling.doctype.sales_order.sales_order.make_maintenance_schedule", source_name: sourceName }) },
     )
   },
 
-  async makeMaintenanceVisit(sourceName: string): Promise<{ doctype: string; name: string }> {
-    return apiClient<{ doctype: string; name: string }>(
+  async makeMaintenanceVisit(sourceName: string): Promise<MappedDoc> {
+    return apiClient<MappedDoc>(
       "/method/frappe.model.mapper.make_mapped_doc",
       { method: "POST", body: JSON.stringify({ method: "erpnext.selling.doctype.sales_order.sales_order.make_maintenance_visit", source_name: sourceName }) },
     )
   },
 
-  async makePaymentRequest(sourceName: string): Promise<{ doctype: string; name: string }> {
-    return apiClient<{ doctype: string; name: string }>(
-      "/method/frappe.model.mapper.make_mapped_doc",
-      { method: "POST", body: JSON.stringify({ method: "erpnext.accounts.doctype.payment_request.payment_request.make_payment_request", source_name: sourceName, args: JSON.stringify({ dt: DOCTYPE, dn: sourceName }) }) },
+  async makePaymentRequest(sourceName: string): Promise<MappedDoc> {
+    return apiClient<MappedDoc>(
+      "/method/erpnext.accounts.doctype.payment_request.payment_request.make_payment_request",
+      { method: "POST", body: JSON.stringify({ dt: DOCTYPE, dn: sourceName }) },
     )
   },
 
-  async makePaymentEntry(sourceName: string): Promise<{ doctype: string; name: string }> {
-    return apiClient<{ doctype: string; name: string }>(
-      "/method/frappe.model.mapper.make_mapped_doc",
-      { method: "POST", body: JSON.stringify({ method: "erpnext.accounts.doctype.payment_entry.payment_entry.get_payment_entry", source_name: sourceName, args: JSON.stringify({ dt: DOCTYPE, dn: sourceName }) }) },
+  async makePaymentEntry(sourceName: string): Promise<MappedDoc> {
+    return apiClient<MappedDoc>(
+      "/method/erpnext.accounts.doctype.payment_entry.payment_entry.get_payment_entry",
+      { method: "POST", body: JSON.stringify({ dt: DOCTYPE, dn: sourceName }) },
     )
   },
 

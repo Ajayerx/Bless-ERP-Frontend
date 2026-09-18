@@ -14,6 +14,10 @@ export interface LineItemForm {
   productName: string
   description?: string
   sku?: string
+  /** Source Sales Order name (mapped from SO → SI prefill / Get Items From). */
+  salesOrder?: string
+  /** Source Sales Order Item name — must survive the round-trip so ERPNext can update per_billed on the SO. */
+  soDetail?: string
   quantity: number
   price: number
   total: number

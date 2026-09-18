@@ -6,6 +6,10 @@ export interface SalesInvoiceItem {
   qty: number
   uom?: string
   conversion_factor?: number
+  /** Source Sales Order (mapped from SO → SI; drives per_billed updates). */
+  sales_order?: string
+  /** Source Sales Order Item (mapped from SO → SI; drives per_billed updates). */
+  so_detail?: string
   rate: number
   amount?: number
   base_rate?: number
@@ -48,6 +52,8 @@ export interface SalesInvoiceTax {
   tax_amount?: number
   total?: number
   included_in_print_rate?: boolean | number
+  /** Index (1-based) of the previous row for "On Previous Row *" charge types. */
+  row_id?: number
   /** "Total" (default) or "Valuation"; Valuation rows are excluded from the Tax Breakup. */
   category?: string
   /** ERPNext/erpnext stored JSON `{item_code: [rate, amount]}` in base currency. */
@@ -131,6 +137,10 @@ export interface SalesInvoice {
   tax_category?: string
   customer_address?: string
   address_display?: string
+  territory?: string
+  shipping_rule?: string
+  incoterm?: string
+  named_place?: string
   shipping_address_name?: string
   shipping_address?: string
   contact_person?: string
@@ -187,6 +197,8 @@ export interface SalesInvoice {
   update_outstanding_for_self?: boolean
   is_opening?: string
   customer_group?: string
+  campaign?: string
+  source?: string
   remarks?: string
   // Amendment
   amended_from?: string

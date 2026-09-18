@@ -197,3 +197,57 @@ describe("salesOrderService makeDeliveryNote", () => {
   })
 })
 
+describe("salesOrderService SO → Sales Invoice / Payment mapped docs", () => {
+  it("makeSalesInvoice calls make_mapped_doc with the SO maker and source", async () => {
+    const { apiClient } = mockClients()
+    const { salesOrderService } = await import("../index")
+
+    await salesOrderService.makeSalesInvoice("SAL-ORD-2026-0001")
+
+    const [url, options] = apiClient.mock.calls[0] as [string, { body: string }]
+    expect(url).toBe("/method/frappe.model.mapper.make_mapped_doc")
+    const body = JSON.parse(options.body)
+    expect(body.method).toBe("erpnext.selling.doctype.sales_order.sales_order.make_sales_invoice")
+    expect(body.source_name).toBe("SAL-ORD-2026-0001")
+  })
+
+  it("makePaymentEntry calls get_payment_entry directly with dt/dn", async () => {
+    const { apiClient } = mockClients()
+    const { salesOrderService } = await import("../index")
+
+    await salesOrderService.makePaymentEntry("SAL-ORD-2026-0001")
+
+    const [url, options] = apiClient.mock.calls[0] as [string, { body: string }]
+    expect(url).toBe("/method/erpnext.accounts.doctype.payment_entry.payment_entry.get_payment_entry")
+    const body = JSON.parse(options.body)
+    expect(body).toEqual({ dt: "Sales Order", dn: "SAL-ORD-2026-0001" })
+  })
+
+  it("makePaymentRequest calls make_payment_request directly with dt/dn", async () => {
+    const { apiClient } = mockClients()
+    const { salesOrderService } = await import("../index")
+
+    await salesOrderService.makePaymentRequest("SAL-ORD-2026-0001")
+
+    const [url, options] = apiClient.mock.calls[0] as [string, { body: string }]
+    expect(url).toBe("/method/erpnext.accounts.doctype.payment_request.payment_request.make_payment_request")
+    const body = JSON.parse(options.body)
+    expect(body).toEqual({ dt: "Sales Order", dn: "SAL-ORD-2026-0001" })
+  })
+
+  it("returns the full mapped doc (unsaved) rather than a name-only result", async () => {
+    const mapped = {
+      doctype: "Sales Invoice",
+      customer: "CUST-0001",
+      customer_name: "Maple Leaf Bakery",
+      items: [{ item_code: "PRD-001", qty: 10, rate: 10 }],
+    }
+    const apiClient = vi.fn(async () => mapped)
+    mockClients({ apiClient: apiClient as ReturnType<typeof vi.fn> })
+    const { salesOrderService } = await import("../index")
+
+    const result = await salesOrderService.makeSalesInvoice("SAL-ORD-2026-0001")
+    expect(result).toEqual(mapped)
+  })
+})
+

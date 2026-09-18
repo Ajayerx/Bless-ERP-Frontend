@@ -61,7 +61,8 @@ describe("Customers list page (ERPNext parity)", () => {
 
     await screen.findByText("Maple Leaf Bakery")
     expect(screen.getByText("Blue Mountain Supplies")).toBeInTheDocument()
-    // Status pill tabs render before the row badges, but both exist.
+    // ERPNext has no Customer status indicator — no pill tabs, but the row
+    // Status badges (cell-filters) still render.
     expect(screen.getAllByText("Active").length).toBeGreaterThan(0)
     expect(screen.getAllByText("Disabled").length).toBeGreaterThan(0)
     // ERPNext-style filter bar + advanced FilterGroup funnel button.
@@ -91,13 +92,13 @@ describe("Customers list page (ERPNext parity)", () => {
     })
   })
 
-  it("drives the status filter from the quick pills (Active → disabled = 0)", async () => {
+  it("row status badges drive the filter (Active → disabled = 0)", async () => {
     renderPage()
     await screen.findByText("Maple Leaf Bakery")
 
-    // The first "Active" button is the quick pill (row badges follow).
-    const activePill = screen.getAllByRole("button", { name: "Active" })[0]
-    await user.click(activePill)
+    // The Active row badge is a cell-filter that maps status → disabled = 0.
+    const activeBadge = screen.getAllByRole("button", { name: "Active" })[0]
+    await user.click(activeBadge)
 
     await waitFor(() => {
       expect(String(listReq()?.query?.filters ?? "")).toContain(
@@ -112,11 +113,11 @@ describe("Customers list page (ERPNext parity)", () => {
   })
 
   it("row status badges map Frozen → is_frozen = 1 (empty list for fixtures)", async () => {
-    renderPage()
-    await screen.findByText("Maple Leaf Bakery")
-
-    const frozenPill = screen.getAllByRole("button", { name: "Frozen" })[0]
-    await user.click(frozenPill)
+    renderPageWithQuery(
+      `?filters=${encodeURIComponent(
+        JSON.stringify([{ field: "status", label: "Status", operator: "=", value: "Frozen" }])
+      )}`
+    )
 
     await waitFor(() => {
       expect(String(listReq()?.query?.filters ?? "")).toContain(
@@ -127,24 +128,6 @@ describe("Customers list page (ERPNext parity)", () => {
     await waitFor(() => {
       expect(screen.getByText("No customers match the current filters.")).toBeInTheDocument()
     })
-  })
-
-  it("filters by Type from the inline select (Company drops Individuals)", async () => {
-    renderPage()
-    await screen.findByText("Sarah Williams")
-
-    await user.click(screen.getByRole("button", { name: "Type" }))
-    await user.click(await screen.findByRole("button", { name: "Company" }))
-
-    await waitFor(() => {
-      expect(String(listReq()?.query?.filters ?? "")).toContain(
-        '["Customer","customer_type","=","Company"]'
-      )
-    })
-    await waitFor(() => {
-      expect(screen.queryByText("Sarah Williams")).not.toBeInTheDocument()
-    })
-    expect(screen.getByText("Blue Mountain Supplies")).toBeInTheDocument()
   })
 
   it("filters by Customer Name from a list cell click (ERPNext .filterable cells)", async () => {

@@ -823,10 +823,26 @@ export const quotationService = {
   },
 
   // ERPNext list parity: the Quotation list "Party" / "Company" link filters
-  // search via the same search_link envelope as the SI list. Party spans
-  // Customer/Lead/Prospect (the quotation_to doctypes).
+  // search via the same search_link envelope as the SI list.
   searchCustomers(query: string): Promise<{ items: Array<{ value: string; label: string; description: string }> }> {
     return this.searchLink("Customer", query, { reference_doctype: DOCTYPE })
+  },
+
+  // ERPNext list parity: `party_name` is a Dynamic Link → quotation_to. On the
+  // list, frappe's ControlDynamicLink resolves the search doctype from the
+  // selected `quotation_to` standard-filter value — restricted to Customer/Lead
+  // by quotation_list.js get_query — and searches ONLY that doctype. With no
+  // quotation_to selected, get_options() returns "" and link.js bails → no
+  // results.
+  searchParties(
+    quotationTo: string,
+    query: string,
+  ): Promise<{ items: Array<{ value: string; label: string; description: string }> }> {
+    const QUOTATION_TOS = new Set(["Customer", "Lead"])
+    if (!QUOTATION_TOS.has(quotationTo)) {
+      return Promise.resolve({ items: [] })
+    }
+    return this.searchLink(quotationTo, query, { reference_doctype: DOCTYPE })
   },
 
   searchCompanies(query: string): Promise<{ items: Array<{ value: string; label: string; description: string }> }> {

@@ -14,6 +14,7 @@ import { paymentService, type PaymentEntry, type SalesInvoice } from "@/services
 interface AmendState {
   amendFrom?: PaymentEntry
   copyFrom?: PaymentEntry
+  mappedDoc?: PaymentEntry
 }
 
 export default function RecordPaymentPage() {
@@ -26,17 +27,19 @@ export default function RecordPaymentPage() {
 
   const amendState = (location.state as AmendState | null)?.amendFrom
   const copyState = (location.state as AmendState | null)?.copyFrom
+  const mappedDocState = (location.state as AmendState | null)?.mappedDoc
   const isAmend = !!amendState
   const isDuplicate = !!copyState
+  const isMappedDoc = !!mappedDocState
 
   const [initialValues] = useState<PaymentEntry | undefined>(
     amendState || copyState || undefined
   )
   const [invoice, setInvoice] = useState<SalesInvoice | null>(null)
-  const [loading, setLoading] = useState(!!invoiceId && !amendState && !copyState)
+  const [loading, setLoading] = useState(!!invoiceId && !amendState && !copyState && !mappedDocState)
 
   useEffect(() => {
-    if (!invoiceId || amendState || copyState) return
+    if (!invoiceId || amendState || copyState || mappedDocState) return
     setLoading(true)
     paymentService
       .getUnpaidInvoices([["name", "=", invoiceId]])
@@ -45,7 +48,7 @@ export default function RecordPaymentPage() {
       })
       .catch((err) => showMessage(messageFromError(err, "Failed to load the invoice.")))
       .finally(() => setLoading(false))
-  }, [invoiceId, amendState, copyState])
+  }, [invoiceId, amendState, copyState, mappedDocState])
 
   const handleSaved = (paymentName: string) => {
     navigate(`/payments/${paymentName}`)
@@ -64,7 +67,9 @@ export default function RecordPaymentPage() {
             ? `Creating amended copy of ${initialValues?.name || ""}`
             : isDuplicate
               ? `Creating a copy of ${initialValues?.name || ""}`
-              : "Record a payment against an invoice or create a new payment entry."
+              : isMappedDoc
+                ? `Payment entry prefilled from Sales Order ${mappedDocState?.party_name || ""}.`
+                : "Record a payment against an invoice or create a new payment entry."
         }
         backTo="/payments"
         actions={
@@ -94,6 +99,7 @@ export default function RecordPaymentPage() {
             <PaymentForm
               ref={formRef}
               initialValues={initialValues}
+              mappedDoc={mappedDocState}
               invoice={invoice}
               duplicate={isDuplicate}
               onSaved={handleSaved}

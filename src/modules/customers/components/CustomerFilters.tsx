@@ -42,24 +42,14 @@ export function rFilterToArgs(r: RFilter): unknown[][] {
 
 export type { RFilter, FilterOperator, FilterFieldDef }
 
-// ERPNext Customer list filters — always visible on the list page.
+// ERPNext Customer list filters — always visible on the list page (the
+// doctype's in_standard_filter fields: customer_group, territory; plus the
+// name / customer_name search fields).
 const INLINE_FIELDS: FilterFieldDef[] = [
   { field: "name", label: "ID", type: "text" },
-  { field: "customer_name", label: "Name", type: "text" },
-  {
-    field: "customer_type",
-    label: "Type",
-    type: "select",
-    options: ["Company", "Individual"],
-  },
-  { field: "customer_group", label: "Group", type: "link" },
+  { field: "customer_name", label: "Customer Name", type: "text" },
+  { field: "customer_group", label: "Customer Group", type: "link" },
   { field: "territory", label: "Territory", type: "link" },
-  {
-    field: "status",
-    label: "Status",
-    type: "select",
-    options: ["Active", "Disabled", "Frozen"],
-  },
 ]
 
 /** Fields available in the advanced filter popover (any filterable field). */

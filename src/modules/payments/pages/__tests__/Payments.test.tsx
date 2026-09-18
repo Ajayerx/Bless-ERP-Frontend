@@ -89,13 +89,14 @@ describe("Payments list page (ERPNext parity)", () => {
     })
   })
 
-  it("drives the status filter from the quick pills (mapped to docstatus)", async () => {
+  it("row status badges drive the filter (Submitted → docstatus = 1)", async () => {
     renderPage()
     await screen.findByText("PAY-2026-0001")
 
-    // The first "Submitted" button is the quick pill (row badges follow).
-    const submittedPill = screen.getAllByRole("button", { name: "Submitted" })[0]
-    await user.click(submittedPill)
+    // Payment Entry has no pill tabs (ERPNext defines no status indicator);
+    // the row Submitted badge is a cell-filter mapped to docstatus = 1.
+    const submittedBadge = screen.getAllByRole("button", { name: "Submitted" })[0]
+    await user.click(submittedBadge)
 
     await waitFor(() => {
       expect(String(listReq()?.query?.filters ?? "")).toContain(
@@ -105,28 +106,6 @@ describe("Payments list page (ERPNext parity)", () => {
     // Payment Entry has no `status` field on the row — status lives on docstatus,
     // so every Submitted row stays under the pill.
     expect(screen.getByText("PAY-2026-0001")).toBeInTheDocument()
-  })
-
-  it("filters by Status from the inline select (Draft → docstatus 0, empty list)", async () => {
-    renderPage()
-    await screen.findByText("PAY-2026-0001")
-
-    await user.click(screen.getByRole("button", { name: "Status" }))
-    // The inline Status select exposes the same options as the quick pills
-    // (which are always rendered), so pick the row inside the popover.
-    const options = await screen.findAllByRole("button", { name: "Draft" })
-    await user.click(options[options.length - 1])
-
-    await waitFor(() => {
-      expect(String(listReq()?.query?.filters ?? "")).toContain(
-        '["Payment Entry","docstatus","=",0]'
-      )
-    })
-    expect(screen.getByRole("button", { name: "Status" })).toHaveTextContent("Draft")
-    // No fixture payment is a draft → the list is empty under the active filter.
-    await waitFor(() => {
-      expect(screen.getByText("No payments match the current filters.")).toBeInTheDocument()
-    })
   })
 
   it("filters by Party from a list cell click (ERPNext .filterable cells)", async () => {
@@ -174,16 +153,16 @@ describe("Payments list page (ERPNext parity)", () => {
   it("seeds the advanced filter popover from active URL filters", async () => {
     renderPageWithQuery(
       `?filters=${encodeURIComponent(
-        JSON.stringify([{ field: "status", label: "Status", operator: "=", value: "Submitted" }])
+        JSON.stringify([{ field: "name", label: "ID", operator: "=", value: "PAY-2026-0001" }])
       )}`
     )
     await screen.findByText("PAY-2026-0001")
 
     await user.click(screen.getByRole("button", { name: "Advanced Filter" }))
     await waitFor(() => {
-      expect(screen.getByLabelText("Filter field")).toHaveValue("status")
+      expect(screen.getByLabelText("Filter field")).toHaveValue("name")
     })
-    expect(screen.getByLabelText("Filter value")).toHaveValue("Submitted")
+    expect(screen.getByLabelText("Filter value")).toHaveValue("PAY-2026-0001")
   })
 
   it("restores filters and sort from the URL query string", async () => {
@@ -223,5 +202,44 @@ describe("Payments list page (ERPNext parity)", () => {
     await waitFor(() => {
       expect(screen.getByText("PAY-2026-0001")).toBeInTheDocument()
     })
+  })
+
+  it("searches Party against the doctype chosen in Party Type (ERPNext Dynamic Link parity)", async () => {
+    renderPage()
+    await screen.findByText("PAY-2026-0001")
+    const partyInput = screen.getByPlaceholderText("Party")
+    const searchFor = (txt: string) =>
+      lastRequest(
+        (r) =>
+          r.path === "/api/method/frappe.desk.search.search_link" &&
+          String(r.body?.txt ?? "").startsWith(txt)
+      )
+
+    // No party_type selected → get_options() returns "" → no request, no results.
+    await user.type(partyInput, "Vend")
+    await waitFor(() => {
+      expect(screen.getByText("No results found")).toBeInTheDocument()
+    })
+    expect(searchFor("Vend")).toBeUndefined()
+    await user.clear(partyInput)
+
+    // Supplier → search targets the Supplier doctype only (no Customer merge).
+    await user.click(screen.getByLabelText("Party Type"))
+    await user.click(screen.getByRole("button", { name: "Supplier" }))
+    await user.type(screen.getByPlaceholderText("Party"), "Vend")
+    await waitFor(() => {
+      expect(searchFor("Vend")).toBeTruthy()
+    })
+    expect(String(searchFor("Vend")?.body?.doctype ?? "")).toBe("Supplier")
+
+    // Switch to Employee → search now targets the Employee doctype.
+    await user.click(screen.getByLabelText("Party Type"))
+    await user.click(screen.getByRole("button", { name: "Employee" }))
+    await user.clear(screen.getByPlaceholderText("Party"))
+    await user.type(screen.getByPlaceholderText("Party"), "Jane")
+    await waitFor(() => {
+      expect(searchFor("Jane")).toBeTruthy()
+    })
+    expect(String(searchFor("Jane")?.body?.doctype ?? "")).toBe("Employee")
   })
 })

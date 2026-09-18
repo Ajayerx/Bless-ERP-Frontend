@@ -367,6 +367,62 @@ const listData: Record<string, Record<string, unknown>[]> = {
   "Sales Order": salesOrders as unknown as Record<string, unknown>[],
 }
 
+// ERPNext validate() parity for the mocked Sales Invoice save path: static
+// rule failures are answered by this "backend" with a 417 ValidationError
+// envelope whose _server_messages the client surfaces verbatim.
+function validationErrorResponse(message: string) {
+  return HttpResponse.json(
+    {
+      message,
+      exc_type: "ValidationError",
+      exc: `ValidationError\n\tat validate (Sales Invoice)\n\tMessage: ${message}`,
+      _server_messages: JSON.stringify([
+        { message, title: "Message", indicator: "red", raise_exception: 1 },
+      ]),
+    },
+    { status: 417 },
+  )
+}
+
+// Mirrors the mandatory-field checks ERPNext's Sales Invoice.validate() runs
+// when the desk form saves/submits a doc. Returns an error string, or "" if
+// the payload is valid.
+export function validateSalesInvoice(body: Record<string, unknown>): string {
+  const items: Record<string, unknown>[] = Array.isArray(body.items) ? body.items : []
+  if (!String(body.customer ?? "").trim()) return "Customer is mandatory"
+  if (!String(body.company ?? "").trim()) return "Company is mandatory"
+  if (!String(body.posting_date ?? "").trim()) return "Posting Date is mandatory"
+  if (!String(body.currency ?? "").trim()) return "Currency is mandatory"
+  const cr = body.conversion_rate
+  if (cr !== undefined && cr !== null && Number(cr) <= 0) {
+    return "Exchange Rate must be greater than 0"
+  }
+  const plc = body.plc_conversion_rate
+  if (plc !== undefined && plc !== null && Number(plc) <= 0) {
+    return "Price List Exchange Rate must be greater than 0"
+  }
+  if (items.length === 0) return "At least one item is required"
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i]
+    const rowNum = i + 1
+    if (!String(item.item_code ?? item.name ?? "").trim()) {
+      return `Row ${rowNum}: Item is required`
+    }
+    if (!String(item.uom ?? "").trim()) {
+      return `Row ${rowNum}: UOM is required`
+    }
+    const qty = item.qty === undefined || item.qty === null ? NaN : Number(item.qty)
+    if (Number.isNaN(qty) || qty < 0) {
+      return `Row ${rowNum}: Qty cannot be negative`
+    }
+    const rate = item.rate === undefined || item.rate === null ? NaN : Number(item.rate)
+    if (Number.isNaN(rate) || rate < 0) {
+      return `Row ${rowNum}: Rate cannot be negative`
+    }
+  }
+  return ""
+}
+
 // ── Handlers ────────────────────────────────────────────────────────
 // Registered LAST — catches any /api/resource/:doctype that no other handler matched.
 export const frappeLookupHandlers = [
@@ -493,7 +549,10 @@ export const frappeLookupHandlers = [
           docstatus: row.docstatus,
           company: "BlessERP Inc.",
           currency: "CAD",
+          conversion_rate: 1,
           selling_price_list: "Standard Selling",
+          price_list_currency: "CAD",
+          plc_conversion_rate: 1,
           cost_center: "Main - BE",
           taxes_and_charges: "Canada GST/QST - BE",
           items: salesInvoiceItems,
@@ -525,6 +584,15 @@ export const frappeLookupHandlers = [
         return HttpResponse.json({ message: "Not Found" }, { status: 404 })
       }
       const body = (await request.json()) as Record<string, unknown>
+      // backend-acknowledged validation, mirroring ERPNext Sales Invoice.
+      // Only full form saves carry child rows; submit ()docstatus:1+) and
+      // allow_on_submit updates are slim payloads and are not re-validated.
+      if (Array.isArray(body.items)) {
+        const validationMsg = validateSalesInvoice(body)
+        if (validationMsg) {
+          return validationErrorResponse(validationMsg)
+        }
+      }
       salesInvoices[idx] = { ...salesInvoices[idx], ...body, modified: new Date().toISOString().replace("T", " ").slice(0, 19) }
       const row = salesInvoices[idx]
       return HttpResponse.json({
@@ -542,7 +610,10 @@ export const frappeLookupHandlers = [
           docstatus: row.docstatus,
           company: "BlessERP Inc.",
           currency: "CAD",
+          conversion_rate: 1,
           selling_price_list: "Standard Selling",
+          price_list_currency: "CAD",
+          plc_conversion_rate: 1,
           cost_center: "Main - BE",
           taxes_and_charges: "Canada GST/QST - BE",
           items: salesInvoiceItems,

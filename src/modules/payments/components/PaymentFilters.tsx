@@ -41,24 +41,25 @@ export function rFilterToArgs(r: RFilter): unknown[][] {
 
 export type { RFilter, FilterOperator, FilterFieldDef }
 
-// ERPNext Payment Entry list filters — always visible on the list page.
+// ERPNext Payment Entry list filters — always visible on the list page (the
+// doctype's in_standard_filter fields: payment_type, party_type, party; plus
+// the name/title search fields).
 const INLINE_FIELDS: FilterFieldDef[] = [
   { field: "name", label: "ID", type: "text" },
-  { field: "party", label: "Party", type: "link" },
   {
     field: "payment_type",
-    label: "Type",
+    label: "Payment Type",
     type: "select",
     options: ["Receive", "Pay", "Internal Transfer"],
   },
-  { field: "posting_date", label: "Posting Date", type: "date" },
-  { field: "reference_no", label: "Reference No", type: "text" },
   {
-    field: "status",
-    label: "Status",
+    field: "party_type",
+    label: "Party Type",
     type: "select",
-    options: ["Draft", "Submitted", "Cancelled"],
+    options: ["Customer", "Supplier", "Employee"],
   },
+  { field: "party", label: "Party", type: "link" },
+  { field: "title", label: "Title", type: "text" },
 ]
 
 /** Fields available in the advanced filter popover (any filterable field). */
@@ -66,17 +67,13 @@ export const PAYMENT_ADVANCED_FILTER_FIELDS: FilterFieldDef[] = [
   ...INLINE_FIELDS,
   { field: "company", label: "Company", type: "link" },
   {
-    field: "party_type",
-    label: "Party Type",
-    type: "select",
-    options: ["Customer", "Supplier", "Employee"],
-  },
-  {
     field: "mode_of_payment",
     label: "Method",
     type: "select",
     options: ["Cash", "Cheque", "Credit Card", "Wire Transfer", "Bank Draft"],
   },
+  { field: "posting_date", label: "Posting Date", type: "date" },
+  { field: "reference_no", label: "Reference No", type: "text" },
   { field: "paid_amount", label: "Amount", type: "number" },
   { field: "owner", label: "Owner", type: "link" },
   { field: "creation", label: "Created On", type: "date" },
@@ -107,10 +104,17 @@ type LinkLookup = (query: string) => Promise<{
   items: Array<{ value: string; label: string; description: string }>
 }>
 
+// ERPNext list parity: `party` (Dynamic Link → party_type) searches the doctype
+// named by the selected party_type standard filter, so the lookup is
+// type-parameterized.
+type PartyTypeLinkLookup = (partyType: string, query: string) => Promise<{
+  items: Array<{ value: string; label: string; description: string }>
+}>
+
 interface PaymentFiltersProps {
   filters: RFilter[]
   onFiltersChange: (filters: RFilter[]) => void
-  partySearch?: LinkLookup
+  partySearch?: PartyTypeLinkLookup
   companySearch?: LinkLookup
   sort?: PaymentSort
   className?: string
@@ -303,6 +307,7 @@ export default function PaymentFilters({
         {INLINE_FIELDS.map((def) => {
           const current = filterFor(def.field)
           if (def.type === "link") {
+            const selectedPartyType = filterFor("party_type")?.value ?? ""
             return (
               <div key={def.field} className="min-w-0" title={def.field}>
                 <LinkSearchField
@@ -311,8 +316,12 @@ export default function PaymentFilters({
                     setFieldFilter(def.field, def, v ? { operator: "=", value: v } : undefined)
                   }
                   searchFn={
-                    (def.field === "party" ? partySearch : companySearch) ??
-                    (() => Promise.resolve({ items: [] }))
+                    def.field === "party"
+                      ? (q) =>
+                          partySearch
+                            ? partySearch(selectedPartyType, q)
+                            : Promise.resolve({ items: [] })
+                      : (companySearch ?? (() => Promise.resolve({ items: [] })))
                   }
                   placeholder={def.label}
                   clearIconMode="hover"

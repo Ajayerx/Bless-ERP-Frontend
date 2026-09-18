@@ -13,15 +13,37 @@ import InvoiceTable from "../components/InvoiceTable"
 import { rFilterToArgs, type RFilter } from "../components/InvoiceFilters"
 import { openMultiPdfPrint } from "@/lib/multi-pdf-print"
 
-type StatusFilter = "All" | "Paid" | "Unpaid" | "Overdue" | "Draft" | "Cancelled"
+type StatusFilter =
+  | "All"
+  | "Draft"
+  | "Submitted"
+  | "Overdue"
+  | "Unpaid"
+  | "Partly Paid"
+  | "Paid"
+  | "Return"
+  | "Credit Note Issued"
+  | "Internal Transfer"
+  | "Cancelled"
+  | "Unpaid and Discounted"
+  | "Partly Paid and Discounted"
+  | "Overdue and Discounted"
 
 const STATUS_FILTERS: StatusFilter[] = [
   "All",
-  "Paid",
-  "Unpaid",
-  "Overdue",
   "Draft",
+  "Submitted",
+  "Overdue",
+  "Unpaid",
+  "Partly Paid",
+  "Paid",
+  "Return",
+  "Credit Note Issued",
+  "Internal Transfer",
   "Cancelled",
+  "Unpaid and Discounted",
+  "Partly Paid and Discounted",
+  "Overdue and Discounted",
 ]
 
 const MESSAGE_DIVIDER = '<hr class="my-2 border-0 border-t border-gray-200" />'
