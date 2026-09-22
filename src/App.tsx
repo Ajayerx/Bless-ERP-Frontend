@@ -7,9 +7,9 @@ import { Dashboard } from "./modules/dashboard/pages";
 import { Customers, NewCustomer, CustomerDetail, EditCustomer } from "./modules/customers/pages";
 import { Products, NewProduct, ProductDetail, EditProduct } from "./modules/products/pages";
 import { Invoices, InvoiceDetail, CreateInvoice } from "./modules/invoices/pages";
-import { Payments, PaymentDetail, RecordPaymentPage } from "./modules/payments/pages";
+import { Payments, PaymentDetail, RecordPaymentPage, PaymentReconciliation } from "./modules/payments/pages";
 import VersionDetail from "./pages/VersionDetail";
-import { SalesReportPage, ARReportPage, InventoryReportPage, ProfitLossPage, BalanceSheetPage, GSTSummaryPage, GeneralLedgerPage } from "./modules/reports/pages";
+import { SalesReportPage, ARReportPage, InventoryReportPage, ProfitLossPage, BalanceSheetPage, GSTSummaryPage, GeneralLedgerPage, BankReconciliationStatementPage } from "./modules/reports/pages";
 import { Expenses, NewExpense, ExpenseDetail, EditExpense } from "./modules/expenses/pages";
 import { Suppliers, NewSupplier, SupplierDetail, EditSupplier } from "./modules/suppliers/pages";
 import { Bills, BillDetail, CreateBill, EditBill } from "./modules/bills/pages";
@@ -22,6 +22,8 @@ import { Contacts, NewContact, ContactDetail, EditContact } from "./modules/cont
 import { Opportunities, NewOpportunity, OpportunityDetail, EditOpportunity } from "./modules/opportunities/pages";
 import { BankAccounts, NewBankAccount, BankAccountDetail, EditBankAccount } from "./modules/bank_accounts/pages";
 import { JournalEntries, NewJournalEntry, JournalEntryDetail, EditJournalEntry } from "./modules/journal_entries/pages";
+import { BankReconciliationTool, BankStatementImport } from "./modules/bank_reconciliation/pages";
+import { BankTransactions, BankTransactionDetail } from "./modules/bank_transactions/pages";
 import {
   StockLevels,
   Warehouses,
@@ -90,6 +92,7 @@ function App() {
         <Route path="invoices/:id" element={<InvoiceDetail />} />
         <Route path="payments" element={<Payments />} />
         <Route path="payments/new" element={<RecordPaymentPage />} />
+        <Route path="payments/reconciliation" element={<PaymentReconciliation />} />
         <Route path="payments/:id" element={<PaymentDetail />} />
         <Route path="versions/:id" element={<VersionDetail />} />
         <Route path="quotations" element={<Quotations />} />
@@ -127,6 +130,10 @@ function App() {
         <Route path="bank-accounts/new" element={<NewBankAccount />} />
         <Route path="bank-accounts/:id" element={<BankAccountDetail />} />
         <Route path="bank-accounts/:id/edit" element={<EditBankAccount />} />
+        <Route path="bank-reconciliation" element={<BankReconciliationTool />} />
+        <Route path="bank-reconciliation/import" element={<BankStatementImport />} />
+        <Route path="bank-transactions" element={<BankTransactions />} />
+        <Route path="bank-transactions/:id" element={<BankTransactionDetail />} />
         <Route path="journal-entries" element={<JournalEntries />} />
         <Route path="journal-entries/new" element={<NewJournalEntry />} />
         <Route path="journal-entries/:id" element={<JournalEntryDetail />} />
@@ -160,6 +167,7 @@ function App() {
         <Route path="reports/balance-sheet" element={<BalanceSheetPage />} />
         <Route path="reports/gst" element={<GSTSummaryPage />} />
         <Route path="reports/general-ledger" element={<GeneralLedgerPage />} />
+        <Route path="reports/bank-reconciliation" element={<BankReconciliationStatementPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>

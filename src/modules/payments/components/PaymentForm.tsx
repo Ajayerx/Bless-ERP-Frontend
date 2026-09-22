@@ -88,8 +88,8 @@ function useMoneyInput(
 ) {
   const [text, setText] = useState("")
   const [editing, setEditing] = useState(false)
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const commitRef = useRef(onCommit)
+const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
+const commitRef = useRef(onCommit)
   const blurExtraRef = useRef(onBlurExtra)
 
   useEffect(() => {
@@ -644,9 +644,18 @@ export default forwardRef<PaymentFormHandle, PaymentFormProps>(function PaymentF
         setTaxes([])
       }
     } else if (invoice) {
+
       setPartyType("Customer")
       setParty(invoice.customer)
       setPartyName(invoice.customer_name)
+      // ERPNext parity (get_party_details.party_account → paid_to/paid_from on party selection)
+      paymentService
+        .getPartyDetails(company, partyType, invoice.customer, postingDate, costCenter)
+        .then((details) => {
+          if (isReceive) setPaidTo(details.party_account || "")
+          else if (isPay) setPaidFrom(details.party_account || "")
+        })
+        .catch(() => {})
       setReferences([{
         reference_doctype: "Sales Invoice",
         reference_name: invoice.name,
@@ -658,8 +667,9 @@ export default forwardRef<PaymentFormHandle, PaymentFormProps>(function PaymentF
       setReceivedAmount(invoice.outstanding_amount)
       setRemarks(`Payment against ${invoice.name}`)
       setCustomRemarks(false)
+      setModeOfPayment(invoice.mode_of_payment || "")
       setCostCenter("")
-      setProject("")
+      setProject(invoice.project || "")
       setLetterHead("")
       setPrintHeading("")
       setIsOpening(false)
@@ -870,7 +880,8 @@ export default forwardRef<PaymentFormHandle, PaymentFormProps>(function PaymentF
           setPaidToCurrency(partyCurrency)
         }
 
-        setReferences([])
+        if (!keepSeedRefs.current) setReferences([])
+        else keepSeedRefs.current = false
 
         if (details.party_bank_account) setPartyBankAccount(details.party_bank_account)
         if (details.bank_account) setBankAccount(details.bank_account)

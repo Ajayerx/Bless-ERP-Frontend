@@ -133,7 +133,7 @@ export async function fetchFieldOptions(doctype: string, fieldname: string): Pro
 // fields), sharing one network round-trip. Entries clear on settle.
 const searchLinkInFlight = new Map<string, Promise<{ value: string; label: string; description: string }[]>>()
 
-export async function searchLink(doctype: string, query: string, referenceDoctype?: string, filters?: unknown[][] | Record<string, string | number | boolean | Array<string | number>>, customQuery?: string, ignoreUserPermissions?: boolean): Promise<{ value: string; label: string; description: string }[]> {
+export async function searchLink(doctype: string, query: string, referenceDoctype?: string, filters?: unknown[][] | Record<string, string | number | boolean | unknown[]>, customQuery?: string, ignoreUserPermissions?: boolean): Promise<{ value: string; label: string; description: string }[]> {
   const qp = new URLSearchParams()
   qp.set("doctype", doctype)
   qp.set("txt", query)

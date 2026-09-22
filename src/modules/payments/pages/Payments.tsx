@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, useMemo } from "react"
 import { useNavigate, useSearchParams } from "react-router-dom"
 import { motion } from "framer-motion"
-import { DollarSign, FileText, BadgeCheck, AlertCircle, Download, UserRound, Tag } from "lucide-react"
+import { DollarSign, FileText, BadgeCheck, AlertCircle, Download, UserRound, Tag, ClipboardCheck } from "lucide-react"
 import Topbar from "@/components/layout/Topbar"
 import { Button, Badge, Card, CardContent, ConfirmationDialog, Modal, ModalFooter, Input, BulkPrintDialog, type PrintSettings } from "@/components/ui"
 import PaymentTable from "../components/PaymentTable"
@@ -392,9 +392,14 @@ export default function Payments() {
             <h1 className="text-2xl font-bold tracking-tight text-heading">Payments</h1>
             <p className="text-sm text-muted mt-1">Record payments and view payment history.</p>
           </div>
-          <Button onClick={() => navigate("/payments/new")}>
-            <DollarSign size={16} /> New Payment Entry
-          </Button>
+          <div className="flex items-center gap-3">
+            <Button variant="ghost" onClick={() => navigate("/payments/reconciliation")}>
+              <ClipboardCheck size={16} /> Payment Reconciliation
+            </Button>
+            <Button onClick={() => navigate("/payments/new")}>
+              <DollarSign size={16} /> New Payment Entry
+            </Button>
+          </div>
         </div>
 
         {error && (

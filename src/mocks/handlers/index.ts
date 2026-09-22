@@ -27,6 +27,8 @@ import { frappeLookupHandlers } from "./frappe-lookups"
 import { activityHandlers } from "./activity"
 import { invoiceMakeHandlers } from "./invoice-make"
 import { getItemsHandlers } from "./get-items"
+import { reconciliationHandlers } from "./reconciliation"
+import { bankReconciliationHandlers } from "./bank_reconciliation"
 
 export const handlers = [
   ...authHandlers,
@@ -50,6 +52,10 @@ export const handlers = [
   ...purchaseOrderHandlers,
   ...hrmsHandlers,
   ...notificationHandlers,
+  // Reconciliation (method + Bank Transaction resource) — before the generic
+  // /api/resource catch-all so Bank Transaction isn't swallowed by lookups.
+  ...reconciliationHandlers,
+  ...bankReconciliationHandlers,
   // Frappe REST handlers — more specific first, wildcard last
   ...frappeAuthHandlers,
   ...frappeSettingsHandlers,

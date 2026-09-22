@@ -21,6 +21,7 @@ import {
   Copy,
   Printer,
   Mail,
+  GitBranch,
 } from "lucide-react"
 import Topbar from "@/components/layout/Topbar"
 import {
@@ -37,6 +38,7 @@ import {
 import { useMessageDialog, messageFromError } from "@/components/ui"
 import {
   invoiceService,
+  paymentService,
   type LedgerPreviewData,
   type PaymentActivityItem,
 } from "@/services"
@@ -46,6 +48,7 @@ import { useAuth } from "@/context/AuthContext"
 import { normalizeLedger } from "@/modules/payments/components/ledgerUtils"
 import LedgerPreviewTable from "@/modules/payments/components/LedgerPreviewTable"
 import PaymentActivity from "@/modules/payments/components/PaymentActivity"
+import UnReconcileDialog from "@/modules/payments/components/UnReconcileDialog"
 import InvoiceMetaPanel from "../components/InvoiceMetaPanel"
 import type { SalesInvoice } from "../types"
 import InvoiceForm, {
@@ -58,7 +61,6 @@ import PrintPreviewDialog from "../components/PrintPreviewDialog"
 import SendInvoiceEmailDialog from "../components/SendInvoiceEmailDialog"
 import { formatDate } from "@/lib/utils"
 import { useInvoiceWorkspace, type InvoiceWorkspaceMode } from "../hooks/useInvoiceWorkspace"
-
 const statusVariant: Record<string, "success" | "info" | "warning" | "danger" | "default"> = {
   Paid: "success",
   Unpaid: "warning",
@@ -86,6 +88,8 @@ export default function InvoiceWorkspace({
   const [createOpen, setCreateOpen] = useState(false)
   const [previewOpen, setPreviewOpen] = useState(false)
   const [emailOpen, setEmailOpen] = useState(false)
+  const [unreconcileOpen, setUnreconcileOpen] = useState(false)
+  const [unreconcileAvailable, setUnreconcileAvailable] = useState(false)
 
   // ERPNext-style collapsible form sidebar (Assignments & Tags). Persisted;
   // hidden on small screens where the fixed left rail leaves no room.
@@ -136,6 +140,25 @@ export default function InvoiceWorkspace({
     if (!ws.invoice) return
     loadComments(ws.invoice, currentUserId, ws.docinfo ?? undefined)
   }, [ws.invoice, ws.docinfo, currentUserId, loadComments])
+
+  useEffect(() => {
+    if (!ws.invoice || ws.invoice.docstatus !== 1) {
+      setUnreconcileAvailable(false)
+      return
+    }
+    let cancelled = false
+    paymentService.unreconcile
+      .docHasReferences("Sales Invoice", ws.invoice.name)
+      .then((count) => {
+        if (!cancelled) setUnreconcileAvailable(count > 0)
+      })
+      .catch(() => {
+        if (!cancelled) setUnreconcileAvailable(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [ws.invoice])
 
   const loadLedger = useCallback(
     async (company: string, name: string) => {
@@ -446,6 +469,19 @@ export default function InvoiceWorkspace({
                     <DropdownMenuItem onClick={() => setPreviewOpen(true)}>
                       <Printer size={14} /> Print
                     </DropdownMenuItem>
+                    {ws.isSubmitted && unreconcileAvailable && (
+                      <>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem
+                          onClick={() => {
+                            setUnreconcileOpen(true)
+                            setPreviewOpen(false)
+                          }}
+                        >
+                          <GitBranch size={14} /> Unreconcile
+                        </DropdownMenuItem>
+                      </>
+                    )}
                     {(ws.isDraft || ws.isCancelled) && (
                       <>
                         <DropdownMenuSeparator />
@@ -466,6 +502,17 @@ export default function InvoiceWorkspace({
                   onOpenChange={setEmailOpen}
                   invoiceName={invoice.name}
                   contactEmail={invoice.contact_email}
+                />
+                <UnReconcileDialog
+                  open={unreconcileOpen}
+                  onOpenChange={setUnreconcileOpen}
+                  company={invoice.company}
+                  docname={invoice.name}
+                  voucherType="Sales Invoice"
+                  onDone={() => {
+                    setUnreconcileOpen(false)
+                    void ws.reload()
+                  }}
                 />
               </>
             )}

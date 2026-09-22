@@ -16,6 +16,10 @@ interface UnReconcileDialogProps {
   company: string
   docname: string
   onDone: () => void
+  /** ERPNext voucher/voucher_type. Mirrors unreconcile_payment.add_unreconcile_btn's
+   * doctype=$(doctype fragment="[doctype]" context="fieldname");
+   * used both when loading linked payments and in the create payload. */
+  voucherType?: string
 }
 
 function formatAmount(v?: number): string {
@@ -28,6 +32,7 @@ export default function UnReconcileDialog({
   company,
   docname,
   onDone,
+  voucherType = "Payment Entry",
 }: UnReconcileDialogProps) {
   const { showMessage } = useMessageDialog()
   const [allocations, setAllocations] = useState<UnreconcileAllocation[]>([])
@@ -45,18 +50,18 @@ export default function UnReconcileDialog({
     try {
       const rows = await paymentService.unreconcile.getLinkedPaymentsForDoc(
         company,
-        "Payment Entry",
+        voucherType,
         docname
       )
       setAllocations(rows || [])
     } catch (err) {
-      const message = err instanceof ApiError ? err.message : "Failed to load the allocations linked to this Payment Entry."
+      const message = err instanceof ApiError ? err.message : "Failed to load the allocations linked to this voucher."
       setError(message)
       showMessage(messageFromError(err, message))
     } finally {
       setLoading(false)
     }
-  }, [company, docname])
+  }, [company, docname, voucherType])
 
   useEffect(() => {
     if (open) {
@@ -98,15 +103,26 @@ export default function UnReconcileDialog({
     setActing(true)
     setError(null)
     try {
+      const isPaymentSide = voucherType === "Payment Entry" || voucherType === "Journal Entry"
       const selections = allocations
         .filter((a) => selected.has(key(a)))
-        .map((a) => ({
-          company: a.company || company,
-          voucher_type: "Payment Entry",
-          voucher_no: docname,
-          against_voucher_type: a.reference_doctype || "",
-          against_voucher_no: a.reference_name || "",
-        }))
+        .map((a) =>
+          isPaymentSide
+            ? {
+                company: a.company || company,
+                voucher_type: voucherType,
+                voucher_no: docname,
+                against_voucher_type: a.reference_doctype || "",
+                against_voucher_no: a.reference_name || "",
+              }
+            : {
+                company: a.company || company,
+                voucher_type: a.reference_doctype || "",
+                voucher_no: a.reference_name || "",
+                against_voucher_type: voucherType,
+                against_voucher_no: docname,
+              }
+        )
       await paymentService.unreconcile.createUnreconcileDocForSelection(selections)
       close()
       onDone()
@@ -122,10 +138,10 @@ export default function UnReconcileDialog({
   return (
     <Modal
       open={open}
-      onClose={close}
+      onOpenChange={onOpenChange}
       title="UnReconcile Allocations"
-      description="Un-reconcile this Payment Entry against one or more linked documents."
-      size="lg"
+      description="Un-reconcile this document against one or more linked vouchers."
+      size="xl"
     >
       {loading && (
         <div className="flex items-center justify-center py-10 text-muted">

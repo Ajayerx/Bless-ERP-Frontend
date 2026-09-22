@@ -1561,7 +1561,12 @@ export default function InvoiceForm({
                     doctype="Cost Center"
                     value={formData.costCenter}
                     onChange={(v) => handleSelectChange("costCenter", v ?? "")}
-                    searchFn={(q) => invoiceService.searchSalesLink("Cost Center", q)}
+                    searchFn={(q) =>
+                      invoiceService.searchSalesLink("Cost Center", q, [
+                        ["is_group", "=", 0],
+                        ["company", "=", currentCompany],
+                      ])
+                    }
                     readOnly={fieldLocked("costCenter")}
                   />
                 </div>

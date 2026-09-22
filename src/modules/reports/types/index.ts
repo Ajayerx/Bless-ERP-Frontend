@@ -170,3 +170,32 @@ export interface GeneralLedgerReport {
   columns: GeneralLedgerColumn[]
   rows: GeneralLedgerRow[]
 }
+
+// Bank Reconciliation Statement script report
+// (erpnext/accounts/report/bank_reconciliation_statement).
+export interface BankReconciliationStatementRow {
+  posting_date?: string
+  payment_document?: string
+  payment_entry?: string
+  debit?: number
+  credit?: number
+  against_account?: string
+  reference_no?: string
+  ref_date?: string
+  clearance_date?: string
+  account_currency?: string
+  [key: string]: unknown
+}
+
+export interface BankReconciliationStatementFilters {
+  company: string
+  account: string
+  report_date: string
+  include_pos_transactions?: 0 | 1
+  [key: string]: unknown
+}
+
+export interface BankReconciliationStatementReport {
+  columns: GeneralLedgerColumn[]
+  rows: BankReconciliationStatementRow[]
+}

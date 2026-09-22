@@ -40,6 +40,18 @@ export type { PaymentEntry, PaymentEntryListResponse, RecordPaymentData, Invoice
 export { reportService } from "@/modules/reports/services"
 export type { TaxSummary, TaxBreakdownRow, TaxTransactionRow, TaxSideSummary, NetRemittance, SalesReport, ARReport, InventoryReport, ProfitLoss, BalanceSheet, GeneralLedgerColumn, GeneralLedgerRow, GeneralLedgerFilters, GeneralLedgerReport } from "@/modules/reports/services"
 
+export {
+  getBankTransactions,
+  getAccountBalance,
+  getLinkedPayments,
+  reconcileVouchers,
+  createPaymentEntryFromBankTransaction,
+  createJournalEntryFromBankTransaction,
+  updateBankTransaction,
+  autoReconcileVouchers,
+  getReconcilableDoctypes,
+} from "@/modules/bank_reconciliation/services"
+
 export { productService } from "@/modules/products/services"
 export type {
   Product, Product as ProductItem, ProductDetail, ProductListResponse,

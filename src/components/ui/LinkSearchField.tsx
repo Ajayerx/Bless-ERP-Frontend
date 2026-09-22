@@ -6,10 +6,11 @@ import { cn } from "@/lib/utils"
 type SearchResult = { value: string; label: string; description: string }
 
 interface LinkSearchFieldProps {
+  id?: string
   value?: string
   onChange?: (value: string | undefined) => void
   searchFn: (query: string) => Promise<{ items: SearchResult[] }>
-  validate?: (value: string) => Promise<void>
+  validate?: (value: string) => Promise<unknown>
   onCreateNew?: () => void
   onAdvancedSearch?: () => void
   placeholder?: string
@@ -31,6 +32,7 @@ interface LinkSearchFieldProps {
 }
 
 export default function LinkSearchField({
+  id,
   value,
   onChange,
   searchFn,
@@ -346,7 +348,7 @@ export default function LinkSearchField({
   return (
     <div className={cn("space-y-1.5", className)}>
       {label && (
-        <label className="block text-xs font-semibold text-muted mb-1.5">
+        <label htmlFor={id} className="block text-xs font-semibold text-muted mb-1.5">
           {label}
           {required && <span className="text-danger-500 ml-0.5">*</span>}
         </label>
@@ -354,6 +356,7 @@ export default function LinkSearchField({
       <div ref={wrapperRef} className="relative" onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}>
         <div className="relative flex items-center">
           <input
+            id={id}
             ref={inputRef}
             type="text"
             value={query}

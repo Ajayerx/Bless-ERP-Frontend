@@ -89,6 +89,14 @@ const navSections: NavSection[] = [
       { label: "Taxes", to: "/taxes", icon: Landmark },
       { label: "Bank Accounts", to: "/bank-accounts", icon: Banknote },
       { label: "Journal Entries", to: "/journal-entries", icon: BookOpen },
+      { label: "Payment Reconciliation", to: "/payments/reconciliation", icon: ClipboardCheck },
+    ],
+  },
+  {
+    label: "BANKING",
+    items: [
+      { label: "Bank Reconciliation", to: "/bank-reconciliation", icon: ArrowLeftRight },
+      { label: "Bank Transactions", to: "/bank-transactions", icon: Banknote },
     ],
   },
   {
@@ -100,6 +108,7 @@ const navSections: NavSection[] = [
       { label: "Profit & Loss", to: "/reports/profit-loss", icon: TrendingUp },
       { label: "Balance Sheet", to: "/reports/balance-sheet", icon: BookOpen },
       { label: "GST Summary", to: "/reports/gst", icon: Landmark },
+      { label: "Bank Reconciliation Statement", to: "/reports/bank-reconciliation", icon: BookOpen },
     ],
   },
   {

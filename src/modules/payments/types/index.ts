@@ -432,3 +432,76 @@ export interface RecordPaymentData {
   deductions?: { account: string; cost_center: string; amount: number; description?: string; is_exchange_gain_loss?: number }[]
   taxes?: PaymentEntryTax[]
 }
+
+// ── Payment Reconciliation workspace (ERPNext /app/payment-reconciliation) ──
+// Mirrors the Payment Reconciliation doctype + its child tables as returned by
+// get_unreconciled_entries / allocate_entries / reconcile (run_doc_method).
+
+export interface ReconPaymentRow {
+  reference_type: string
+  reference_name: string
+  posting_date: string
+  amount: number
+  difference_amount: number
+  cost_center?: string
+}
+
+export interface ReconInvoiceRow {
+  invoice_type: string
+  invoice_number: string
+  invoice_date: string
+  amount: number
+  outstanding_amount: number
+}
+
+export interface ReconAllocationRow {
+  reference_type: string
+  reference_name: string
+  posting_date: string
+  amount: number
+  invoice_type: string
+  invoice_number: string
+  invoice_date: string
+  outstanding_amount: number
+  allocated_amount: number
+  difference_amount: number
+  exchange_rate: number
+  difference_account: string
+  gain_loss_posting_date: string
+}
+
+export interface PaymentReconciliationWorkspace {
+  doctype: "Payment Reconciliation"
+  name?: string
+  company: string
+  party_type: string
+  party: string
+  receivable_payable_account: string
+  default_advance_account?: string
+  bank_cash_account?: string
+  cost_center?: string
+  project?: string
+  from_posting_date: string
+  to_posting_date: string
+  min_payment_amount: number
+  max_payment_amount: number
+  payment_name?: string
+  from_invoice_date: string
+  to_invoice_date: string
+  min_invoice_amount: number
+  max_invoice_amount: number
+  invoice_name?: string
+  invoice_limit: number
+  payment_limit: number
+  payments: ReconPaymentRow[]
+  invoices: ReconInvoiceRow[]
+  allocation: ReconAllocationRow[]
+  // Accounting-dimension label → configured filter (ERPNext dimension filters).
+  dimensionFilters?: Record<string, unknown>
+}
+
+export interface ReconWorkRequest {
+  method: string
+  doc: Record<string, unknown>
+  args?: Record<string, unknown>
+}

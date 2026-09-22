@@ -1,4 +1,19 @@
 import { http, HttpResponse, delay } from "msw"
+import {
+  linkOptions,
+  accountSearchOptions,
+  applyLinkFilters,
+  type LinkOptionFilter,
+} from "./frappe-lookups"
+
+function parseSearchLinkFilters(raw: string | null): LinkOptionFilter | undefined {
+  if (!raw) return undefined
+  try {
+    return JSON.parse(raw) as LinkOptionFilter
+  } catch {
+    return undefined
+  }
+}
 
 const userDoc = {
   name: "admin@blesserp.com",
@@ -204,6 +219,12 @@ export const frappeSettingsHandlers = [
       return HttpResponse.json({ message: matchIncoterm(txt) })
     }
 
+    if (doctype === "Account") {
+      const items = applyLinkFilters(accountSearchOptions, parseSearchLinkFilters(url.searchParams.get("filters")))
+      const filtered = items.filter((o) => !txt || o.value.toLowerCase().includes(txt))
+      return HttpResponse.json({ message: filtered.map((o) => ({ value: o.value })) })
+    }
+
     return HttpResponse.json({ message: [] })
   }),
 
@@ -216,10 +237,14 @@ export const frappeSettingsHandlers = [
     const query = body.get("query") ?? ""
 
     if (doctype === "DocType") {
+      // Payment Reconciliation's party_type search_link carries
+      // filters={"name":["in",["Customer","Employee","Shareholder","Supplier"]]}
+      // so only the reconcilable party doctypes come back (module descriptions).
       const options = [
         { value: "Customer", description: "Selling" },
-        { value: "Lead", description: "CRM" },
-        { value: "Prospect", description: "CRM" },
+        { value: "Employee", description: "Setup" },
+        { value: "Shareholder", description: "Setup" },
+        { value: "Supplier", description: "Buying" },
       ]
       const filtered = options.filter(
         (o) => !txt || o.value.toLowerCase().includes(txt)
@@ -261,6 +286,36 @@ export const frappeSettingsHandlers = [
 
     if (doctype === "Incoterm") {
       return HttpResponse.json({ message: matchIncoterm(txt) })
+    }
+
+    if (doctype === "Account") {
+      const items = applyLinkFilters(accountSearchOptions, parseSearchLinkFilters(body.get("filters")))
+      return HttpResponse.json({
+        message: items
+          .filter((o) => !txt || o.value.toLowerCase().includes(txt))
+          .map((o) => ({ value: o.value })),
+      })
+    }
+
+    if (doctype === "Cost Center") {
+      const items = applyLinkFilters(costCenterSearchOptions, parseSearchLinkFilters(body.get("filters")))
+      return HttpResponse.json({
+        message: items
+          .filter((o) => !txt || o.value.toLowerCase().includes(txt))
+          .map((o) => ({ value: o.value })),
+      })
+    }
+
+    // Generic link-option fallback (Account / Company / Cost Center / Project /
+    // Bank Account / Mode of Payment / ...) served from the shared lookup map.
+    const lookup = linkOptions[doctype]
+    if (lookup) {
+      const filtered = lookup.filter(
+        (name) => !txt || name.toLowerCase().includes(txt)
+      )
+      return HttpResponse.json({
+        message: filtered.map((name) => ({ value: name, label: name })),
+      })
     }
 
     return HttpResponse.json({ message: [] })

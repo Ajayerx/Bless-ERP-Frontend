@@ -10,7 +10,8 @@ const Checkbox = React.forwardRef<
     error?: string
   }
 >(({ className, label, error, id, ...props }, ref) => {
-  const checkboxId = id ?? React.useId()
+  const autoId = React.useId()
+  const checkboxId = id ?? autoId
 
   const checkbox = (
     <CheckboxPrimitive.Root

@@ -10,6 +10,8 @@ import type {
   GeneralLedgerRow,
   GeneralLedgerFilters,
   GeneralLedgerReport,
+  BankReconciliationStatementFilters,
+  BankReconciliationStatementReport,
   SalesReport,
   ARReport,
   InventoryReport,
@@ -31,6 +33,9 @@ export type {
   GeneralLedgerRow,
   GeneralLedgerFilters,
   GeneralLedgerReport,
+  BankReconciliationStatementRow,
+  BankReconciliationStatementFilters,
+  BankReconciliationStatementReport,
 } from "../types"
 
 interface RegisterColumn {
@@ -243,5 +248,21 @@ export const reportService = {
     const columns = message?.columns ?? []
     const rows = message?.result ?? []
     return { columns, rows }
+  },
+
+  // Runs the ERPNext "Bank Reconciliation Statement" script report. Rows include
+  // the uncleared vouchers plus the balance / outstanding / incorrectly-cleared
+  // summary rows the server appends.
+  async getBankReconciliationStatement(
+    filters: BankReconciliationStatementFilters
+  ): Promise<BankReconciliationStatementReport> {
+    const message = await postMethod<{
+      columns: GeneralLedgerColumn[]
+      result: BankReconciliationStatementReport["rows"]
+    }>("frappe.desk.query_report.run", {
+      report_name: "Bank Reconciliation Statement",
+      filters,
+    })
+    return { columns: message?.columns ?? [], rows: message?.result ?? [] }
   },
 }

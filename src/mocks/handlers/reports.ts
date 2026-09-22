@@ -2,6 +2,7 @@ import { http, HttpResponse, delay } from "msw"
 import reportsData from "../data/reports.json"
 import { generateGeneralLedger } from "../data/general-ledger"
 import { generateSalesRegister, generatePurchaseRegister } from "../data/registers"
+import { generateBankReconciliationStatement } from "../data/bank_reconciliation_statement"
 
 export const reportHandlers = [
   http.get("/api/reports/tax-summary", async () => {
@@ -55,6 +56,12 @@ export const reportHandlers = [
     if (reportName === "Purchase Register") {
       return HttpResponse.json({
         message: generatePurchaseRegister(filters as never),
+        error: null,
+      })
+    }
+    if (reportName === "Bank Reconciliation Statement") {
+      return HttpResponse.json({
+        message: generateBankReconciliationStatement(filters as never),
         error: null,
       })
     }

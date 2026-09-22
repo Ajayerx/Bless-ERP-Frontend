@@ -199,13 +199,33 @@ const globalDefaults = {
 }
 
 // ── Lookup doctypes ──────────────────────────────────────────────────
-const linkOptions: Record<string, string[]> = {
+export interface CostCenterSearchOption {
+  value: string
+  is_group: number
+  company: string
+}
+
+// ERPNext sets a query on cost_center links every place (Payment
+// Reconciliation header/payments/allocation, Sales Invoice items/write-off)
+// with `{ company, is_group: 0 }`. The mock mirrors that so a company's
+// Cost Center narrows to its single default leaf cost center — the same
+// narrowing Account gets via accountSearchOptions.
+export const costCenterSearchOptions: CostCenterSearchOption[] = [
+  { value: "Main - BE", is_group: 0, company: "BlessERP Inc." },
+  { value: "Operations - BE", is_group: 1, company: "BlessERP Inc." },
+  { value: "Sales - BE", is_group: 1, company: "BlessERP Inc." },
+]
+
+export const linkOptions: Record<string, string[]> = {
   "Customer Group": ["Commercial", "Individual", "Government", "Non-Profit", "Retailer"],
   "Territory": ["Canada", "United States", "United Kingdom", "Australia", "Europe", "Asia"],
   "Salutation": ["Mr", "Mrs", "Ms", "Dr", "Prof", "Sir"],
   "Gender": ["Male", "Female", "Other"],
   "Currency": ["CAD", "USD", "EUR", "GBP", "AUD"],
-  "Bank Account": ["Business Chequing - TD Bank", "Savings - RBC", "USD Account - BMO"],
+  "Bank Account": ["Cheque - BE", "Business Chequing - TD Bank", "Savings - RBC", "USD Account - BMO"],
+  "Cost Center": ["Main - BE", "Operations - BE", "Sales - BE"],
+  Project: ["PROJ-0001", "PROJ-0002"],
+  "Mode of Payment": ["Cash", "Cheque", "Credit Card", "Wire Transfer", "Bank Draft"],
   "Price List": ["Standard Selling", "Wholesale", "Retail", "Export", "Promotional"],
   "Company": ["BlessERP Inc.", "BlessERP US Inc."],
   "Market Segment": ["SMB", "Mid-Market", "Enterprise", "Government"],
@@ -216,7 +236,7 @@ const linkOptions: Record<string, string[]> = {
   "Payment Terms Template": ["Net 30", "Net 15", "Net 45", "Net 60", "Due on Receipt"],
   "Loyalty Program": ["Gold Rewards", "Platinum Rewards", "Silver Benefits"],
   "Sales Partner": ["ABC Sales Agency", "Northern Distributors", "Pacific Sales Group"],
-  "Account": ["Accounts Receivable", "Accounts Payable", "Cash on Hand", "Sales Revenue", "Cost of Goods Sold"],
+  "Account": ["Accounts Receivable", "Accounts Payable", "Cash on Hand", "Sales Revenue", "Cost of Goods Sold", "Debtors - BE", "Creditors - BE", "Advances Received - BE", "Advances Paid - BE", "Cash - BE", "Cheque - BE", "Wire Transfer - BE"],
   "Sales Person": ["John Smith", "Jane Doe", "Bob Johnson", "Alice Brown"],
   "Order Type": ["Sales", "Maintenance", "Shopping Cart"],
   "Sales Taxes and Charges Template": ["Canada GST/QST - BE", "Zero Rated - BE", "Exempt - BE"],
@@ -229,6 +249,90 @@ const linkOptions: Record<string, string[]> = {
   "Lead": ["LEAD-0001", "LEAD-0002", "LEAD-0003"],
   "Prospect": ["PROS-0001", "PROS-0002"],
   "Opportunity": ["OPP-0001", "OPP-0002", "OPP-0003"],
+}
+
+// ── Account search_link metadata ─────────────────────────────────────
+// Account Link fields that carry a set_query (Payment Reconciliation's
+// receivable_payable_account / default_advance_account / bank_cash_account,
+// CustomerForm default account, bank statement account, tax accounts...) pass
+// ERPNext-style filters to frappe.desk.search.search_link. This catalog gives
+// the mock the fields those filters are evaluated against.
+export interface AccountSearchOption {
+  value: string
+  account_type: string
+  root_type: string
+  is_group: number
+}
+
+export const accountSearchOptions: AccountSearchOption[] = [
+  { value: "Debtors - BE", account_type: "Receivable", root_type: "Asset", is_group: 0 },
+  { value: "Creditors - BE", account_type: "Payable", root_type: "Liability", is_group: 0 },
+  { value: "Advances Received - BE", account_type: "Receivable", root_type: "Liability", is_group: 0 },
+  { value: "Advances Paid - BE", account_type: "Payable", root_type: "Asset", is_group: 0 },
+  { value: "Cash - BE", account_type: "Cash", root_type: "Asset", is_group: 0 },
+  { value: "Cheque - BE", account_type: "Bank", root_type: "Asset", is_group: 0 },
+  { value: "Wire Transfer - BE", account_type: "Bank", root_type: "Asset", is_group: 0 },
+  { value: "Credit Card - BE", account_type: "Bank", root_type: "Asset", is_group: 0 },
+  { value: "Bank Draft - BE", account_type: "Bank", root_type: "Asset", is_group: 0 },
+]
+
+export type LinkOptionFilter = unknown[][] | Record<string, string | number | boolean | unknown[]>
+
+interface ParsedLinkFilter {
+  field: string
+  op: "=" | "in"
+  value: unknown
+}
+
+function parseLinkFilters(filters: LinkOptionFilter): ParsedLinkFilter[] {
+  const parsed: ParsedLinkFilter[] = []
+  if (Array.isArray(filters)) {
+    for (const f of filters) {
+      // Accepts [field, op, value] triples or [doctype, field, op, value]
+      // quadruples (the leading doctype is stripped).
+      if (!Array.isArray(f) || f.length < 3) continue
+      const [field, op, value] = (f.length >= 4 ? f.slice(1) : f) as [string, string, unknown]
+      parsed.push({ field: String(field), op: op === "in" ? "in" : "=", value })
+    }
+  } else {
+    for (const [field, value] of Object.entries(filters)) {
+      if (Array.isArray(value)) {
+        parsed.push(
+          value.length === 2 && String(value[0]) === "in"
+            ? { field, op: "in", value: value[1] }
+            : { field, op: "in", value },
+        )
+      } else {
+        parsed.push({ field, op: "=", value })
+      }
+    }
+  }
+  return parsed
+}
+
+function linkValueEqual(a: unknown, b: unknown): boolean {
+  if (typeof a === "number" && typeof b === "number") return a === b
+  return String(a) === String(b)
+}
+
+function matchesLinkFilter(option: Record<string, unknown>, filter: ParsedLinkFilter): boolean {
+  // The mock is a single-company chart of accounts; filters on fields the
+  // options do not carry (company, disabled, ...) are satisfied by default.
+  const optValue = option[filter.field]
+  if (optValue === undefined) return true
+  if (filter.op === "in") {
+    return Array.isArray(filter.value) && filter.value.some((v) => linkValueEqual(optValue, v))
+  }
+  return linkValueEqual(optValue, filter.value)
+}
+
+export function applyLinkFilters<T extends object>(
+  options: T[],
+  filters: LinkOptionFilter | undefined,
+): T[] {
+  if (!filters) return options
+  const parsed = parseLinkFilters(filters)
+  return options.filter((o) => parsed.every((f) => matchesLinkFilter(o as Record<string, unknown>, f)))
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────
