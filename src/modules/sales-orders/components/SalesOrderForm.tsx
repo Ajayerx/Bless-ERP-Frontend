@@ -70,7 +70,7 @@ import {
   salesOrderResolveField,
   SALES_ORDER_DEFAULT_FIELD_STATE,
 } from "../hooks/useVisibilityRules"
-import { formatCurrency, formatFixed } from "@/lib/utils"
+import { formatCurrency, formatFixed, todayISO as localTodayISO } from "@/lib/utils"
 
 const ORDER_TYPE_OPTIONS = ["Sales", "Maintenance", "Shopping Cart"] as const
 
@@ -110,7 +110,7 @@ export interface SalesOrderFormProps {
 }
 
 function todayISO(): string {
-  return new Date().toISOString().slice(0, 10)
+  return localTodayISO()
 }
 
 // Field names excluded from the submitted-Sales-Order diff: the computed
@@ -232,9 +232,7 @@ function diffSubmittedForm(
 }
 
 function addDaysISO(days: number): string {
-  const d = new Date()
-  d.setDate(d.getDate() + days)
-  return d.toISOString().slice(0, 10)
+  return localTodayISO(days)
 }
 
 function normalizeDisplayText(value?: string): string {

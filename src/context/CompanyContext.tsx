@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from "react"
 import { apiClient, setActiveCompany } from "../services/api-client"
-import { getCompanyDefaults, type CompanyDefaults } from "../services/company"
+import { getCompanyDefaults, resetCompanyDefaultsCache, type CompanyDefaults } from "../services/company"
 
 const STORAGE_KEY = "blesserp_selected_company"
 
@@ -45,7 +45,7 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
         const rows = await apiClient<{ name: string; company_name: string; default_currency: string; tax_id: string }[]>(
           "/resource/Company?fields=" +
             encodeURIComponent(JSON.stringify(["name", "company_name", "default_currency", "tax_id"])) +
-            "&limit_page_length=100"
+            "&limit_page_length=100&order_by=name"
         )
         if (cancelled) return
         const list: CompanyInfo[] = rows.map((r) => ({
@@ -56,10 +56,13 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
         }))
         setCompanies(list)
 
-        // If no company selected yet, use global default
+        // No stored selection yet: prefer the site's own default. resolveCompany()
+        // returns "" when several companies exist with nothing configured, in
+        // which case the switcher stays closed and the affected workspaces show
+        // a Company selector rather than posting a fabricated name.
         if (!selectedCompany) {
           const defaults = await getCompanyDefaults()
-          if (!cancelled) setSelectedCompanyState(defaults.company)
+          if (!cancelled && defaults.company) setSelectedCompanyState(defaults.company)
         }
         // Set active company for api-client header
         setActiveCompany(selectedCompany || "")
@@ -72,14 +75,20 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
     return () => { cancelled = true }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Fetch company defaults when selected company changes
+  // Fetch company defaults for the *selected* company. Passing the company in
+  // is what makes this correct: getCompanyDefaults() on its own resolves the
+  // site default, which can differ from the company the user switched to and
+  // then disagree with the X-Frappe-Company header sent by api-client.
   useEffect(() => {
-    if (!selectedCompany) return
+    if (!selectedCompany) {
+      setCompanyDefaults(null)
+      return
+    }
     setActiveCompany(selectedCompany)
     let cancelled = false
     ;(async () => {
       try {
-        const defaults = await getCompanyDefaults()
+        const defaults = await getCompanyDefaults(selectedCompany)
         if (!cancelled) setCompanyDefaults(defaults)
       } catch {
         // Silently fail
@@ -89,8 +98,16 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
   }, [selectedCompany])
 
   const selectCompany = useCallback((companyName: string) => {
+    // Drop the outgoing company's cached defaults before the reload so nothing
+    // can read them under the new company's header.
+    resetCompanyDefaultsCache()
+    setActiveCompany(companyName)
     setSelectedCompanyState(companyName)
-    localStorage.setItem(STORAGE_KEY, companyName)
+    try {
+      localStorage.setItem(STORAGE_KEY, companyName)
+    } catch {
+      // storage unavailable (private mode) — the in-memory value still applies
+    }
     // Force page reload to re-fetch all data with new company context
     window.location.reload()
   }, [])

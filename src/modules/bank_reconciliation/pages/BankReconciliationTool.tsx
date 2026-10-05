@@ -15,6 +15,7 @@ import {
 } from "@/components/ui"
 import { apiClient } from "@/services/api-client"
 import { searchLink } from "@/services"
+import { todayISO } from "@/lib/utils"
 import {
   autoReconcileVouchers,
   getAccountBalance,
@@ -28,13 +29,13 @@ import ReconcileBankTransactionDialog from "../components/ReconcileBankTransacti
 const CURRENCY = "CAD"
 
 function today(): string {
-  return new Date().toISOString().slice(0, 10)
+  return todayISO()
 }
 
 function monthAgo(): string {
   const d = new Date()
   d.setMonth(d.getMonth() - 1)
-  return d.toISOString().slice(0, 10)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
 }
 
 function dayBefore(date: string): string {
@@ -42,7 +43,7 @@ function dayBefore(date: string): string {
   const d = new Date(`${date}T00:00:00`)
   if (Number.isNaN(d.getTime())) return ""
   d.setDate(d.getDate() - 1)
-  return d.toISOString().slice(0, 10)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
 }
 
 export default function BankReconciliationTool() {

@@ -9,7 +9,7 @@ import { validateLink } from "@/services/frappe-client"
 import { getCompanyDefaults } from "@/services/company"
 import { ApiError } from "@/services/api-client"
 import { useMessageDialog, useToast, messageFromError } from "@/components/ui"
-import { cn, formatFixed, formatFloatInput, parseAmountInput } from "@/lib/utils"
+import { generateId, cn, formatFixed, formatFloatInput, parseAmountInput, todayISO } from "@/lib/utils"
 import { useAutoGrowTextarea } from "@/hooks/useAutoGrowTextarea"
 import LinkField from "./LinkField"
 import GetOutstandingDialog, { type GetOutstandingFilters } from "./GetOutstandingDialog"
@@ -176,7 +176,7 @@ const PARTY_ACCOUNT_TYPES: Record<string, string> = {
 }
 
 function createDeductionId(): string {
-  return crypto.randomUUID()
+  return generateId()
 }
 
 const inputClass =
@@ -210,7 +210,7 @@ export default forwardRef<PaymentFormHandle, PaymentFormProps>(function PaymentF
 
   const [namingSeries, setNamingSeries] = useState("ACC-PAY-.YYYY.-")
   const [paymentType, setPaymentType] = useState<PaymentType>("Receive")
-  const [postingDate, setPostingDate] = useState(new Date().toISOString().slice(0, 10))
+  const [postingDate, setPostingDate] = useState(todayISO())
   const [modeOfPayment, setModeOfPayment] = useState("")
   const [modeOfPaymentError, setModeOfPaymentError] = useState("")
   const [company, setCompany] = useState("")
@@ -286,6 +286,10 @@ export default forwardRef<PaymentFormHandle, PaymentFormProps>(function PaymentF
   const allocatePaymentAmountRef = useRef(true)
   const prevSalesTaxesTemplateRef = useRef(initialValues?.sales_taxes_and_charges_template || "")
   const prevPurchaseTaxesTemplateRef = useRef(initialValues?.purchase_taxes_and_charges_template || "")
+  // When a Payment Entry is seeded from an invoice or a draft, the reference rows
+  // belong to that document. A party/company edit must not wipe them, so the first
+  // party-details fetch keeps them and only later ones clear.
+  const keepSeedRefs = useRef((initialValues?.references?.length ?? 0) > 0)
 
   const remarksRef = useAutoGrowTextarea()
 
@@ -453,7 +457,7 @@ export default forwardRef<PaymentFormHandle, PaymentFormProps>(function PaymentF
       const v = initialValues
       setNamingSeries(v.naming_series || "ACC-PAY-.YYYY.-")
       setPaymentType((v.payment_type as PaymentType) || "Receive")
-      setPostingDate(v.posting_date || new Date().toISOString().slice(0, 10))
+      setPostingDate(v.posting_date || todayISO())
       setModeOfPayment(v.mode_of_payment || "")
       setCompany(v.company)
       setPartyType(v.party_type || "Customer")
@@ -551,7 +555,7 @@ export default forwardRef<PaymentFormHandle, PaymentFormProps>(function PaymentF
       const v = mappedDoc
       setNamingSeries(v.naming_series || "ACC-PAY-.YYYY.-")
       setPaymentType((v.payment_type as PaymentType) || "Receive")
-      setPostingDate(v.posting_date || new Date().toISOString().slice(0, 10))
+      setPostingDate(v.posting_date || todayISO())
       setModeOfPayment(v.mode_of_payment || "")
       setCompany(v.company)
       setPartyType(v.party_type || "Customer")
@@ -711,7 +715,7 @@ export default forwardRef<PaymentFormHandle, PaymentFormProps>(function PaymentF
     if (!initialValues && !mappedDoc) {
       setNamingSeries("ACC-PAY-.YYYY.-")
       setPaymentType("Receive")
-      setPostingDate(new Date().toISOString().slice(0, 10))
+      setPostingDate(todayISO())
       setModeOfPayment("")
       setBankAccount("")
       setPartyBankAccount("")

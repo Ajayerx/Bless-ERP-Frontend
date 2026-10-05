@@ -1,24 +1,29 @@
 "use client"
-import { useState, useRef } from "react"
+import { useRef, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { motion } from "framer-motion"
-import { ArrowLeft, Save } from "lucide-react"
+import { ArrowLeft, Save, Send } from "lucide-react"
 import Topbar from "@/components/layout/Topbar"
 import { Button, Link } from "@/components/ui"
-import { journalEntryService, type JournalEntryFormData } from "@/services"
-import JournalEntryForm, { type JournalEntryFormRef } from "../components/JournalEntryForm"
+import JournalEntryForm, { type JournalEntryFormHandle } from "../components/JournalEntryForm"
 
 export default function NewJournalEntry() {
   const navigate = useNavigate()
-  const formRef = useRef<JournalEntryFormRef>(null)
-  const [loading, setLoading] = useState(false)
+  const formRef = useRef<JournalEntryFormHandle>(null)
+  const [loading, setLoading] = useState<"Save" | "Submit" | null>(null)
+  const [error, setError] = useState("")
 
-  const onSubmit = async (data: JournalEntryFormData) => {
-    setLoading(true)
+  const run = async (action: "Save" | "Submit") => {
+    setError("")
+    setLoading(action)
     try {
-      const res = await journalEntryService.create(data)
-      navigate(`/journal-entries/${res.id}`)
-    } finally { setLoading(false) }
+      const name = await formRef.current?.save(action)
+      if (name) navigate(`/journal-entries/${encodeURIComponent(name)}`)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to save journal entry.")
+    } finally {
+      setLoading(null)
+    }
   }
 
   return (
@@ -29,11 +34,23 @@ export default function NewJournalEntry() {
           <Link to="/journal-entries" className="flex items-center gap-2 text-sm text-muted hover:text-body transition-colors">
             <ArrowLeft size={18} /> Back to Journal Entries
           </Link>
-          <Button onClick={() => formRef.current?.submit()} loading={loading}><Save size={14} /> Save Entry</Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={() => run("Save")} loading={loading === "Save"}>
+              <Save size={14} /> Save
+            </Button>
+            <Button onClick={() => run("Submit")} loading={loading === "Submit"}>
+              <Send size={14} /> Save & Submit
+            </Button>
+          </div>
         </div>
         <h1 className="text-2xl font-bold text-heading mb-6">New Journal Entry</h1>
+        {error && (
+          <div className="mb-4 text-sm text-danger-600 bg-danger-50 border border-danger-100 px-4 py-3 rounded-[10px]">
+            {error}
+          </div>
+        )}
         <div className="bg-white rounded-2xl shadow-card p-6">
-          <JournalEntryForm ref={formRef} onSubmit={onSubmit} />
+          <JournalEntryForm ref={formRef} mode="create" />
         </div>
       </motion.div>
     </>

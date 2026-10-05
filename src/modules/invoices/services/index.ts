@@ -3,6 +3,7 @@ import { postMethod, postMethodRaw } from "@/services/frappe-client"
 import { API_CONFIG } from "@/config/api.config"
 import { getCompany } from "@/services/company"
 import { getDefaultTaxTemplate as sharedGetDefault, getTaxTemplateDetails as sharedGetDetails } from "@/services/tax-template"
+import { generateId } from "@/lib/utils"
 export type { TaxTemplateResult, TaxRow } from "@/services/tax-template"
 import type { TaxTemplateResult, TaxRow } from "@/services/tax-template"
 import type { SalesInvoice, SalesInvoiceFormData, SalesInvoiceItem, SalesInvoiceTax, SalesInvoiceListResponse, SalesInvoiceAdvance, EditableTaxRow, ChargeType } from "../types"
@@ -1473,6 +1474,7 @@ export const invoiceService = {
     subject: string
     content: string
     printFormat?: string
+    attachPdf?: boolean
   }): Promise<{ name: string }> {
     return apiClient<{ name: string }>("/method/frappe.core.doctype.communication.email.make", {
       method: "POST",
@@ -1485,6 +1487,9 @@ export const invoiceService = {
         communication_medium: "Email",
         send_email: 1,
         print_format: data.printFormat || "Standard",
+        ...(data.attachPdf
+          ? { attach_document_print: JSON.stringify({ doctype: "Sales Invoice", name }) }
+          : {}),
       }),
     })
   },
@@ -1656,7 +1661,7 @@ export const invoiceService = {
         docs: JSON.stringify({
           ...doc,
           doctype: "Sales Invoice",
-          name: `new-sales-invoice-${crypto.randomUUID()}`,
+          name: `new-sales-invoice-${generateId()}`,
           __islocal: 1,
           __unsaved: 1,
           docstatus: 0,

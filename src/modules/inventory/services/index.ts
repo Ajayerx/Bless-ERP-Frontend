@@ -1,4 +1,5 @@
 import { apiClient } from "@/services/api-client"
+import { todayISO } from "@/lib/utils"
 import type {
   Warehouse, WarehouseListResponse,
   StockTransfer, StockTransferListResponse, StockTransferItem,
@@ -341,7 +342,7 @@ export const inventoryService = {
         company: data.company,
         from_warehouse: data.from_warehouse || undefined,
         to_warehouse: data.to_warehouse || undefined,
-        posting_date: data.posting_date || new Date().toISOString().slice(0, 10),
+        posting_date: data.posting_date || todayISO(),
         remarks: data.remarks || undefined,
         items: data.items.map((i) => ({
           item_code: i.item_code,
@@ -419,7 +420,7 @@ export const inventoryService = {
         purpose: "Stock Reconciliation",
         company: data.company,
         set_warehouse: data.set_warehouse || undefined,
-        posting_date: data.posting_date || new Date().toISOString().slice(0, 10),
+        posting_date: data.posting_date || todayISO(),
         items: data.items.map((i) => ({
           item_code: i.item_code,
           warehouse: i.warehouse,

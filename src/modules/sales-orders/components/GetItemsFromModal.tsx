@@ -7,7 +7,7 @@ import { Button } from "@/components/ui"
 import LinkSearchField from "@/components/ui/LinkSearchField"
 import { salesOrderService } from "@/modules/sales-orders/services"
 import { customerService } from "@/modules/customers/services"
-import { cn } from "@/lib/utils"
+import { generateId, cn } from "@/lib/utils"
 
 interface SourceDoc {
   name: string
@@ -314,7 +314,7 @@ export default function GetItemsFromModal({
         setError(`No items were returned from the selected ${sourceDoctype} document(s).`)
         return
       }
-      onItemsFetched(items.map((item) => ({ ...item, id: crypto.randomUUID() })))
+      onItemsFetched(items.map((item) => ({ ...item, id: generateId() })))
       onOpenChange(false)
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to fetch items.")

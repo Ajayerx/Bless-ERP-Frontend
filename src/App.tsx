@@ -18,6 +18,7 @@ import { Quotations, QuotationCreateWorkspace, QuotationDetailWorkspace } from "
 import { SalesOrders, SalesOrderCreateWorkspace, SalesOrderDetailWorkspace } from "./modules/sales-orders/pages";
 import { Taxes } from "./modules/taxes/pages";
 import { Settings } from "./modules/settings/pages";
+import { EmailTemplates } from "./modules/email_templates/pages";
 import { Contacts, NewContact, ContactDetail, EditContact } from "./modules/contacts/pages";
 import { Opportunities, NewOpportunity, OpportunityDetail, EditOpportunity } from "./modules/opportunities/pages";
 import { BankAccounts, NewBankAccount, BankAccountDetail, EditBankAccount } from "./modules/bank_accounts/pages";
@@ -160,6 +161,7 @@ function App() {
         <Route path="apps" element={<Apps />} />
         <Route path="apps/:id" element={<AppDetail />} />
         <Route path="settings" element={<Settings />} />
+        <Route path="settings/email-templates" element={<EmailTemplates />} />
         <Route path="reports/sales" element={<SalesReportPage />} />
         <Route path="reports/ar" element={<ARReportPage />} />
         <Route path="reports/inventory" element={<InventoryReportPage />} />

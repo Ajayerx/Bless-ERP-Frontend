@@ -2,6 +2,7 @@ import { http, HttpResponse, delay } from "msw"
 import {
   linkOptions,
   accountSearchOptions,
+  costCenterSearchOptions,
   applyLinkFilters,
   type LinkOptionFilter,
 } from "./frappe-lookups"
@@ -223,6 +224,21 @@ export const frappeSettingsHandlers = [
       const items = applyLinkFilters(accountSearchOptions, parseSearchLinkFilters(url.searchParams.get("filters")))
       const filtered = items.filter((o) => !txt || o.value.toLowerCase().includes(txt))
       return HttpResponse.json({ message: filtered.map((o) => ({ value: o.value })) })
+    }
+
+    if (
+      doctype === "Bank Account" ||
+      doctype === "Bank" ||
+      doctype === "Bank Account Type" ||
+      doctype === "Bank Account Subtype"
+    ) {
+      const options = linkOptions[doctype] ?? []
+      const filtered = options.filter((name) => !txt || name.toLowerCase().includes(txt))
+      if (doctype === "Bank Account") {
+        const rows = filtered.map((name) => ({ name, is_company_account: 1, bank: "", account_name: name }))
+        return HttpResponse.json({ message: rows.map((r) => ({ value: r.name, label: r.name })) })
+      }
+      return HttpResponse.json({ message: filtered.map((name) => ({ value: name, label: name })) })
     }
 
     return HttpResponse.json({ message: [] })

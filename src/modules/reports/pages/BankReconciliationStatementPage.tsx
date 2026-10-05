@@ -17,7 +17,7 @@ import {
 } from "@/components/ui"
 import { searchLink, reportService } from "@/services"
 import { useCompany } from "@/context/CompanyContext"
-import { formatDate } from "@/lib/utils"
+import { formatDate, todayISO } from "@/lib/utils"
 import type {
   BankReconciliationStatementReport,
   BankReconciliationStatementRow,
@@ -25,7 +25,7 @@ import type {
 } from "@/modules/reports/types"
 
 function today(): string {
-  return new Date().toISOString().slice(0, 10)
+  return todayISO()
 }
 
 function fmtCurrency(n: number | null | undefined, currency: string): string {

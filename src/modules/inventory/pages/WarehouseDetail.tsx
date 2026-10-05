@@ -10,7 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle, Button, Badge } from "@/compo
 import { Skeleton } from "@/components/ui/skeleton"
 import { inventoryService } from "@/modules/inventory/services"
 import type { Warehouse, InventoryMovement } from "@/modules/inventory/types"
-import { cn } from "@/lib/utils"
+import { cn, formatDate } from "@/lib/utils"
 
 export default function WarehouseDetail() {
   const { id } = useParams<{ id: string }>()
@@ -208,7 +208,7 @@ export default function WarehouseDetail() {
                   ) : (
                     movements.map((m) => (
                       <tr key={m.name} className="hover:bg-gray-50/60 transition-colors">
-                        <td className="px-5 py-3 text-sm text-muted">{new Date(m.posting_date).toLocaleDateString()}</td>
+                        <td className="px-5 py-3 text-sm text-muted">{formatDate(m.posting_date)}</td>
                         <td className="px-5 py-3 text-sm font-medium text-heading">{m.item_code}</td>
                         <td className="px-5 py-3 text-center">
                           <TypeBadge type={m.movement_type} />

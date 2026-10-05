@@ -1,3 +1,4 @@
+import { localDateISO } from "@/lib/utils"
 import { http, HttpResponse, delay, passthrough } from "msw"
 import { salesOrders, quotationItems, quotationTaxes, paymentScheduleRows } from "./frappe-lookups"
 
@@ -250,7 +251,7 @@ export const salesOrderFormHandlers = [
         name,
         customer: payload.customer ?? "",
         customer_name: payload.customer_name ?? "",
-        transaction_date: payload.transaction_date ?? new Date().toISOString().slice(0, 10),
+        transaction_date: payload.transaction_date ?? localDateISO(new Date()),
         delivery_date: payload.delivery_date ?? "",
         company: payload.company ?? "BlessERP Inc.",
         currency: payload.currency ?? "CAD",
@@ -416,29 +417,61 @@ export const salesOrderFormHandlers = [
   // Mirrors the quotation mock handler so item codes selected in the Update
   // Items dialog resolve price/rate/warehouse/income-account details exactly
   // like they do for a Quotation (the dialog enriches via the same desk call
-  // erpnext.stock.get_item_details.get_item_details).
+  // erpnext.stock.get_item_details.get_item_details). Buying docs (Purchase
+  // Order / Purchase Invoice) resolve the Standard Buying price list and an
+  // expense account, matching ERPNext accounts_controller behavior.
   http.post("/api/method/erpnext.stock.get_item_details.get_item_details", async ({ request }) => {
     await delay(120)
     const fields = await formFields(request)
     const args = safeJson<Record<string, unknown>>(fields.args ?? "", {})
+    const doc = safeJson<Record<string, unknown>>(fields.doc ?? "{}", {})
     const itemCode = String(args.item_code ?? "")
-    const items: Record<string, unknown> = {
-      "PRD-001": { item_name: "Organic All-Purpose Flour", uom: "Nos", conversion_factor: 1, price_list_rate: 25.0, rate: 25.0, amount: 0, warehouse: "Main Warehouse", income_account: "Income - BE", cost_center: "Main - BE", description: "Organic all-purpose flour, 10kg bag", stock_uom: "Nos", stock_qty: 0, is_free_item: 0 },
-      "PRD-002": { item_name: "Cold-Pressed Canola Oil", uom: "Nos", conversion_factor: 1, price_list_rate: 5.5, rate: 5.5, amount: 0, warehouse: "Main Warehouse", income_account: "Income - BE", cost_center: "Main - BE", description: "Cold-pressed canola oil, 1L", stock_uom: "Nos", stock_qty: 0, is_free_item: 0 },
-      "PRD-003": { item_name: "Wild Blueberry Jam", uom: "Nos", conversion_factor: 1, price_list_rate: 15.0, rate: 15.0, amount: 0, warehouse: "Main Warehouse", income_account: "Income - BE", cost_center: "Main - BE", description: "Wild blueberry jam, 500g jar", stock_uom: "Nos", stock_qty: 0, is_free_item: 0 },
-      "PRD-004": { item_name: "Atlantic Smoked Salmon", uom: "Nos", conversion_factor: 1, price_list_rate: 9.0, rate: 9.0, amount: 0, warehouse: "Cold Storage", income_account: "Income - BE", cost_center: "Main - BE", description: "Smoked salmon fillets, 250g pack", stock_uom: "Nos", stock_qty: 0, is_free_item: 0 },
-      "PRD-005": { item_name: "Maple Syrup (Grade A)", uom: "Nos", conversion_factor: 1, price_list_rate: 28.0, rate: 28.0, amount: 0, warehouse: "Main Warehouse", income_account: "Income - BE", cost_center: "Main - BE", description: "Grade A maple syrup, 750ml bottle", stock_uom: "Nos", stock_qty: 0, is_free_item: 0 },
+    const isBuying =
+      String(doc.doctype ?? "") === "Purchase Order" ||
+      String(doc.doctype ?? "") === "Purchase Invoice"
+    const catalog: Record<string, { item_name: string; warehouse: string; description: string }> = {
+      "PRD-001": { item_name: "Organic All-Purpose Flour", warehouse: "Main Warehouse", description: "Organic all-purpose flour, 10kg bag" },
+      "PRD-002": { item_name: "Cold-Pressed Canola Oil", warehouse: "Main Warehouse", description: "Cold-pressed canola oil, 1L" },
+      "PRD-003": { item_name: "Wild Blueberry Jam", warehouse: "Main Warehouse", description: "Wild blueberry jam, 500g jar" },
+      "PRD-004": { item_name: "Atlantic Smoked Salmon", warehouse: "Cold Storage", description: "Smoked salmon fillets, 250g pack" },
+      "PRD-005": { item_name: "Maple Syrup (Grade A)", warehouse: "Main Warehouse", description: "Grade A maple syrup, 750ml bottle" },
+      "PRD-006": { item_name: "Canadian Hard Red Wheat", warehouse: "Main Warehouse", description: "Hard red wheat, 25kg bag" },
+      "PRD-007": { item_name: "Fresh Atlantic Cod Fillets", warehouse: "Cold Storage", description: "Fresh cod fillets, sold by weight" },
+      "PRD-008": { item_name: "Quebec Aged Cheddar", warehouse: "Cold Storage", description: "Aged cheddar, 1kg block" },
+      "PRD-009": { item_name: "Natural Canadian Honey", warehouse: "Main Warehouse", description: "Raw honey, 500g jar" },
+      "PRD-010": { item_name: "Organic Mixed Greens", warehouse: "Cold Storage", description: "Organic mixed greens, 1L bag" },
+      "PRD-011": { item_name: "Artisan Sourdough Bread", warehouse: "Main Warehouse", description: "Sourdough bread, 400g loaf" },
+      "PRD-012": { item_name: "Alberta Beef Jerky", warehouse: "Main Warehouse", description: "Beef jerky, 150g pack" },
+      "PRD-013": { item_name: "Frozen Wild Blueberries", warehouse: "Cold Storage", description: "Frozen blueberries, 2kg bag" },
+      "PRD-014": { item_name: "Craft Soda Sampler Pack", warehouse: "Main Warehouse", description: "Craft soda, 12x355ml pack" },
+      "PRD-015": { item_name: "Gluten-Free Pancake Mix", warehouse: "Main Warehouse", description: "Gluten-free pancake mix, 1kg box" },
     }
+    const buyingRates: Record<string, number> = { "PRD-001": 18, "PRD-002": 3.2, "PRD-003": 9.5, "PRD-004": 5, "PRD-005": 16, "PRD-006": 4.2, "PRD-007": 11, "PRD-008": 8.8, "PRD-009": 9.1, "PRD-010": 2.5, "PRD-011": 1.9, "PRD-012": 6.3, "PRD-013": 7.2, "PRD-014": 5.4, "PRD-015": 7.6 }
+    const sellingRates: Record<string, number> = { "PRD-001": 25, "PRD-002": 5.5, "PRD-003": 15, "PRD-004": 9, "PRD-005": 28, "PRD-006": 6.5, "PRD-007": 15.5, "PRD-008": 13, "PRD-009": 14, "PRD-010": 3.75, "PRD-011": 3.5, "PRD-012": 9.75, "PRD-013": 11.5, "PRD-014": 8.25, "PRD-015": 12 }
+    const meta = catalog[itemCode]
+    if (!meta) return HttpResponse.json({ message: "Invalid item" })
+    const rate = (isBuying ? buyingRates[itemCode] : sellingRates[itemCode]) ?? 0
     const qty = Number(args.qty ?? 1)
-    const base = items[itemCode] as Record<string, unknown> | undefined
-    if (!base) return HttpResponse.json({ message: "Invalid item" })
-    const rate = Number(base.price_list_rate)
     return HttpResponse.json({
       message: {
-        ...base,
         item_code: itemCode,
+        item_name: meta.item_name,
+        uom: String(args.uom ?? "Nos"),
+        conversion_factor: 1,
+        warehouse: meta.warehouse,
+        description: meta.description,
+        income_account: "Income - BE",
+        expense_account: isBuying ? "Cost of Goods Sold - BE" : "Income - BE",
+        cost_center: "Main - BE",
+        stock_uom: "Nos",
+        stock_qty: 0,
+        is_free_item: 0,
+        price_list_rate: rate,
+        rate,
         qty,
         amount: Math.round(rate * qty * 100) / 100,
+        discount_percentage: 0,
+        discount_amount: 0,
         delivery_date: args.delivery_date ?? "",
       },
     })
@@ -468,7 +501,7 @@ export const salesOrderFormHandlers = [
       message: {
         payment_term: term,
         description: `Payment due ${term}`,
-        due_date: new Date().toISOString().slice(0, 10),
+        due_date: localDateISO(new Date()),
         invoice_portion: 50,
         payment_amount: 1000,
         base_payment_amount: 1000,

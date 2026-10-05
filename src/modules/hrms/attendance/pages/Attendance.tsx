@@ -5,6 +5,7 @@ import KpiCard from "../../../../components/ui/KpiCard"
 import { Badge } from "../../../../components/ui/badge"
 import { hrmsService } from "../../services"
 import type { AttendanceRecord } from "../../types"
+import { formatDate } from "@/lib/utils"
 import { CalendarDays, CheckCircle2, XCircle, AlertTriangle, Home } from "lucide-react"
 
 const statusVariant: Record<string, "success" | "warning" | "danger" | "info" | "default"> = {
@@ -55,7 +56,7 @@ export default function Attendance() {
     {
       key: "date",
       header: "Date",
-      render: (r: AttendanceRecord) => new Date(r.date).toLocaleDateString(),
+      render: (r: AttendanceRecord) => formatDate(r.date),
     },
     { key: "employeeId", header: "Employee ID" },
     {

@@ -1,3 +1,4 @@
+import { localDateISO } from "@/lib/utils"
 import type { Employee, AttendanceRecord, PayrollRecord, LeaveRequest } from "../types"
 
 const firstNames = ["James","Mary","Robert","Patricia","John","Jennifer","Michael","Linda","David","Elizabeth","William","Barbara","Richard","Susan","Joseph","Jessica","Thomas","Sarah","Christopher","Karen","Daniel","Lisa","Matthew","Nancy","Andrew","Betty","Joshua","Margaret","Ryan","Sandra","Brandon","Ashley","Justin","Dorothy","Nicholas","Kimberly","Eric","Donna","Jacob","Helen","Lucas","Carol","Ethan","Sharon","Alexander","Michelle","Benjamin","Laura","Samuel","Emily"]
@@ -27,7 +28,7 @@ function randomInt(min: number, max: number): number {
 
 function randomDate(start: Date, end: Date): string {
   const d = new Date(start.getTime() + Math.random() * (end.getTime() - start.getTime()))
-  return d.toISOString().slice(0, 10)
+  return localDateISO(d)
 }
 
 function generateEmployeeCode(index: number): string {
@@ -75,7 +76,7 @@ export function generateAttendance(employees: Employee[], daysBack: number): Att
       const date = new Date(now)
       date.setDate(date.getDate() - d)
       if (date.getDay() === 0 || date.getDay() === 6) continue
-      const dateStr = date.toISOString().slice(0, 10)
+      const dateStr = localDateISO(date)
       const status = emp.status === "On Leave" ? "Absent" : randomItem(statuses)
       const checkInHour = status === "Late" ? randomInt(9, 10) : randomInt(7, 8)
       const checkInMin = randomInt(0, 59)
@@ -167,7 +168,7 @@ export function generateLeaveRequests(employees: Employee[], count: number): Lea
       employeeName: emp.name,
       leaveType,
       startDate,
-      endDate: endDate.toISOString().slice(0, 10),
+      endDate: localDateISO(endDate),
       days,
       reason: randomItem(["Personal reasons", "Medical appointment", "Family event", "Vacation", "Not feeling well", "Travel", "Family emergency", "Doctor's visit"]),
       status,

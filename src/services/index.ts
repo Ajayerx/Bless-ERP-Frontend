@@ -6,12 +6,19 @@ export type { TaxTemplateResult, TaxRow } from "./tax-template"
 export {
   getValue,
   getAccountingDimensions,
+  getDocList,
+  getDocCount,
+  submitDoc,
+  cancelDoc,
+  amendDoc,
+  buildDocListUrl,
 } from "./frappe-client"
 export type {
   LinkValidationResult,
   AccountingDimension,
   AccountingDimensionsResult,
   CompanyFetchFields,
+  DocListParams,
 } from "./frappe-client"
 
 // Module re-exports
@@ -59,19 +66,50 @@ export type {
 } from "@/modules/products/services"
 
 export { supplierService } from "@/modules/suppliers/services"
-export type { Supplier, SupplierFormData, SupplierListResponse } from "@/modules/suppliers/services"
+export type {
+  Supplier, SupplierFormData, SupplierListResponse, SupplierListFilters,
+  SupplierDetail, SupplierDashboardCounts, SupplierAccountRow, SupplierContactDetail,
+  SupplierAddressDetail, SupplierAddressInput, SupplierStatus, SupplierHoldType,
+  SupplierTransaction,
+} from "@/modules/suppliers/services"
+export { SUPPLIER_EXPORT_FIELDS } from "@/modules/suppliers/services"
 
-export { expenseService } from "@/modules/expenses/services"
-export type { Expense, ExpenseFormData, ExpenseListResponse } from "@/modules/expenses/services"
+export { expenseService, buildExpenseJE } from "@/modules/expenses/services"
+export type { Expense, ExpenseFormData, ExpenseListResponse, ExpenseStatus, ExpenseListParams } from "@/modules/expenses/services"
 
-export { billService } from "@/modules/bills/services"
-export type { Bill, BillListResponse, BillFormData } from "@/modules/bills/services"
+export { journalEntryService as sharedJournalEntryService, JOURNAL_ENTRY_DOCTYPE } from "./journal-entry.service"
+export type {
+  ExpenseRow,
+  ExpenseListFilters,
+} from "./journal-entry.service"
+
+export { billService, getPurchaseInvoiceIndicator, PURCHASE_INVOICE_FILTER_TUPLES, PURCHASE_INVOICE_INDICATOR_LABELS, PURCHASE_INVOICE_EXPORT_FIELDS } from "@/modules/bills/services"
+export type {
+  PurchaseInvoice, PurchaseInvoiceListResponse, PurchaseInvoiceListFilters,
+  PurchaseInvoiceDoc, PurchaseInvoiceItem, PurchaseInvoiceItemDoc,
+  PurchaseInvoiceItemForm, PurchaseInvoiceTaxFormRow,
+  PurchaseInvoiceFormData, MappedPurchaseInvoice,
+  PurchaseInvoiceIndicator, PurchaseInvoiceIndicatorInput,
+  PurchaseInvoiceIndicatorLabel, PurchaseInvoiceIndicatorVariant,
+} from "@/modules/bills/services"
 
 export { bankAccountService } from "@/modules/bank_accounts/services"
 export type { BankAccount, BankAccountListResponse, BankAccountFormData } from "@/modules/bank_accounts/services"
 
-export { journalEntryService } from "@/modules/journal_entries/services"
-export type { JournalEntry, JournalEntryListResponse, JournalEntryFormData } from "@/modules/journal_entries/services"
+export {
+  journalEntryService,
+  JOURNAL_ENTRY_EXPORT_FIELDS,
+  FALLBACK_VOUCHER_TYPES,
+} from "@/modules/journal_entries/services"
+export type {
+  JournalEntryRow,
+  JournalEntryListResponse,
+  JournalEntryFormData,
+  JournalEntryStatus,
+  JournalEntryDoc,
+  JournalEntryAccountRow,
+  JournalEntryAccountFormRow,
+} from "@/modules/journal_entries/services"
 
 export { salesOrderService, SALES_ORDER_EXPORT_FIELDS, getSalesOrderIndicator, SALES_ORDER_INDICATOR_LABELS, INDICATOR_FILTER_TUPLES } from "@/modules/sales-orders/services"
 export type { SalesOrder, SalesOrderItem, SalesOrderListResponse, SalesOrderStatus, SalesOrderDocStatus, SalesOrderDoc, SalesOrderIndicator, SalesOrderIndicatorInput, SalesOrderIndicatorLabel, SalesOrderIndicatorVariant } from "@/modules/sales-orders/services"
@@ -88,19 +126,17 @@ export type { Opportunity, OpportunityFormData, OpportunityListResponse } from "
 export { settingsService } from "@/modules/settings/services"
 export type { Settings, CompanyInfo, TaxConfig, AppDefaults, AppUser, UserProfile, NotificationPreferences, SecuritySettings, AppearanceSettings } from "@/modules/settings/services"
 
-export { purchaseOrderService } from "@/modules/purchases/services"
-export type { PurchaseOrder, PurchaseOrderListResponse, PurchaseOrderFormData } from "@/modules/purchases/services"
+export { emailTemplateService } from "@/modules/email_templates/services"
+export type { EmailTemplate, EmailTemplateFormData, EmailTemplateListResponse, EmailTemplateRender } from "@/modules/email_templates/services"
 
-export { vendorService } from "@/modules/vendors/services"
-export type { Vendor, VendorFormData, VendorListResponse } from "@/modules/vendors/services"
+export { purchaseOrderService, PURCHASE_ORDER_EXPORT_FIELDS, getPurchaseOrderIndicator, PURCHASE_ORDER_FILTER_TUPLES, PURCHASE_ORDER_INDICATOR_LABELS, purchaseOrderLookups, searchLink as purchaseOrderSearchLink, type PurchaseOrderIndicator, type PurchaseOrderIndicatorInput, type PurchaseOrderIndicatorLabel, type PurchaseOrderIndicatorVariant } from "@/modules/purchases/services"
+export type { PurchaseOrder, PurchaseOrderListResponse, PurchaseOrderFormData, PurchaseOrderDoc, PurchaseOrderItem, PurchaseOrderItemForm, PurchaseOrderTax, PurchaseOrderPaymentScheduleRow, PurchaseOrderListFilters } from "@/modules/purchases/services"
 
 export { leadService } from "@/modules/leads/services"
 export type { Lead, LeadFormData, LeadListResponse } from "@/modules/leads/services"
 
 export { followUpService } from "@/modules/followups/services"
 export type { FollowUp, FollowUpListResponse } from "@/modules/followups/services"
-
-export { accountingService } from "@/modules/accounting/services"
 
 // Shared filter types (ERPNext-style RFilter chips)
 export type { FilterOperator, RFilter, FilterFieldType, FilterFieldDef } from "./filter-types"

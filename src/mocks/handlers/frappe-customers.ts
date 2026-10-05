@@ -1,5 +1,12 @@
 import { http, HttpResponse, delay } from "msw"
 import { paymentEntries, salesInvoices, quotations, salesOrders, matchesFilterSet } from "./frappe-lookups"
+import {
+  countSuppliers,
+  supplierAddressStore,
+  supplierContactStore,
+} from "./frappe-suppliers"
+import { purchaseOrderStore } from "./purchase-order"
+import { countJournalEntries } from "./journal-entry"
 
 // ── Customers ────────────────────────────────────────────────────────
 interface CustomerRow {
@@ -159,6 +166,8 @@ let addresses: MockAddress[] = [
     links: [{ link_doctype: "Customer", link_name: "CUST-00002" }],
   },
 ]
+addresses.push(...supplierAddressStore.map((a) => ({ ...a })))
+contacts.push(...supplierContactStore.map((c) => ({ ...c })))
 
 // ── Helper: next ID ──────────────────────────────────────────────────
 let nextCustId = 21
@@ -245,6 +254,8 @@ async function countFor(url: string) {
   let count = 0
   if (doctype === "Customer") {
     count = customers.filter((c) => customerMatchesFilters(c, filters)).length
+  } else if (doctype === "Supplier") {
+    count = countSuppliers(filters)
   } else if (doctype === "Payment Entry") {
     count = paymentEntries.filter((r) => matchesFilterSet(r, filters, orFilters)).length
   } else if (doctype === "Sales Invoice") {
@@ -259,6 +270,10 @@ async function countFor(url: string) {
     count = (salesOrders as unknown as Record<string, unknown>[]).filter(
       (r) => matchesFilterSet(r, filters, orFilters)
     ).length
+  } else if (doctype === "Purchase Order") {
+    count = purchaseOrderStore().filter((r) => matchesFilterSet(r, filters, orFilters, "Purchase Order")).length
+  } else if (doctype === "Journal Entry") {
+    count = countJournalEntries(filters, orFilters)
   }
   return HttpResponse.json({ message: count })
 }
@@ -337,6 +352,31 @@ export const frappeCustomerHandlers = [
 
     let filtered = addresses.filter(
       (a) => addressMatchesFilters(a, filters) && filterDynamicLinks(a, filters),
+    )
+
+    if (limit_page_length > 0) {
+      filtered = filtered.slice(limit_start, limit_start + limit_page_length)
+    }
+
+    return HttpResponse.json({ data: filtered })
+  }),
+
+  // ── GET /api/resource/Contact?fields=...&filters=... ─────────────
+  http.get("/api/resource/Contact", async ({ request }) => {
+    await delay(150)
+    const { filters, limit_page_length, limit_start } = parseQSParams(request.url)
+
+    let filtered = contacts.filter(
+      (c) => c.links.some((l) =>
+        filters.every((f) => {
+          if (!Array.isArray(f) || f.length < 4) return true
+          const [table, field, operator, value] = f as [string, string, string, unknown]
+          if (table !== "Dynamic Link") return true
+          if (field === "link_doctype" && operator === "=") return l.link_doctype === value
+          if (field === "link_name" && operator === "=") return l.link_name === value
+          return true
+        })
+      ),
     )
 
     if (limit_page_length > 0) {

@@ -1,59 +1,77 @@
 "use client"
-import { useState } from "react"
+
+import { useRef, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { motion } from "framer-motion"
-import { ArrowLeft } from "lucide-react"
+import { ArrowLeft, Save, Send, AlertCircle } from "lucide-react"
 import Topbar from "@/components/layout/Topbar"
-import { Button, Input, Textarea, Link } from "@/components/ui"
-import { useForm } from "react-hook-form"
-import { billService } from "@/services"
-
-interface FormData {
-  supplierId: string
-  supplierName: string
-  amount: number
-  issueDate: string
-  dueDate: string
-  category: string
-  notes: string
-}
+import { Button } from "@/components/ui"
+import PurchaseInvoiceForm, {
+  type PurchaseInvoiceFormHandle,
+} from "../components/PurchaseInvoiceForm"
 
 export default function CreateBill() {
   const navigate = useNavigate()
-  const [loading, setLoading] = useState(false)
-  const { register, handleSubmit, formState: { errors } } = useForm<FormData>()
+  const formRef = useRef<PurchaseInvoiceFormHandle>(null)
+  const [saving, setSaving] = useState<"Save" | "Submit" | null>(null)
+  const [error, setError] = useState("")
 
-  const onSubmit = async (data: FormData) => {
-    setLoading(true)
+  const handleSave = async (action: "Save" | "Submit") => {
+    setSaving(action)
+    setError("")
     try {
-      const res = await billService.create({ ...data, status: "received" })
-      navigate(`/bills/${res.id}`)
-    } finally { setLoading(false) }
+      const name = await formRef.current?.save(action)
+      if (name) navigate(`/bills/${encodeURIComponent(name)}`)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to save bill.")
+    } finally {
+      setSaving(null)
+    }
   }
 
   return (
     <>
       <Topbar />
-      <motion.div className="p-6" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.3 }}>
-        <div className="flex items-center gap-3 mb-6">
-          <Link to="/bills"><ArrowLeft size={18} /><span>Back to Bills</span></Link>
-        </div>
-        <h1 className="text-2xl font-bold text-heading mb-6">Create Bill</h1>
-        <div className="bg-white rounded-2xl shadow-card p-6">
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
-            <div className="grid grid-cols-2 gap-4">
-              <Input label="Supplier Name" {...register("supplierName", { required: "Required" })} error={errors.supplierName?.message} />
-              <Input label="Amount ($)" type="number" {...register("amount", { valueAsNumber: true, required: "Required" })} error={errors.amount?.message} />
-              <Input label="Issue Date" type="date" {...register("issueDate", { required: "Required" })} error={errors.issueDate?.message} />
-              <Input label="Due Date" type="date" {...register("dueDate", { required: "Required" })} error={errors.dueDate?.message} />
-              <Input label="Category" {...register("category")} />
+      <motion.div
+        className="p-6 space-y-6"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.3 }}
+      >
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <button
+              onClick={() => navigate("/bills")}
+              className="p-2 rounded-[10px] text-muted hover:text-body hover:bg-gray-100 transition-colors"
+            >
+              <ArrowLeft size={20} />
+            </button>
+            <div>
+              <h1 className="text-2xl font-bold text-heading">New Bill</h1>
+              <p className="text-sm text-muted mt-0.5">Create a new supplier bill (purchase invoice).</p>
             </div>
-            <Textarea label="Notes" {...register("notes")} />
-            <div className="flex justify-end gap-3 pt-4 border-t border-border">
-              <Button type="submit" loading={loading}>Create Bill</Button>
-            </div>
-          </form>
+          </div>
+          <div className="flex items-center gap-3">
+            <Button variant="secondary" onClick={() => navigate("/bills")}>Cancel</Button>
+            <Button variant="outline" onClick={() => handleSave("Save")} loading={saving === "Save"} disabled={!!saving}>
+              <Save size={16} />
+              {saving === "Save" ? "Saving…" : "Save Draft"}
+            </Button>
+            <Button onClick={() => handleSave("Submit")} loading={saving === "Submit"} disabled={!!saving}>
+              <Send size={16} />
+              {saving === "Submit" ? "Submitting…" : "Save & Submit"}
+            </Button>
+          </div>
         </div>
+
+        {error && (
+          <div className="flex items-start gap-2 text-sm text-danger-600 bg-danger-50 border border-danger-100 px-4 py-3 rounded-[10px]">
+            <AlertCircle size={16} className="shrink-0 mt-0.5" />
+            <p className="whitespace-pre-line">{error}</p>
+          </div>
+        )}
+
+        <PurchaseInvoiceForm ref={formRef} mode="create" />
       </motion.div>
     </>
   )

@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from "react"
 import { Plus, ScanBarcode, Search, X } from "lucide-react"
 import { type Product } from "@/services"
-import { formatFixed } from "@/lib/utils"
+import { generateId, formatFixed } from "@/lib/utils"
 import { useToast } from "@/components/ui"
 import { invoiceService } from "../services"
 import ChildTableGrid, { type GridColumn } from "@/components/ui/ChildTableGrid"
@@ -78,7 +78,7 @@ interface InvoiceLineItemsProps {
 
 function makeEmptyLine(): LineItemForm {
   return {
-    id: crypto.randomUUID(),
+    id: generateId(),
     productId: "",
     productName: "",
     sku: "",
@@ -181,7 +181,7 @@ export default function InvoiceLineItems({
         onSelectProduct?.(lastLine.id, product)
       } else {
         onAdd?.()
-        const newId = crypto.randomUUID()
+        const newId = generateId()
         setTimeout(() => onSelectProduct?.(newId, product), 0)
       }
     },

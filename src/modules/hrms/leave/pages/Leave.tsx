@@ -7,6 +7,7 @@ import { Button } from "../../../../components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "../../../../components/ui/card"
 import { hrmsService } from "../../services"
 import type { LeaveRequest } from "../../types"
+import { formatDate } from "@/lib/utils"
 import { CalendarOff, CheckCircle2, XCircle, Clock, AlertTriangle, FileText } from "lucide-react"
 
 const STATUS_OPTIONS = ["All", "Pending", "Approved", "Rejected", "Cancelled"] as const
@@ -16,14 +17,6 @@ const statusBadgeVariant: Record<string, "success" | "warning" | "danger" | "inf
   Pending: "warning",
   Rejected: "danger",
   Cancelled: "default",
-}
-
-function formatDate(dateStr: string) {
-  return new Date(dateStr).toLocaleDateString("en-US", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  })
 }
 
 export default function Leave() {

@@ -1,6 +1,7 @@
 import { http, HttpResponse, delay } from "msw"
 import paymentsData from "../data/payments.json"
 import invoicesData from "../data/invoices.json"
+import { removeSuppliers } from "./frappe-suppliers"
 
 let payments = [...paymentsData]
 let invoices = [...invoicesData]
@@ -120,7 +121,12 @@ export const paymentHandlers = [
   http.post("/api/method/frappe.desk.reportview.delete_items", async ({ request }) => {
     await delay(200)
     const body = Object.fromEntries(new URLSearchParams(await request.text()))
-    void body
+    const doctype = String(body.doctype ?? "")
+    if (doctype === "Supplier") {
+      let items: string[] = []
+      try { items = JSON.parse(String(body.items ?? "[]")) } catch { items = [] }
+      removeSuppliers(items)
+    }
     return HttpResponse.json({ message: null })
   }),
 

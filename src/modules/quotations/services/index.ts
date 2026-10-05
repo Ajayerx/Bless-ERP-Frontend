@@ -4,6 +4,7 @@ import { API_CONFIG } from "@/config/api.config"
 import { buildTimelineItems, toQuillHtml } from "@/modules/payments/services"
 import type { DocInfo, PaymentActivityItem, PaymentComment } from "@/modules/payments/types"
 import type { SalesOrderMappedDoc } from "@/modules/sales-orders/types"
+import { emailTemplateService } from "@/modules/email_templates/services"
 import type { Quotation, QuotationItem, QuotationTax, QuotationFormData, QuotationListResponse } from "../types"
 
 export type {
@@ -480,6 +481,7 @@ export interface QuotationItemDetails {
   margin_rate_or_amount?: number
 }
 
+/** Kept for backwards compatibility; identical to `EmailTemplateRender`. */
 export interface EmailTemplateResult {
   subject: string
   message: string
@@ -1077,15 +1079,30 @@ export const quotationService = {
     }
   },
 
+  // erpnext.controllers.accounts_controller.get_taxes_and_charges returns the
+  // Sales Taxes and Charges Template's child rows as a **bare list** (or null
+  // when no template name is passed) — it is NOT wrapped in an object and it
+  // carries no tax_category. The wrapped `{ taxes }` shape belongs to
+  // get_default_taxes_and_charges, which is a different endpoint. Reading
+  // `result.taxes` off this response therefore always came back undefined and
+  // the tax rows silently never populated. Normalise both shapes here so the
+  // caller always gets `{ taxes }`.
   async getTaxesAndCharges(masterName: string): Promise<{ tax_category?: string; taxes?: QuotationTax[] }> {
-    const result = await apiFormCall<{ tax_category?: string; taxes?: QuotationTax[] }>(
+    const result = await apiFormCall<QuotationTax[] | { tax_category?: string; taxes?: QuotationTax[] } | null>(
       "/method/erpnext.controllers.accounts_controller.get_taxes_and_charges",
       [
         ["master_doctype", "Sales Taxes and Charges Template"],
         ["master_name", masterName],
       ],
     )
-    return result ?? {}
+
+    if (Array.isArray(result)) {
+      return { taxes: result }
+    }
+    if (result && typeof result === "object") {
+      return result
+    }
+    return {}
   },
 
   // ── On-launch defaults (new quotation; matches ERPNext quotation.js) ──
@@ -1313,15 +1330,9 @@ export const quotationService = {
   },
 
   async getEmailTemplate(templateName: string, doc: Record<string, unknown>): Promise<EmailTemplateResult | null> {
-    try {
-      const result = await postMethod<EmailTemplateResult>("frappe.email.doctype.email_template.email_template.get_email_template", {
-        template_name: templateName,
-        doc: JSON.stringify(doc),
-      })
-      return result
-    } catch {
-      return null
-    }
+    // Delegates to the shared Email Template service so the payload shape
+    // stays identical across Quotation, Invoice and Payment send dialogs.
+    return emailTemplateService.render(templateName, doc)
   },
 
   async generatePDF(name: string, options?: {

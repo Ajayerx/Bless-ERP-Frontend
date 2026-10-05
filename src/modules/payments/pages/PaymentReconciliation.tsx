@@ -5,8 +5,8 @@ import { motion } from "framer-motion"
 import { AlertTriangle, RefreshCw } from "lucide-react"
 import Topbar from "@/components/layout/Topbar"
 import { Button, Card, CardContent, Input, useMessageDialog, messageFromError } from "@/components/ui"
-import { apiClient } from "@/services/api-client"
 import { validateLink } from "@/services/frappe-client"
+import { getCompanyDefaults } from "@/services/company"
 import {
   getUnreconciledEntries,
   allocateReconciliationEntries,
@@ -32,6 +32,18 @@ import DifferenceAccountDialog from "../components/reconciliation/DifferenceAcco
 
 const CURRENCY = "CAD"
 
+// Must match CompanyContext's key so a company chosen in the global Company
+// Switcher is the one this page reconciles against.
+const COMPANY_STORAGE_KEY = "blesserp_selected_company"
+
+function readStoredCompany(): string {
+  try {
+    return localStorage.getItem(COMPANY_STORAGE_KEY) || ""
+  } catch {
+    return ""
+  }
+}
+
 type Busy = "" | "get" | "allocate" | "reconcile"
 
 export default function PaymentReconciliation() {
@@ -43,18 +55,26 @@ export default function PaymentReconciliation() {
   const [busy, setBusy] = useState<Busy>("")
   const [jobBanner, setJobBanner] = useState<string | null>(null)
   const [differenceOpen, setDifferenceOpen] = useState(false)
+  const [companyReady, setCompanyReady] = useState(false)
 
+  // BUG-06: Company drives every account lookup on this page. It used to be
+  // seeded with the fabricated literal "Bless Erp" whenever Global Defaults
+  // could not be read, and Account is a child doctype of Company, so a wrong
+  // company makes frappe.desk.search.search_link return an empty list — the
+  // Receivable / Payable Account picker showed "No results found" with no
+  // indication why. Resolve it through the shared company service instead, and
+  // surface the failure rather than silently posting a bogus company.
   useEffect(() => {
     let cancelled = false
     ;(async () => {
-      let company = "Bless Erp"
-      try {
-        const defaults = await apiClient<{ default_company?: string }>("/resource/Global Defaults/Global Defaults")
-        if (defaults?.default_company) company = defaults.default_company
-      } catch {
-        // fall back to the seeded company
-      }
-      if (!cancelled) setDoc((d) => ({ ...d, company }))
+      const [stored, defaults] = await Promise.all([
+        Promise.resolve(readStoredCompany()),
+        getCompanyDefaults(),
+      ])
+      const company = stored || defaults.company || ""
+      if (cancelled) return
+      setDoc((d) => ({ ...d, company }))
+      setCompanyReady(true)
     })()
     return () => {
       cancelled = true
@@ -118,6 +138,19 @@ export default function PaymentReconciliation() {
       setSelectedPayments(new Set())
       setSelectedInvoices(new Set())
       if (!party) return
+      if (!doc.company) {
+        setDoc((d) => ({
+          ...d,
+          receivable_payable_account: "",
+          default_advance_account: "",
+        }))
+        showMessage({
+          title: "Select a Company first",
+          message:
+            "The party's account cannot be looked up without a Company because accounts are per-company.",
+        })
+        return
+      }
       let resolvedAccount = doc.receivable_payable_account
       try {
         const account = await getPartyReconciliationAccount(doc.company, doc.party_type, party)
@@ -129,9 +162,20 @@ export default function PaymentReconciliation() {
             default_advance_account: account.advance_account,
           }))
           void validateLink("Account", account.account).catch(() => {})
+        } else {
+          // ERPNext returned no account for this party/company pair. Previously
+          // this was swallowed, leaving an empty picker that just said
+          // "No results found" with no hint that the company was the problem.
+          showMessage({
+            title: "No account found",
+            message: `${doc.party_type} "${party}" has no ${doc.party_type === "Customer" ? "Receivable" : "Payable"} account in company "${doc.company}". Check the Company, or set the party's default account.`,
+          })
         }
-      } catch {
-        // leave the account as typed
+      } catch (err) {
+        // leave the account as typed, but say why it could not be resolved
+        showMessage(
+          messageFromError(err, `Could not look up the account for "${party}" in company "${doc.company}".`)
+        )
       }
       try {
         const auto = await isAutoReconcileEnabled({ doctype: "Payment Reconciliation" })
@@ -157,6 +201,21 @@ export default function PaymentReconciliation() {
   )
 
   const handleGet = useCallback(async () => {
+    if (!doc.company) {
+      showMessage({
+        title: "Select a Company",
+        message:
+          "Accounts are per-company, so the Receivable / Payable Account list is empty until a Company is chosen. Pick one above and try again.",
+      })
+      return
+    }
+    if (!doc.receivable_payable_account) {
+      showMessage({
+        title: "Select an Account",
+        message: "Choose the Receivable / Payable Account before fetching unreconciled entries.",
+      })
+      return
+    }
     setBusy("get")
     try {
       const { workspace, messages } = await getUnreconciledEntries(
@@ -343,6 +402,16 @@ export default function PaymentReconciliation() {
             )}
           </div>
         </div>
+
+        {companyReady && !doc.company && (
+          <div className="flex items-start gap-2 text-sm text-warning-600 bg-warning-50 border border-warning-100 px-4 py-3 rounded-[10px]">
+            <AlertTriangle size={16} className="shrink-0 mt-0.5" />
+            <p>
+              No Company selected. Accounts are per-company, so every account dropdown below stays
+              empty until one is chosen. Set a default in Settings, or pick a Company above.
+            </p>
+          </div>
+        )}
 
         {jobBanner && (
           <div className="flex items-start gap-2 text-sm text-warning-600 bg-warning-50 border border-warning-100 px-4 py-3 rounded-[10px]">

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, createContext, useContext, type ReactNode } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import { X, CheckCircle, AlertCircle, AlertTriangle, Info } from "lucide-react"
-import { cn } from "@/lib/utils"
+import { generateId, cn } from "@/lib/utils"
 
 type ToastVariant = "success" | "error" | "warning" | "info"
 
@@ -35,7 +35,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([])
 
   const addToast = useCallback((message: string, variant: ToastVariant = "info") => {
-    const id = crypto.randomUUID()
+    const id = generateId()
     setToasts((prev) => [...prev, { id, message, variant }])
   }, [])
 

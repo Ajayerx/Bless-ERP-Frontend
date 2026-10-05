@@ -1,3 +1,4 @@
+import { localDateISO } from "@/lib/utils"
 import { http, HttpResponse, delay } from "msw"
 import { getEmployees, getAttendance, getPayroll, getLeaveRequests } from "../../modules/hrms/mock-data"
 
@@ -111,7 +112,7 @@ export const hrmsHandlers = [
     const payroll = getPayroll()
     const leaves = getLeaveRequests()
 
-    const today = new Date().toISOString().slice(0, 10)
+    const today = localDateISO(new Date())
     const todayRecords = attendance.filter((r) => r.date === today)
     const activeEmployees = employees.filter((e) => e.status === "Active")
 

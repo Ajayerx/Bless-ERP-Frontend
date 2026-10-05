@@ -1,4 +1,5 @@
 import { apiClient, apiFormCall, apiClientWithBody, serverMessagesFromBody, failedNamesFromMessages, serverDownloadTemplate, ApiError, type AppMessage } from "@/services/api-client"
+import { todayISO as todayIsoDate } from "@/lib/utils"
 import { postMethod, postMethodRaw } from "@/services/frappe-client"
 import { API_CONFIG } from "@/config/api.config"
 import { buildTimelineItems, toQuillHtml } from "@/modules/payments/services"
@@ -38,11 +39,6 @@ export {
 } from "./indicator"
 
 const DOCTYPE = "Sales Order"
-
-/** Local-date ISO string (YYYY-MM-DD) for the desk get_item_details envelope. */
-function todayIsoDate(): string {
-  return new Date().toISOString().slice(0, 10)
-}
 
 /** Columns offered by the list export dialog (server-side data_import template). */
 export const SALES_ORDER_EXPORT_FIELDS: Record<string, string[]> = {

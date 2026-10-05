@@ -1,3 +1,4 @@
+import { localDateISO } from "@/lib/utils"
 import { http, HttpResponse, delay } from "msw"
 import { quotations, quotationItems, quotationTaxes, paymentScheduleRows } from "./frappe-lookups"
 
@@ -149,7 +150,7 @@ export const quotationHandlers = [
         quotation_to: incoming.quotation_to ?? "Customer",
         party_name: incoming.party_name ?? "",
         customer_name: incoming.customer_name ?? "",
-        transaction_date: incoming.transaction_date ?? new Date().toISOString().slice(0, 10),
+        transaction_date: incoming.transaction_date ?? localDateISO(new Date()),
         valid_till: incoming.valid_till ?? "",
         order_type: incoming.order_type ?? "Sales",
         company: incoming.company ?? "BlessERP Inc.",
@@ -266,6 +267,37 @@ export const quotationHandlers = [
     const fields = await formFields(request)
     const party = fields.party ?? ""
     const partyType = fields.party_type ?? "Customer"
+    if (partyType === "Supplier") {
+      const suppliers: Record<string, { supplier_name: string; currency: string; payment_terms: string; email: string }> = {
+        "SUP-00001": { supplier_name: "Northwind Foods", currency: "CAD", payment_terms: "Net 30", email: "sales@northwindfoods.ca" },
+        "SUP-00002": { supplier_name: "Great Lakes Packaging", currency: "CAD", payment_terms: "Net 45", email: "orders@greatlakespackaging.ca" },
+        "SUP-00003": { supplier_name: "Pacific Coast Seafood", currency: "CAD", payment_terms: "Net 30", email: "sales@pacificcoastseafood.ca" },
+        "SUP-00004": { supplier_name: "Prairie Grain Co.", currency: "CAD", payment_terms: "Net 30", email: "contact@prairiegrain.ca" },
+        "SUP-00005": { supplier_name: "Summit Logistics", currency: "CAD", payment_terms: "Net 45", email: "dispatch@summitlogistics.ca" },
+      }
+      const s = suppliers[party]
+      return HttpResponse.json({
+        message: {
+          supplier: party,
+          supplier_name: s?.supplier_name ?? party,
+          currency: s?.currency ?? "CAD",
+          price_list_currency: s?.currency ?? "CAD",
+          plc_conversion_rate: 1,
+          conversion_rate: 1,
+          buying_price_list: "Standard Buying",
+          price_list: "Standard Buying",
+          payment_terms: s?.payment_terms ?? "",
+          taxes_and_charges: "",
+          supplier_address: "",
+          address_display: "",
+          contact_person: "",
+          contact_display: "",
+          contact_email: s?.email ?? "",
+          contact_mobile: "",
+          party_type: partyType,
+        },
+      })
+    }
     const customerNames: Record<string, string> = {
       "CUST-0001": "Maple Leaf Bakery",
       "CUST-0002": "Northern Lights Coffee",
@@ -311,26 +343,9 @@ export const quotationHandlers = [
     })
   }),
 
-  // ── Fetch flow: get_email_template ────────────────────────────────
-  http.post("/api/method/frappe.email.doctype.email_template.email_template.get_email_template", async ({ request }) => {
-    await delay(120)
-    const fields = await formFields(request)
-    const templateName = fields.template_name ?? ""
-    const doc = safeJson<Record<string, unknown>>(fields.doc ?? "", {})
-    const templates: Record<string, { subject: string; message: string }> = {
-      "Quotation Follow Up": {
-        subject: "Quotation {{doc.name}} for {{doc.customer_name}}",
-        message: "<p>Dear {{doc.customer_name}},</p><p>Please find our quotation attached.</p>",
-      },
-      "Quotation Welcome": {
-        subject: "Your estimate from BlessERP",
-        message: "<p>Hello {{doc.customer_name}},</p><p>Thanks for your interest — here is the quote.</p>",
-      },
-    }
-    const tpl = templates[templateName] ?? {
-      subject: `Quotation ${String(doc.name ?? "")}`,
-      message: "<p>Please find the quotation attached.</p>",
-    }
-    return HttpResponse.json({ message: tpl })
-  }),
+  // get_email_template now lives in ./email-templates (and the node test server
+// in src/mocks/server.ts) so the Email Template management page, the send-email
+// dialogs and the quotation flow all render from the same store.
+  // management page, the send-email dialogs and the quotation flow all render
+  // from the same store.
 ]

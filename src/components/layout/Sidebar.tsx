@@ -31,6 +31,7 @@ import {
   Clock,
   Calendar,
   Grid3x3,
+  Mail,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -132,6 +133,7 @@ const navSections: NavSection[] = [
     label: "SETTINGS",
     items: [
       { label: "Settings", to: "/settings", icon: Settings },
+      { label: "Email Templates", to: "/settings/email-templates", icon: Mail },
     ],
   },
 ];

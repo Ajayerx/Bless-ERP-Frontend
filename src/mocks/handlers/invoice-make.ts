@@ -1,3 +1,4 @@
+import { localDateISO } from "@/lib/utils"
 import { http, HttpResponse, delay } from "msw"
 import { salesInvoices, quotations, quotationItems, quotationTaxes, salesOrders } from "./frappe-lookups"
 import { addQuotationRow } from "./quotations"
@@ -156,8 +157,8 @@ function mappedSalesInvoiceFromSo(sourceName: string) {
     ...soHeader,
     doctype: "Sales Invoice",
     naming_series: "INV-",
-    posting_date: soDoc.transaction_date as string || new Date().toISOString().slice(0, 10),
-    due_date: soDoc.delivery_date as string || new Date().toISOString().slice(0, 10),
+    posting_date: soDoc.transaction_date as string || localDateISO(new Date()),
+    due_date: soDoc.delivery_date as string || localDateISO(new Date()),
     update_stock: 0,
     status: "Draft",
     docstatus: 0,
@@ -193,7 +194,7 @@ function mappedPaymentEntryFromSo(sourceName: string) {
     doctype: "Payment Entry",
     naming_series: "ACC-PAY-.YYYY.-",
     payment_type: "Receive",
-    posting_date: new Date().toISOString().slice(0, 10),
+    posting_date: localDateISO(new Date()),
     party_type: "Customer",
     party: String(so?.customer ?? "CUST-0001"),
     party_name: String(so?.customer_name ?? "Maple Leaf Bakery"),
@@ -264,7 +265,7 @@ export const invoiceMakeHandlers = [
     // make_sales_order (quotation → SO) mirrors the real ERPNext response:
     // an UNSAVED prefilled mapped doc (no server name) that the SPA opens as
     // a new editable Sales Order form — exactly like open_mapped_doc.
-    const today = new Date().toISOString().slice(0, 10)
+    const today = localDateISO(new Date())
     const stamp = new Date().toISOString().replace("T", " ").slice(0, 19)
     if (target.doctype === "Sales Order") {
       const sourceQuotation = quotations.find((q) => q.name === body.source_name)

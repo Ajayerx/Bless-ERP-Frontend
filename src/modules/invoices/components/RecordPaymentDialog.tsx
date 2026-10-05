@@ -11,7 +11,7 @@ import {
 } from "@/components/ui"
 import { Button } from "@/components/ui"
 import { paymentService, type SalesInvoice } from "@/services"
-import { formatCurrency } from "@/lib/utils"
+import { formatCurrency, todayISO } from "@/lib/utils"
 
 interface Props {
   open: boolean
@@ -27,7 +27,7 @@ export default function RecordPaymentDialog({
   onPaymentComplete,
 }: Props) {
   const [amount, setAmount] = useState(invoice.outstanding_amount ?? invoice.grand_total)
-  const [postingDate, setPostingDate] = useState(new Date().toISOString().split("T")[0])
+  const [postingDate, setPostingDate] = useState(todayISO())
   const [modeOfPayment, setModeOfPayment] = useState("")
   const [mopOptions, setMopOptions] = useState<string[]>([])
   const [mopLoading, setMopLoading] = useState(false)
@@ -38,7 +38,7 @@ export default function RecordPaymentDialog({
   useEffect(() => {
     if (open) {
       setAmount(invoice.outstanding_amount ?? invoice.grand_total)
-      setPostingDate(new Date().toISOString().split("T")[0])
+      setPostingDate(todayISO())
       setModeOfPayment("")
       setSent(false)
       setError("")

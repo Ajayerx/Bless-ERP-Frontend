@@ -6,6 +6,7 @@ import { BookOpen, Check, Save, Ban, GitBranch, Copy, Mail, Printer, Trash2, Mor
 import { motion } from "framer-motion"
 import Topbar from "@/components/layout/Topbar"
 import PageHead from "@/components/layout/PageHead"
+import { todayISO } from "@/lib/utils"
 import { Badge, Button, Skeleton, Modal } from "@/components/ui"
 import { useMessageDialog, messageFromError } from "@/components/ui"
 import {
@@ -48,7 +49,7 @@ function glReportParams(p: PaymentEntry): string {
   const qp = new URLSearchParams({
     voucher_no: p.name,
     from_date: p.posting_date,
-    to_date: (p.modified || new Date().toISOString().slice(0, 10)).slice(0, 10),
+    to_date: (p.modified || todayISO()).slice(0, 10),
     company: p.company,
     categorize_by: "Categorize by Voucher (Consolidated)",
     show_cancelled_entries: p.docstatus === 2 ? "1" : "0",

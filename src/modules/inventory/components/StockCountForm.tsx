@@ -5,7 +5,7 @@ import { Plus, X } from "lucide-react"
 import { apiClient } from "@/services/api-client"
 import { inventoryService, inventoryLookups } from "@/modules/inventory/services"
 import type { StockCount } from "@/modules/inventory/types"
-import { cn } from "@/lib/utils"
+import { cn, todayISO } from "@/lib/utils"
 
 interface StockCountFormProps {
   count?: StockCount | null
@@ -20,7 +20,7 @@ export default function StockCountForm({ count, onSaved, onSavingChange }: Stock
   const [form, setForm] = useState({
     company: "",
     warehouse: "",
-    posting_date: new Date().toISOString().slice(0, 10),
+    posting_date: todayISO(),
     items: [] as Array<{ item_code: string; warehouse: string; qty: number; valuation_rate?: number }>,
   })
   const [saving, setSaving] = useState(false)

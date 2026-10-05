@@ -27,6 +27,7 @@ import type {
 import type { LineItemForm } from "../components/InvoiceLineItems"
 import { useCustomerSelection } from "./useCustomerSelection"
 import { applySetWarehouseToItems } from "../utils/applySetWarehouse"
+import { generateId, todayISO } from "@/lib/utils"
 
 export interface InvoiceCompanyDefaults {
   company: string
@@ -66,7 +67,7 @@ function createEmptyLine(defaults?: {
   costCenter?: string
 }): LineItemForm {
   return {
-    id: crypto.randomUUID(),
+    id: generateId(),
     productId: "",
     productName: "",
     sku: "",
@@ -144,7 +145,7 @@ function invToFormData(inv: SalesInvoice): InvoiceFormData {
     salesPartner: inv.sales_partner,
     commissionRate: inv.commission_rate,
     salesTeam: inv.sales_team?.map((m) => ({
-      id: crypto.randomUUID(),
+      id: generateId(),
       sales_person: m.sales_person,
       allocated_percentage: m.allocated_percentage,
       allocated_amount: m.allocated_amount,
@@ -164,7 +165,7 @@ function invToFormData(inv: SalesInvoice): InvoiceFormData {
     tcName: inv.tc_name,
     terms: inv.terms,
     paymentScheduleRows: inv.payment_schedule?.map((ps) => ({
-      id: crypto.randomUUID(),
+      id: generateId(),
       payment_term: ps.payment_term ?? "",
       description: ps.description ?? "",
       due_date: ps.due_date?.slice(0, 10) ?? "",
@@ -178,7 +179,7 @@ function invToFormData(inv: SalesInvoice): InvoiceFormData {
     updateBilledAmountInDeliveryNote: inv.update_billed_amount_in_delivery_note,
     updateOutstandingForSelf: inv.update_outstanding_for_self,
     advances: inv.advances?.map((a) => ({
-      id: crypto.randomUUID(),
+      id: generateId(),
       reference_type: a.reference_type,
       reference_name: a.reference_name,
       reference_row: a.reference_row,
@@ -267,7 +268,7 @@ function buildApplyPriceListArgs(
     price_list_currency: fd.priceListCurrency || defaults?.currency,
     plc_conversion_rate: fd.plcConversionRate ?? 1,
     company: fd.company || defaults?.company || "",
-    transaction_date: fd.issueDate || new Date().toISOString().slice(0, 10),
+    transaction_date: fd.issueDate || todayISO(),
     campaign: fd.campaign,
     sales_partner: fd.salesPartner,
     ignore_pricing_rule: fd.ignorePricingRule,
@@ -365,12 +366,8 @@ export function useInvoiceWorkspace({
           customer: "",
           customerName: "",
           company: "",
-          issueDate: new Date().toISOString().slice(0, 10),
-          dueDate: (() => {
-            const dt = new Date()
-            dt.setDate(dt.getDate() + 30)
-            return dt.toISOString().slice(0, 10)
-          })(),
+          issueDate: todayISO(),
+          dueDate: todayISO(30),
           postingTime: (() => {
             const now = new Date()
             return `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`
@@ -535,7 +532,7 @@ export function useInvoiceWorkspace({
               defaults.defaultSellingPriceList,
             issueDate:
               formDataRef.current.issueDate ||
-              new Date().toISOString().slice(0, 10),
+              todayISO(),
           },
           lineItemsRef.current,
           defaults,
@@ -605,7 +602,7 @@ export function useInvoiceWorkspace({
           setEditableTaxRows(invoiceTaxesToEditable(inv.taxes ?? []))
           setLineItems(
             (inv.items ?? []).map((item) => ({
-              id: crypto.randomUUID(),
+              id: generateId(),
               productId: item.item_code,
               productName: item.item_name || item.item_code,
               description: item.description || undefined,
@@ -668,7 +665,7 @@ export function useInvoiceWorkspace({
             setFormData({
               ...form,
               issueDate: negate
-                ? new Date().toISOString().slice(0, 10)
+                ? todayISO()
                 : form.issueDate,
               isReturn: negate,
               returnAgainst: negate ? source.name : source.return_against,
@@ -678,7 +675,7 @@ export function useInvoiceWorkspace({
               (source.items ?? []).map((item) => {
                 const qty = negate ? -Math.abs(item.qty ?? 0) : item.qty
                 return {
-                  id: crypto.randomUUID(),
+                  id: generateId(),
                   productId: item.item_code,
                   productName: item.item_name || item.item_code,
                   description: item.description || undefined,
@@ -835,7 +832,7 @@ sku: item.item_code,
       const newCurrency = updates.currency || companyDefaults?.currency || ""
       const companyCurrency = companyDefaults?.currency || ""
       const postingDate =
-        formData.issueDate || new Date().toISOString().slice(0, 10)
+        formData.issueDate || todayISO()
       if (newCurrency && newCurrency !== companyCurrency) {
         invoiceService
           .getExchangeRate(newCurrency, companyCurrency, postingDate)
@@ -868,7 +865,7 @@ sku: item.item_code,
         } else {
           const companyCurrency = companyDefaults?.currency || ""
           const postingDate =
-            formData.issueDate || new Date().toISOString().slice(0, 10)
+            formData.issueDate || todayISO()
           invoiceService.getDoc("Price List", newPriceList).then((doc) => {
             const plcCurrency = (doc.currency as string) || ""
             setFormData((prev) => ({
@@ -1012,7 +1009,7 @@ sku: item.item_code,
     if (!fetchedItems.length) return
     setLineItems((prev) => {
       const newItems = fetchedItems.map((item) => ({
-        id: crypto.randomUUID(),
+        id: generateId(),
         productId: item.item_code as string,
         productName: (item.item_name as string) || "",
         description: (item.description as string) || undefined,

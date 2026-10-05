@@ -654,6 +654,7 @@ describe("buildDeskApplyPriceListDoc (full desk doc envelope)", () => {
       "row_id",
       "account_head",
       "description",
+      "category",
       "project",
       "rate",
       "tax_amount",

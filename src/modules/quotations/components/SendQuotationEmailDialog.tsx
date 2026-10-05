@@ -8,6 +8,7 @@ import {
   DialogFooter,
   Button,
 } from "@/components/ui"
+import EmailTemplatePicker from "@/modules/email_templates/components/EmailTemplatePicker"
 import { quotationService } from "../services"
 
 interface Props {
@@ -16,7 +17,12 @@ interface Props {
   quotationName: string
   contactEmail?: string
   customerName?: string
+  /** Document fields the template renders against ({{doc.name}}, …). */
+  doc?: Record<string, unknown>
 }
+
+const defaultBody = (quotationName: string, customerName?: string) =>
+  `Dear ${customerName || "Customer"},\n\nPlease find attached quotation ${quotationName}.\n\nBest regards,\nBlessERP`
 
 export default function SendQuotationEmailDialog({
   open,
@@ -24,12 +30,14 @@ export default function SendQuotationEmailDialog({
   quotationName,
   contactEmail,
   customerName,
+  doc,
 }: Props) {
   const [recipients, setRecipients] = useState(contactEmail ?? "")
   const [subject, setSubject] = useState(`Quotation ${quotationName}`)
-  const [content, setContent] = useState(
-    `Dear ${customerName || "Customer"},\n\nPlease find attached quotation ${quotationName}.\n\nBest regards,\nBlessERP`
-  )
+  const [content, setContent] = useState(defaultBody(quotationName, customerName))
+  const [template, setTemplate] = useState("")
+  const [useHtml, setUseHtml] = useState(false)
+  const [attachPdf, setAttachPdf] = useState(true)
   const [printFormats, setPrintFormats] = useState<string[]>(["Standard"])
   const [selectedFormat, setSelectedFormat] = useState("Standard")
   const [sending, setSending] = useState(false)
@@ -40,9 +48,10 @@ export default function SendQuotationEmailDialog({
     if (open) {
       setRecipients(contactEmail ?? "")
       setSubject(`Quotation ${quotationName}`)
-      setContent(
-        `Dear ${customerName || "Customer"},\n\nPlease find attached quotation ${quotationName}.\n\nBest regards,\nBlessERP`
-      )
+      setContent(defaultBody(quotationName, customerName))
+      setTemplate("")
+      setUseHtml(false)
+      setAttachPdf(true)
       setSelectedFormat("Standard")
       setSent(false)
       setError("")
@@ -61,9 +70,10 @@ export default function SendQuotationEmailDialog({
       await quotationService.sendEmail(quotationName, {
         recipients: recipients.trim(),
         subject,
-        content: content.replace(/\n/g, "<br>"),
+        content: useHtml ? content : content.replace(/\n/g, "<br>"),
         printFormat: selectedFormat,
-        attachPdf: true,
+        attachPdf,
+        sendHtml: useHtml,
       })
       setSent(true)
       setTimeout(() => onOpenChange(false), 1500)
@@ -90,8 +100,9 @@ export default function SendQuotationEmailDialog({
         ) : (
           <div className="space-y-4 py-2">
             <div>
-              <label className="text-sm font-medium text-heading block mb-1.5">To</label>
+              <label htmlFor="send-quotation-to" className="text-sm font-medium text-heading block mb-1.5">To</label>
               <input
+                id="send-quotation-to"
                 type="email"
                 value={recipients}
                 onChange={(e) => setRecipients(e.target.value)}
@@ -100,9 +111,20 @@ export default function SendQuotationEmailDialog({
               />
             </div>
 
+            <EmailTemplatePicker
+              doc={doc ?? { name: quotationName, customer_name: customerName ?? "" }}
+              value={template}
+              onChange={setTemplate}
+              onRendered={(rendered) => {
+                if (rendered.subject) setSubject(rendered.subject)
+                setContent(rendered.message)
+              }}
+            />
+
             <div>
-              <label className="text-sm font-medium text-heading block mb-1.5">Subject</label>
+              <label htmlFor="send-quotation-subject" className="text-sm font-medium text-heading block mb-1.5">Subject</label>
               <input
+                id="send-quotation-subject"
                 type="text"
                 value={subject}
                 onChange={(e) => setSubject(e.target.value)}
@@ -111,8 +133,9 @@ export default function SendQuotationEmailDialog({
             </div>
 
             <div>
-              <label className="text-sm font-medium text-heading block mb-1.5">Message</label>
+              <label htmlFor="send-quotation-message" className="text-sm font-medium text-heading block mb-1.5">Message</label>
               <textarea
+                id="send-quotation-message"
                 value={content}
                 onChange={(e) => setContent(e.target.value)}
                 rows={5}
@@ -122,8 +145,9 @@ export default function SendQuotationEmailDialog({
 
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="text-sm font-medium text-heading block mb-1.5">Print Format</label>
+                <label htmlFor="send-quotation-print-format" className="text-sm font-medium text-heading block mb-1.5">Print Format</label>
                 <select
+                  id="send-quotation-print-format"
                   value={selectedFormat}
                   onChange={(e) => setSelectedFormat(e.target.value)}
                   className="w-full px-3 py-2 bg-gray-50 border border-border rounded-[10px] text-sm text-body focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
@@ -133,15 +157,24 @@ export default function SendQuotationEmailDialog({
                   ))}
                 </select>
               </div>
-              <div className="flex items-end">
+              <div className="flex items-end pb-2 gap-4">
                 <label className="flex items-center gap-2 text-sm text-body">
                   <input
                     type="checkbox"
-                    checked
-                    disabled
+                    checked={attachPdf}
+                    onChange={(e) => setAttachPdf(e.target.checked)}
                     className="h-4 w-4 rounded border-border"
                   />
                   Attach PDF
+                </label>
+                <label className="flex items-center gap-2 text-sm text-body">
+                  <input
+                    type="checkbox"
+                    checked={useHtml}
+                    onChange={(e) => setUseHtml(e.target.checked)}
+                    className="h-4 w-4 rounded border-border"
+                  />
+                  Use HTML
                 </label>
               </div>
             </div>

@@ -6,6 +6,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Button } from "@/components/ui"
 import LinkSearchField from "@/components/ui/LinkSearchField"
 import { invoiceService } from "@/services"
+import { generateId } from "@/lib/utils"
 
 interface FetchTimesheetDialogProps {
   open: boolean
@@ -53,7 +54,7 @@ export default function FetchTimesheetDialog({
         project: selectedProject,
       })
       const mappedRows = (Array.isArray(rows) ? rows : []).map((r) => ({
-        id: crypto.randomUUID(),
+        id: generateId(),
         activity_type: (r.activity_type as string) || "",
         description: (r.description as string) || "",
         billing_hours: Number(r.billing_hours ?? 0),

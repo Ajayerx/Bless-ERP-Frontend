@@ -1,4 +1,4 @@
-﻿import { render, screen, within, waitFor } from "@testing-library/react"
+import { render, screen, within, waitFor, fireEvent } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MemoryRouter, Routes, Route } from "react-router-dom"
 import { describe, it, expect, beforeAll, beforeEach, afterAll, afterEach, vi } from "vitest"
@@ -135,7 +135,7 @@ describe("SalesOrders list page (ERPNext parity)", () => {
     renderPage()
     await screen.findByText("SAL-ORD-2026-0005")
 
-    // Only a Draft row selected â†’ Submit + Delete, but no Cancel / Amend / Close.
+    // Only a Draft row selected → Submit + Delete, but no Cancel / Amend / Close.
     await selectRows(["SAL-ORD-2026-0005"])
     expect(screen.getByText("1 sales orders selected")).toBeInTheDocument()
     await openActions()
@@ -320,7 +320,7 @@ describe("SalesOrders list page (ERPNext parity)", () => {
     await user.click(screen.getByRole("button", { name: "Load More" }))
 
     // Appended: total now loaded, the previous first row stayed visible and
-    // the brand-new tail row appeared â€” nothing was hidden or replaced.
+    // the brand-new tail row appeared — nothing was hidden or replaced.
     await waitFor(() => {
       screen.getByText(byCounter("30 of 30"))
     })
@@ -890,7 +890,10 @@ describe("SalesOrderWorkspace status dropdown (ERPNext parity)", () => {
     // and surfaces the Update button. Regression: the old code re-sent the whole
     // submitted doc through frappe.desk.form.save.savedocs, which re-submits the
     // order server-side and trips a child-doctype permission 403.
-    await user.type(screen.getByPlaceholderText("PO number…"), "PO-999")
+    // fireEvent.change is used because the header input is remounted by pending
+    // initial-load effects mid-keystroke in this jsdom env, one-shot user-event
+    // typing is lost (the live node is queryable again right after).
+    fireEvent.change(screen.getByPlaceholderText("PO number…"), { target: { value: "PO-999" } })
     await waitFor(() => expect(screen.getByTestId("save_button")).toBeInTheDocument())
 
     const before = capturedRequests.length

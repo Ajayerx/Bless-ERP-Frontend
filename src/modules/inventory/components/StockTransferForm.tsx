@@ -4,6 +4,7 @@ import { useState, useEffect } from "react"
 import { Plus, X } from "lucide-react"
 import { inventoryService, inventoryLookups } from "@/modules/inventory/services"
 import type { StockTransfer, StockTransferItem } from "@/modules/inventory/types"
+import { todayISO } from "@/lib/utils"
 
 interface StockTransferFormProps {
   transfer?: StockTransfer | null
@@ -19,7 +20,7 @@ export default function StockTransferForm({ transfer, onSaved, onSavingChange }:
     company: "",
     from_warehouse: "",
     to_warehouse: "",
-    posting_date: new Date().toISOString().slice(0, 10),
+    posting_date: todayISO(),
     remarks: "",
     items: [] as StockTransferItem[],
   })

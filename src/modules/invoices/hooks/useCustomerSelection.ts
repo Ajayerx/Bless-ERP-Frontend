@@ -9,6 +9,7 @@ import {
   type PartyDetailsResponse,
 } from "@/services";
 import type { InvoiceFormData } from "../components/InvoiceForm";
+import { generateId, todayISO } from "@/lib/utils";
 
 interface UseCustomerSelectionParams {
   setFormData: Dispatch<SetStateAction<InvoiceFormData>>;
@@ -62,7 +63,7 @@ export function useCustomerSelection({
       if (!companyDefaults) return;
       setLoadingPartyDetails(true);
       const postingDate =
-        formDataRef.current.issueDate || new Date().toISOString().slice(0, 10);
+        formDataRef.current.issueDate || todayISO();
       try {
         const [details, loyaltyPrograms] = await Promise.all([
           invoiceService.getPartyDetails(
@@ -121,7 +122,7 @@ export function useCustomerSelection({
           ...(Array.isArray(details.sales_team) && details.sales_team.length > 0
             ? {
                 salesTeam: details.sales_team.map((m) => ({
-                  id: crypto.randomUUID(),
+                  id: generateId(),
                   sales_person: m.sales_person,
                   allocated_percentage: m.allocated_percentage,
                   allocated_amount: m.allocated_amount,

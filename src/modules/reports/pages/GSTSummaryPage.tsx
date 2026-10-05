@@ -15,7 +15,7 @@ const inputClass =
   "h-9 rounded-[10px] border border-border bg-white px-3 text-sm text-body outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500/20 disabled:bg-gray-50 disabled:text-muted"
 
 function isoDate(d: Date): string {
-  return d.toISOString().slice(0, 10)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
 }
 
 function monthStart(d: Date): string {

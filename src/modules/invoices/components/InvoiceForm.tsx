@@ -16,7 +16,7 @@ import { type Customer } from "@/services";
 import { invoiceService } from "@/services";
 import { useAuth } from "@/context/AuthContext";
 import { useLazyOptions } from "@/services/lookup-cache";
-import { formatCurrency, formatDateDDMMYYYY } from "@/lib/utils";
+import { generateId, formatCurrency, formatDate, formatDateDDMMYYYY, todayISO } from "@/lib/utils";
 import type { EditableTaxRow, ChargeType } from "../types";
 import {
   applyDiscountToItemNetAmounts,
@@ -615,7 +615,7 @@ export default function InvoiceForm({
       const timesheetData = await invoiceService.fetchTimesheetData({ project: value, from_time: "", to_time: "" })
       if (Array.isArray(timesheetData) && timesheetData.length > 0) {
         const mapped = timesheetData.map((ts) => ({
-          id: crypto.randomUUID(),
+          id: generateId(),
           activity_type: (ts.activity_type as string) || "",
           description: (ts.description as string) || "",
           billing_hours: (ts.billing_hours as number) || 0,
@@ -667,7 +667,7 @@ export default function InvoiceForm({
       }
       const rows = await invoiceService.setAdvances(doc)
       const mapped = rows.map((a) => ({
-        id: crypto.randomUUID(),
+        id: generateId(),
         name: a.reference_name,
         reference_type: a.reference_type,
         reference_name: a.reference_name,
@@ -767,7 +767,7 @@ export default function InvoiceForm({
             patch.payments = payRows.map((p) => {
               const row = p as Record<string, unknown>;
               return {
-                id: crypto.randomUUID(),
+                id: generateId(),
                 mode_of_payment: String(row.mode_of_payment ?? ""),
                 amount: Number(row.amount ?? 0),
                 ...(typeof row.account === "string" && row.account ? { account: row.account } : {}),
@@ -848,7 +848,7 @@ export default function InvoiceForm({
 
   const handleAdvancesGridChange = useCallback(
     (rows: AdvanceRow[]) => {
-      const next = rows.map((r) => (r.id ? r : { ...r, id: crypto.randomUUID() }))
+      const next = rows.map((r) => (r.id ? r : { ...r, id: generateId() }))
       onChange({
         advances: next,
         totalAdvance: next.reduce((sum, a) => sum + (a.allocated_amount ?? 0), 0),
@@ -878,7 +878,7 @@ export default function InvoiceForm({
       )
       if (!schedule) return
       const rows = schedule.map((s) => ({
-        id: crypto.randomUUID(),
+        id: generateId(),
         payment_term: s.payment_term ?? "",
         description: s.description ?? "",
         due_date: s.due_date?.slice(0, 10) ?? formData.dueDate ?? formData.issueDate,
@@ -1063,7 +1063,7 @@ export default function InvoiceForm({
   const handleSalesTeamChange = (rows: typeof salesTeam) => {
     onChange({
       salesTeam: rows.map((r) => {
-        const withId = r.id ? r : { ...r, id: crypto.randomUUID() };
+        const withId = r.id ? r : { ...r, id: generateId() };
         return {
           ...withId,
           allocated_amount: computeAllocatedAmount(withId.allocated_percentage),
@@ -2350,7 +2350,7 @@ export default function InvoiceForm({
                 },
               ];
               const emptyTimeSheet = {
-                id: crypto.randomUUID(),
+                id: generateId(),
                 activity_type: "",
                 description: "",
                 billing_hours: 0,
@@ -3007,7 +3007,7 @@ export default function InvoiceForm({
                 <div className="space-y-1.5">
                   {(() => {
                     const dueDateDefault =
-                      formData.dueDate || formData.issueDate || new Date().toISOString().slice(0, 10)
+                          formData.dueDate || formData.issueDate || todayISO()
                     const rows = formData.paymentScheduleRows ?? []
                     const columns: GridColumn<(typeof rows)[number]>[] = [
                       {
@@ -3033,7 +3033,7 @@ export default function InvoiceForm({
                         type: "date",
                         weight: 1,
                         formatter: (r) =>
-                          r.due_date ? new Date(r.due_date).toLocaleDateString() : "—",
+                          r.due_date ? formatDate(r.due_date) : "\u2014",
                       },
                       {
                         key: "invoice_portion",
@@ -3060,14 +3060,14 @@ export default function InvoiceForm({
                         rows={rows}
                         columns={columns}
                         emptyRow={{
-                          id: crypto.randomUUID(),
+                          id: generateId(),
                           due_date: dueDateDefault,
                           payment_amount: 0,
                         }}
                         onChange={(next) =>
                           onChange({
                             paymentScheduleRows: next.map((r) =>
-                              r.id ? r : { ...r, id: crypto.randomUUID() },
+                              r.id ? r : { ...r, id: generateId() },
                             ),
                           })
                         }
@@ -3335,7 +3335,7 @@ export default function InvoiceForm({
                       rows={salesTeam}
                       columns={salesTeamColumns}
                       emptyRow={{
-                        id: crypto.randomUUID(),
+                        id: generateId(),
                         sales_person: "",
                         contact_no: "",
                         allocated_percentage: 0,

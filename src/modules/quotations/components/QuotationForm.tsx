@@ -25,6 +25,7 @@ import {
 import ChildTableGrid, { type GridColumn } from "@/components/ui/ChildTableGrid"
 import { useAuth } from "@/context/AuthContext"
 import { useCompany } from "@/context/CompanyContext"
+import { getCompanyDefaults } from "@/services/company"
 import { useLazyOptions } from "@/services/lookup-cache"
 import { quotationService, buildApplyPriceListArgs, buildDeskApplyPriceListDoc, enrichQuotationItem, SuppressedDuplicateError, deskRandomString } from "@/modules/quotations/services"
 import { customerService } from "@/modules/customers/services"
@@ -60,7 +61,7 @@ import {
   EMPTY_HIDE_EXEMPT,
   resolveDocstatusAware,
 } from "@/modules/quotations/hooks/useVisibilityRules"
-import { formatCurrency, formatFixed } from "@/lib/utils"
+import { formatCurrency, formatFixed, todayISO as localTodayISO } from "@/lib/utils"
 
 const ORDER_TYPE_OPTIONS = ["Sales", "Maintenance", "Shopping Cart"] as const
 
@@ -80,13 +81,11 @@ export interface QuotationFormProps {
 }
 
 function todayISO(): string {
-  return new Date().toISOString().slice(0, 10)
+  return localTodayISO()
 }
 
 function addDaysISO(days: number): string {
-  const d = new Date()
-  d.setDate(d.getDate() + days)
-  return d.toISOString().slice(0, 10)
+  return localTodayISO(days)
 }
 
 // SPA display fields normalize <br> to newlines (mirrors invoice Address block).
@@ -149,13 +148,19 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
     },
     ref,
   ) {
-    const { companyDefaults } = useCompany()
+    const { companies, companyDefaults } = useCompany()
     const { user } = useAuth()
     const { addToast } = useToast()
 
     const companyCurrency = companyDefaults?.currency || "CAD"
     const defaultCompany = companyDefaults?.company || ""
     const defaultPriceList = companyDefaults?.defaultSellingPriceList || "Standard Selling"
+    // The Company picker needs every company on the site, not just the active
+    // one, otherwise a Quotation for a second company cannot be raised at all.
+    const companyOptions = useMemo(
+      () => companies.map((c) => c.name).filter(Boolean),
+      [companies],
+    )
 
     const buildEmptyForm = (): QuotationFormData => ({
       doctype: "Quotation",
@@ -616,6 +621,50 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
           if (display) update({ shipping_address: display })
         })
       }).catch(() => undefined)
+    }
+
+    // BUG-03: switching Company has to clear the values that belonged to the
+    // previous one (addresses, per-company tax template, per-company currency)
+    // and replay the company() trigger chain, exactly like desk's
+    // sales_common.js company() handler.
+    const handleCompanySelect = (value: string) => {
+      const next = value || ""
+      if (!next) {
+        update({ company: "" })
+        return
+      }
+      update({
+        company: next,
+        company_address: "",
+        company_address_display: "",
+        company_contact_person: "",
+        selling_price_list: "",
+        currency: "",
+        price_list_currency: "",
+        conversion_rate: 1,
+        plc_conversion_rate: 1,
+        taxes_and_charges: "",
+        taxes: [],
+        items: (form.items ?? []).map((it) => ({ ...it, cost_center: undefined })),
+      })
+      defaultsAppliedForCompany.current = null
+      companySyncedFor.current = next
+      getCompanyDefaults(next)
+        .then((d) => {
+          setForm((prev) =>
+            prev.company !== next
+              ? prev
+              : {
+                  ...prev,
+                  currency: d.currency,
+                  price_list_currency: d.currency,
+                  selling_price_list: d.defaultSellingPriceList || "Standard Selling",
+                  conversion_rate: 1,
+                  plc_conversion_rate: 1,
+                },
+          )
+        })
+        .catch(() => undefined)
     }
 
     const handleCompanyAddressSelect = (v?: string) => {
@@ -1143,6 +1192,19 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
 
     const handleSave = async (action?: "Save" | "Update" | "Submit"): Promise<string | undefined> => {
       if (saving) return undefined
+      // BUG-03: company is mandatory on Quotation. The field used to be absent
+      // from the form entirely, so the only value available came from the
+      // resolver's hardcoded "Bless Erp" literal — which ERPNext rejected with
+      // a mandatory-field error and the draft was never created. Refuse to
+      // post a document with no company and say exactly what to do instead.
+      if (!form.company) {
+        addToast("Please select a Company before saving this Quotation.", "warning")
+        return undefined
+      }
+      if (!form.party_name) {
+        addToast("Please select a Customer before saving this Quotation.", "warning")
+        return undefined
+      }
       setSaving(true)
       onSavingChange?.(true)
       try {
@@ -1445,6 +1507,38 @@ export default forwardRef<QuotationFormHandle, QuotationFormProps>(
                         {ORDER_TYPE_OPTIONS.map((opt) => (
                           <option key={opt} value={opt}>
                             {opt}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                  </Field>
+                  {/* BUG-03: Company is mandatory on Quotation but was never
+                      rendered, so the only value it could carry came from
+                      resolveCompany()'s hardcoded "Bless Erp" literal — saving
+                      posted a company the site does not have and ERPNext
+                      rejected the document. Desk hides this field when the site
+                      has a single company; when it has several (or nothing is
+                      configured as default) the user needs to pick. */}
+                  <Field label="Company *" fieldname="company">
+                    {headerLocked || companyOptions.length <= 1 ? (
+                      <input
+                        type="text"
+                        value={form.company || defaultCompany || ""}
+                        readOnly
+                        placeholder="Select Company"
+                        className={inputClass}
+                      />
+                    ) : (
+                      <select
+                        value={form.company || defaultCompany || ""}
+                        onChange={(e) => handleCompanySelect(e.target.value)}
+                        className={inputClass}
+                        aria-label="Company"
+                      >
+                        <option value="">Select Company</option>
+                        {companyOptions.map((c) => (
+                          <option key={c} value={c}>
+                            {c}
                           </option>
                         ))}
                       </select>

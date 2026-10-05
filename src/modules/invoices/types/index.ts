@@ -168,6 +168,7 @@ export interface SalesInvoice {
   project?: string
   debit_to?: string
   party_account_currency?: string
+  mode_of_payment?: string
   // Sales Team
   sales_partner?: string
   commission_rate?: number

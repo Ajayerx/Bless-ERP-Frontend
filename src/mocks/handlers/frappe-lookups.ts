@@ -1,3 +1,4 @@
+import { localDateISO } from "@/lib/utils"
 import { http, HttpResponse, delay } from "msw"
 
 // ── Sales Invoices (15 records) ──────────────────────────────────────
@@ -106,7 +107,7 @@ const itemPrices = [
 // ── Batches (expiring) ───────────────────────────────────────────────
 const today = new Date()
 const batchDate = (daysFromNow: number) =>
-  new Date(today.getTime() + daysFromNow * 86400000).toISOString().slice(0, 10)
+  localDateISO(new Date(today.getTime() + daysFromNow * 86400000))
 
 const batches = [
   { name: "BATCH-001", item: "PRD-004", expiry_date: batchDate(5), batch_qty: 20 },
@@ -192,8 +193,13 @@ const poDocs: POBatchDoc[] = [
 ]
 
 // ── Global Defaults ───────────────────────────────────────────────────
+// BUG-03: this used to read "BlessERP Inc." while server.ts used "Bless Erp"
+// and activity.ts used "Bless Inc." — three names for what is one company.
+// resolveCompany() validates Global Defaults against the real Company list, so
+// a mismatch made it reject the configured default and fall through. One name,
+// matching fixtures.company in server.ts and the Account chart below.
 const globalDefaults = {
-  default_company: "BlessERP Inc.",
+  default_company: "Bless Erp",
   default_currency: "CAD",
   country: "Canada",
 }
@@ -218,11 +224,16 @@ export const costCenterSearchOptions: CostCenterSearchOption[] = [
 
 export const linkOptions: Record<string, string[]> = {
   "Customer Group": ["Commercial", "Individual", "Government", "Non-Profit", "Retailer"],
+  "Supplier Group": ["Distributor", "Raw Material", "Services", "Supplier", "Internal", "Government", "Non-Profit"],
+  "Supplier Type": ["Company", "Individual"],
   "Territory": ["Canada", "United States", "United Kingdom", "Australia", "Europe", "Asia"],
   "Salutation": ["Mr", "Mrs", "Ms", "Dr", "Prof", "Sir"],
   "Gender": ["Male", "Female", "Other"],
   "Currency": ["CAD", "USD", "EUR", "GBP", "AUD"],
   "Bank Account": ["Cheque - BE", "Business Chequing - TD Bank", "Savings - RBC", "USD Account - BMO"],
+  "Bank": ["Royal Bank of Canada", "Toronto-Dominion Bank", "Bank of Montreal", "Bank of Nova Scotia"],
+  "Bank Account Type": ["Chequing", "Savings", "Credit Card", "Loan", "Investment"],
+  "Bank Account Subtype": ["Individual", "Joint", "Business", "Trust", "Government"],
   "Cost Center": ["Main - BE", "Operations - BE", "Sales - BE"],
   Project: ["PROJ-0001", "PROJ-0002"],
   "Mode of Payment": ["Cash", "Cheque", "Credit Card", "Wire Transfer", "Bank Draft"],
@@ -262,18 +273,59 @@ export interface AccountSearchOption {
   account_type: string
   root_type: string
   is_group: number
+  company: string
 }
 
+// BUG-06: these options deliberately carry `company`. ERPNext's Account is a
+// child doctype of Company, so a search_link carrying a `company` filter
+// returns nothing when that company does not match. The mock used to omit the
+// field, and matchesLinkFilter() below treats a field an option does not carry
+// as satisfied — which meant the `company: doc.company` filter on Payment
+// Reconciliation's Receivable/Payable Account lookup was never actually
+// exercised, so a wrong company still returned rows and the bug stayed hidden.
 export const accountSearchOptions: AccountSearchOption[] = [
-  { value: "Debtors - BE", account_type: "Receivable", root_type: "Asset", is_group: 0 },
-  { value: "Creditors - BE", account_type: "Payable", root_type: "Liability", is_group: 0 },
-  { value: "Advances Received - BE", account_type: "Receivable", root_type: "Liability", is_group: 0 },
-  { value: "Advances Paid - BE", account_type: "Payable", root_type: "Asset", is_group: 0 },
-  { value: "Cash - BE", account_type: "Cash", root_type: "Asset", is_group: 0 },
-  { value: "Cheque - BE", account_type: "Bank", root_type: "Asset", is_group: 0 },
-  { value: "Wire Transfer - BE", account_type: "Bank", root_type: "Asset", is_group: 0 },
-  { value: "Credit Card - BE", account_type: "Bank", root_type: "Asset", is_group: 0 },
-  { value: "Bank Draft - BE", account_type: "Bank", root_type: "Asset", is_group: 0 },
+  { value: "Debtors - BE", account_type: "Receivable", root_type: "Asset", is_group: 0, company: "Bless Erp" },
+  { value: "Creditors - BE", account_type: "Payable", root_type: "Liability", is_group: 0, company: "Bless Erp" },
+  { value: "Advances Received - BE", account_type: "Receivable", root_type: "Liability", is_group: 0, company: "Bless Erp" },
+  { value: "Advances Paid - BE", account_type: "Payable", root_type: "Asset", is_group: 0, company: "Bless Erp" },
+  { value: "Cash - BE", account_type: "Cash", root_type: "Asset", is_group: 0, company: "Bless Erp" },
+  { value: "Cheque - BE", account_type: "Bank", root_type: "Asset", is_group: 0, company: "Bless Erp" },
+  { value: "Wire Transfer - BE", account_type: "Bank", root_type: "Asset", is_group: 0, company: "Bless Erp" },
+  { value: "Credit Card - BE", account_type: "Bank", root_type: "Asset", is_group: 0, company: "Bless Erp" },
+  { value: "Bank Draft - BE", account_type: "Bank", root_type: "Asset", is_group: 0, company: "Bless Erp" },
+  { value: "Operating Expenses - BE", account_type: "Expense Account", root_type: "Expense", is_group: 0, company: "Bless Erp" },
+  { value: "Professional Services - BE", account_type: "Expense Account", root_type: "Expense", is_group: 0, company: "Bless Erp" },
+  { value: "Rent - BE", account_type: "Expense Account", root_type: "Expense", is_group: 0, company: "Bless Erp" },
+  { value: "Salaries - BE", account_type: "Expense Account", root_type: "Expense", is_group: 0, company: "Bless Erp" },
+  { value: "Travel - BE", account_type: "Expense Account", root_type: "Expense", is_group: 0, company: "Bless Erp" },
+]
+
+// ── Account master (list / resource GET) ─────────────────────────────
+// Mirrors the server.ts MASTER_DATA.Account fixture so the browser Account
+// pickers (expense account query, paid-from, etc.) filter identically in
+// both MSW modes. Server integration source of truth: server.ts.
+export interface AccountMasterRow {
+  name: string
+  account_type: string
+  root_type: string
+  is_group: number
+  company: string
+}
+
+export const MASTER_ACCOUNTS: AccountMasterRow[] = [
+  { name: "Cash - BE", account_type: "Bank", root_type: "Asset", is_group: 0, company: "BlessERP Inc." },
+  { name: "Cheque - BE", account_type: "Bank", root_type: "Asset", is_group: 0, company: "BlessERP Inc." },
+  { name: "Creditors - BE", account_type: "Payable", root_type: "Liability", is_group: 0, company: "BlessERP Inc." },
+  { name: "Debtors - BE", account_type: "Receivable", root_type: "Asset", is_group: 0, company: "BlessERP Inc." },
+  { name: "GST - BE", account_type: "Indirect Tax", root_type: "Liability", is_group: 0, company: "BlessERP Inc." },
+  { name: "Shipping Charges - BE", account_type: "Expense Account", root_type: "Expense", is_group: 0, company: "BlessERP Inc." },
+  { name: "Cost of Goods Sold - BE", account_type: "Expense Account", root_type: "Expense", is_group: 0, company: "BlessERP Inc." },
+  { name: "Income - BE", account_type: "Income Account", root_type: "Income", is_group: 0, company: "BlessERP Inc." },
+  { name: "Operating Expenses - BE", account_type: "Expense Account", root_type: "Expense", is_group: 0, company: "BlessERP Inc." },
+  { name: "Professional Services - BE", account_type: "Expense Account", root_type: "Expense", is_group: 0, company: "BlessERP Inc." },
+  { name: "Rent - BE", account_type: "Expense Account", root_type: "Expense", is_group: 0, company: "BlessERP Inc." },
+  { name: "Salaries - BE", account_type: "Expense Account", root_type: "Expense", is_group: 0, company: "BlessERP Inc." },
+  { name: "Travel - BE", account_type: "Expense Account", root_type: "Expense", is_group: 0, company: "BlessERP Inc." },
 ]
 
 export type LinkOptionFilter = unknown[][] | Record<string, string | number | boolean | unknown[]>
@@ -316,8 +368,9 @@ function linkValueEqual(a: unknown, b: unknown): boolean {
 }
 
 function matchesLinkFilter(option: Record<string, unknown>, filter: ParsedLinkFilter): boolean {
-  // The mock is a single-company chart of accounts; filters on fields the
-  // options do not carry (company, disabled, ...) are satisfied by default.
+  // Filters on fields the option does not carry (e.g. `disabled`) are satisfied
+  // by default. `company` IS carried by every Account option so that
+  // company-scoped lookups are enforced the way ERPNext enforces them.
   const optValue = option[filter.field]
   if (optValue === undefined) return true
   if (filter.op === "in") {
@@ -868,6 +921,19 @@ export const frappeLookupHandlers = [
         ? rows.filter((r) => matchesFilterSet(r, filters, orFilters, doctype))
         : rows
       filtered = applyOrderBy(filtered, orderBy)
+      if (limitPageLength > 0) {
+        filtered = filtered.slice(limitStart, limitStart + limitPageLength)
+      }
+      return HttpResponse.json({ data: filtered })
+    }
+
+    // Account master (expense-account query, paid-from pickers)
+    if (doctype === "Account") {
+      const { filters, orFilters, orderBy, limitPageLength, limitStart } = parseQSParams(request.url)
+      let filtered = filters.length > 0 || orFilters.length > 0
+        ? MASTER_ACCOUNTS.filter((r) => matchesFilterSet(r as unknown as Record<string, unknown>, filters, orFilters, doctype))
+        : MASTER_ACCOUNTS
+      filtered = applyOrderBy(filtered as unknown as Record<string, unknown>[], orderBy) as unknown as AccountMasterRow[]
       if (limitPageLength > 0) {
         filtered = filtered.slice(limitStart, limitStart + limitPageLength)
       }

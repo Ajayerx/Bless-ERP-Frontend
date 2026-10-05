@@ -1,6 +1,6 @@
 "use client";
 
-import { formatCurrency } from "@/lib/utils";
+import { generateId, formatCurrency } from "@/lib/utils";
 import { invoiceService } from "../services";
 import ChildTableGrid, { type GridColumn } from "@/components/ui/ChildTableGrid";
 
@@ -33,7 +33,7 @@ export default function PaymentsTable({
     onChange([
       ...payments,
       {
-        id: crypto.randomUUID(),
+        id: generateId(),
         mode_of_payment: "",
         amount: grandTotal ?? 0,
         account: "",
@@ -105,7 +105,7 @@ export default function PaymentsTable({
         rows={payments}
         columns={columns}
         emptyRow={{
-          id: crypto.randomUUID(),
+          id: generateId(),
           mode_of_payment: "",
           amount: grandTotal ?? 0,
           account: "",

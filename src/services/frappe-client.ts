@@ -154,3 +154,88 @@ export function getAccountingDimensions(
     })
   )
 }
+
+// ── Shared ERPNext REST helpers (M3) ────────────────────────────────
+// Raw wire formats mirror ERPNext's /api/resource/<doctype> + the existing
+// module services (invoices, inventory, payments) so all M3 modules share
+// one implementation.
+
+export interface DocListParams {
+  fields?: string[]
+  filters?: unknown[]
+  orFilters?: unknown[]
+  limitStart?: number
+  limitPageLength?: number
+  orderBy?: string
+  groupBy?: string
+}
+
+export function buildDocListUrl(doctype: string, params: DocListParams = {}): string {
+  const qp = new URLSearchParams()
+  qp.set("fields", JSON.stringify(params.fields ?? []))
+  if (params.filters) qp.set("filters", JSON.stringify(params.filters))
+  if (params.orFilters) qp.set("or_filters", JSON.stringify(params.orFilters))
+  qp.set("limit_page_length", String(params.limitPageLength ?? 0))
+  if (params.limitStart !== undefined) qp.set("limit_start", String(params.limitStart))
+  if (params.orderBy) qp.set("order_by", params.orderBy)
+  if (params.groupBy) qp.set("group_by", params.groupBy)
+  return `/resource/${encodeURIComponent(doctype)}?${qp.toString()}`
+}
+
+export function getDocList<T>(doctype: string, params: DocListParams = {}): Promise<T[]> {
+  return apiClient<T[]>(buildDocListUrl(doctype, params))
+}
+
+export function getDocCount(doctype: string, filters?: unknown[]): Promise<number> {
+  const qp = new URLSearchParams()
+  qp.set("doctype", doctype)
+  if (filters) qp.set("filters", JSON.stringify(filters))
+  return apiClient<number | string>(`/method/frappe.client.get_count?${qp.toString()}`).then(Number)
+}
+
+export async function submitDoc(doctype: string, name: string): Promise<void> {
+  await apiClient("/method/frappe.client.submit", {
+    method: "POST",
+    body: JSON.stringify({ doctype, docname: name }),
+  })
+}
+
+export async function cancelDoc(doctype: string, name: string): Promise<void> {
+  await apiClient("/method/frappe.client.cancel", {
+    method: "POST",
+    body: JSON.stringify({ doctype, docname: name }),
+  })
+}
+
+const MANAGED_FIELDS = new Set([
+  "name", "creation", "modified", "modified_by", "owner",
+  "docstatus", "idx", "_comments", "_assign", "_liked_by",
+])
+
+export async function amendDoc<T>(doctype: string, name: string): Promise<T> {
+  // ERPNext amend flow: GET cancelled doc → strip framework fields → POST with amended_from
+  const doc = await apiClient<Record<string, unknown>>(
+    `/resource/${encodeURIComponent(doctype)}/${encodeURIComponent(name)}`
+  )
+  const cleaned: Record<string, unknown> = {}
+  for (const [k, v] of Object.entries(doc)) {
+    if (MANAGED_FIELDS.has(k)) continue
+    if (Array.isArray(v)) {
+      cleaned[k] = v.map((row: Record<string, unknown>) => {
+        if (row && typeof row === "object") {
+          const { name: _n, creation: _c, modified: _m, owner: _o, ...rest } = row as Record<string, unknown>
+          return rest
+        }
+        return row
+      })
+    } else {
+      cleaned[k] = v
+    }
+  }
+  cleaned.amended_from = name
+  cleaned.docstatus = 0
+  return apiClient<T>(`/resource/${encodeURIComponent(doctype)}`, {
+    method: "POST",
+    body: JSON.stringify(cleaned),
+  })
+}

@@ -502,6 +502,13 @@ export default function InvoiceWorkspace({
                   onOpenChange={setEmailOpen}
                   invoiceName={invoice.name}
                   contactEmail={invoice.contact_email}
+                  doc={{
+                    name: invoice.name,
+                    customer_name: invoice.customer_name,
+                    grand_total: invoice.grand_total,
+                    due_date: invoice.due_date,
+                    posting_date: invoice.posting_date,
+                  }}
                 />
                 <UnReconcileDialog
                   open={unreconcileOpen}

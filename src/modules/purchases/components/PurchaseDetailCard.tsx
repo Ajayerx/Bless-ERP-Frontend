@@ -1,22 +1,32 @@
 "use client"
 
-import { ShoppingCart, Calendar, DollarSign, Truck } from "lucide-react"
+import { ShoppingCart, Calendar, Truck, Clock, ChevronDown } from "lucide-react"
 import { Card, CardContent, Badge } from "@/components/ui"
-import { type PurchaseOrder } from "@/services"
+import { getPurchaseOrderIndicator, type PurchaseOrderDoc } from "@/services"
 import { formatCurrency, formatDate } from "@/lib/utils"
 
-const statusVariant: Record<string, "warning" | "info" | "success" | "default"> = {
-  draft: "warning",
-  sent: "info",
-  received: "success",
-  cancelled: "default",
-}
+const dnum = (v: unknown): number => (typeof v === "number" && !Number.isNaN(v) ? v : 0)
+
+const rowCls = "grid grid-cols-1 md:grid-cols-3 gap-4"
+const statCls =
+  "flex items-start gap-3"
 
 interface PurchaseDetailCardProps {
-  purchaseOrder: PurchaseOrder
+  purchaseOrder: PurchaseOrderDoc
 }
 
 export default function PurchaseDetailCard({ purchaseOrder }: PurchaseDetailCardProps) {
+  const status = getPurchaseOrderIndicator({
+    docstatus: dnum(purchaseOrder.docstatus),
+    status: purchaseOrder.status,
+    per_received: dnum(purchaseOrder.per_received),
+    per_billed: dnum(purchaseOrder.per_billed),
+  })
+
+  const items = Array.isArray(purchaseOrder.items) ? purchaseOrder.items : []
+  const taxes = Array.isArray(purchaseOrder.taxes) ? purchaseOrder.taxes : []
+  const currency = purchaseOrder.currency || "CAD"
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -25,45 +35,131 @@ export default function PurchaseDetailCard({ purchaseOrder }: PurchaseDetailCard
             <ShoppingCart size={20} />
           </div>
           <div>
-            <h1 className="text-2xl font-bold text-heading">{purchaseOrder.number}</h1>
-            <p className="text-sm text-muted">{purchaseOrder.vendorName}</p>
+            <h1 className="text-2xl font-bold text-heading">{purchaseOrder.name}</h1>
+            <p className="text-sm text-muted">{purchaseOrder.supplier_name || purchaseOrder.supplier}</p>
           </div>
         </div>
-        <Badge variant={statusVariant[purchaseOrder.status] ?? "info"}>
-          {purchaseOrder.status.charAt(0).toUpperCase() + purchaseOrder.status.slice(1)}
-        </Badge>
+        <Badge variant={status.variant}>{status.label}</Badge>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <Card>
           <CardContent>
-            <div className="flex items-start gap-3">
-              <DollarSign size={18} className="text-muted mt-0.5" />
-              <div>
-                <p className="text-xs font-semibold text-muted uppercase tracking-wider">Total</p>
-                <p className="text-2xl font-bold text-heading mt-1 tabular-nums">{formatCurrency(purchaseOrder.total ?? 0)}</p>
+            <div className={statCls}>
+              <div className="p-2 rounded-[10px] bg-primary-50 text-primary-600 shrink-0">
+                <ShoppingCart size={16} />
+              </div>
+              <div className="min-w-0">
+                <p className="text-xs font-semibold text-muted uppercase tracking-wider">Net Total</p>
+                <p className="text-xl font-bold text-heading mt-0.5 tabular-nums">{formatCurrency(dnum(purchaseOrder.total), currency)}</p>
               </div>
             </div>
           </CardContent>
         </Card>
         <Card>
           <CardContent>
-            <div className="flex items-start gap-3">
-              <Calendar size={18} className="text-muted mt-0.5" />
-              <div>
-                <p className="text-xs font-semibold text-muted uppercase tracking-wider">Order Date</p>
-                <p className="text-2xl font-bold text-heading mt-1">{formatDate(purchaseOrder.issueDate ?? "")}</p>
+            <div className={statCls}>
+              <div className="p-2 rounded-[10px] bg-info-50 text-info-600 shrink-0">
+                <Clock size={16} />
+              </div>
+              <div className="min-w-0">
+                <p className="text-xs font-semibold text-muted uppercase tracking-wider">Total Tax</p>
+                <p className="text-xl font-bold text-heading mt-0.5 tabular-nums">{formatCurrency(dnum(purchaseOrder.total_taxes_and_charges), currency)}</p>
               </div>
             </div>
           </CardContent>
         </Card>
         <Card>
           <CardContent>
-            <div className="flex items-start gap-3">
-              <Truck size={18} className="text-muted mt-0.5" />
+            <div className={statCls}>
+              <div className="p-2 rounded-[10px] bg-success-50 text-success-600 shrink-0">
+                <ShoppingCart size={16} />
+              </div>
+              <div className="min-w-0">
+                <p className="text-xs font-semibold text-muted uppercase tracking-wider">Grand Total</p>
+                <p className="text-xl font-bold text-heading mt-0.5 tabular-nums">{formatCurrency(dnum(purchaseOrder.grand_total), currency)}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent>
+            <div className={statCls}>
+              <div className="p-2 rounded-[10px] bg-warning-50 text-warning-600 shrink-0">
+                <Truck size={16} />
+              </div>
+              <div className="min-w-0">
+                <p className="text-xs font-semibold text-muted uppercase tracking-wider">Received</p>
+                <p className="text-xl font-bold text-heading mt-0.5 tabular-nums">{dnum(purchaseOrder.per_received)}%</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className={rowCls}>
+        <Card>
+          <CardContent className="space-y-3">
+            <h3 className="font-bold text-heading text-sm">Supplier</h3>
+            <div className="space-y-2 text-sm">
               <div>
-                <p className="text-xs font-semibold text-muted uppercase tracking-wider">Expected</p>
-                <p className="text-2xl font-bold text-heading mt-1">{formatDate(purchaseOrder.deliveryDate ?? "")}</p>
+                <p className="text-muted text-xs">Name</p>
+                <p className="font-semibold text-heading">{purchaseOrder.supplier_name || purchaseOrder.supplier}</p>
+              </div>
+              <div>
+                <p className="text-muted text-xs">Supplier ID</p>
+                <p className="font-semibold text-heading">{purchaseOrder.supplier}</p>
+              </div>
+              <div>
+                <p className="text-muted text-xs">Tax ID</p>
+                <p className="font-semibold text-heading">{purchaseOrder.tax_id || "—"}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="space-y-3">
+            <h3 className="font-bold text-heading text-sm">Order Dates</h3>
+            <div className="space-y-2 text-sm">
+              <div className="flex items-center gap-2">
+                <Calendar size={14} className="text-muted" />
+                <div>
+                  <p className="text-muted text-xs">Order Date</p>
+                  <p className="font-semibold text-heading">{formatDate(purchaseOrder.transaction_date)}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Truck size={14} className="text-muted" />
+                <div>
+                  <p className="text-muted text-xs">Schedule Date</p>
+                  <p className="font-semibold text-heading">{formatDate(purchaseOrder.schedule_date)}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Clock size={14} className="text-muted" />
+                <div>
+                  <p className="text-muted text-xs">Created</p>
+                  <p className="font-semibold text-heading">{formatDate(purchaseOrder.creation)}</p>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="space-y-3">
+            <h3 className="font-bold text-heading text-sm">Company</h3>
+            <div className="space-y-2 text-sm">
+              <div>
+                <p className="text-muted text-xs">Company</p>
+                <p className="font-semibold text-heading">{purchaseOrder.company}</p>
+              </div>
+              <div>
+                <p className="text-muted text-xs">Currency</p>
+                <p className="font-semibold text-heading">{purchaseOrder.currency}</p>
+              </div>
+              <div>
+                <p className="text-muted text-xs">Price List</p>
+                <p className="font-semibold text-heading">{purchaseOrder.buying_price_list || "Standard Buying"}</p>
               </div>
             </div>
           </CardContent>
@@ -72,23 +168,99 @@ export default function PurchaseDetailCard({ purchaseOrder }: PurchaseDetailCard
 
       <Card>
         <CardContent className="space-y-3">
-          <h3 className="font-bold text-heading">Details</h3>
-          <div className="grid grid-cols-2 gap-4 text-sm">
-            <div>
-              <p className="text-muted">Supplier</p>
-              <p className="font-semibold text-heading">{purchaseOrder.vendorName}</p>
-            </div>
-            <div>
-              <p className="text-muted">Status</p>
-              <p className="font-semibold text-heading capitalize">{purchaseOrder.status}</p>
-            </div>
-            <div>
-              <p className="text-muted">Created</p>
-              <p className="font-semibold text-heading">{formatDate(purchaseOrder.createdAt)}</p>
-            </div>
+          <div className="flex items-center gap-2">
+            <h3 className="font-bold text-heading">Items ({items.length})</h3>
+            <ChevronDown size={15} className="text-muted" />
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-xs text-muted border-b border-border">
+                  <th className="py-2 pr-3 font-semibold">Item</th>
+                  <th className="py-2 pr-3 font-semibold">Description</th>
+                  <th className="py-2 pr-3 font-semibold text-right">Qty / Rate</th>
+                  <th className="py-2 font-semibold text-right">Amount</th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((item, idx) => (
+                  <tr key={item.name ?? idx} className="border-b border-border/60 last:border-0">
+                    <td className="py-2.5 pr-3 font-semibold text-heading whitespace-nowrap">{item.item_code}</td>
+                    <td className="py-2.5 pr-3 text-body">{item.item_name}</td>
+                    <td className="py-2.5 pr-3 text-right text-muted whitespace-nowrap">
+                      {dnum(item.qty)} × {formatCurrency(dnum(item.rate), currency)}
+                    </td>
+                    <td className="py-2.5 text-right font-semibold text-heading tabular-nums whitespace-nowrap">
+                      {formatCurrency(dnum(item.amount), currency)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </CardContent>
       </Card>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <Card>
+          <CardContent className="space-y-3">
+            <h3 className="font-bold text-heading text-sm">Taxes & Charges</h3>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-left text-xs text-muted border-b border-border">
+                    <th className="py-2 pr-3 font-semibold">Charge</th>
+                    <th className="py-2 pr-3 font-semibold">Account</th>
+                    <th className="py-2 pr-3 font-semibold text-right">Rate</th>
+                    <th className="py-2 font-semibold text-right">Amount</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {taxes.length === 0 && (
+                    <tr>
+                      <td colSpan={4} className="py-3 text-muted text-center">No taxes applied</td>
+                    </tr>
+                  )}
+                  {taxes.map((tax, idx) => (
+                    <tr key={tax.name ?? idx} className="border-b border-border/60 last:border-0">
+                      <td className="py-2.5 pr-3 font-semibold text-heading">{tax.description || tax.charge_type}</td>
+                      <td className="py-2.5 pr-3 text-body">{tax.account_head}</td>
+                      <td className="py-2.5 pr-3 text-right text-muted tabular-nums">{dnum(tax.rate)}%</td>
+                      <td className="py-2.5 text-right font-semibold text-heading tabular-nums">
+                        {formatCurrency(dnum(tax.tax_amount), currency)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="space-y-3">
+            <h3 className="font-bold text-heading text-sm">Summary</h3>
+            <div className="space-y-2 text-sm">
+              <div className="flex justify-between">
+                <span className="text-muted">Total Quantity</span>
+                <span className="font-semibold text-heading">{dnum(purchaseOrder.total_qty)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted">Net Total</span>
+                <span className="font-semibold text-heading tabular-nums">{formatCurrency(dnum(purchaseOrder.net_total), currency)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted">Total Taxes & Charges</span>
+                <span className="font-semibold text-heading tabular-nums">{formatCurrency(dnum(purchaseOrder.total_taxes_and_charges), currency)}</span>
+              </div>
+              <div className="flex justify-between pt-2 border-t border-border">
+                <span className="font-bold text-heading">Grand Total</span>
+                <span className="font-bold text-heading tabular-nums">{formatCurrency(dnum(purchaseOrder.grand_total), currency)}</span>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   )
 }

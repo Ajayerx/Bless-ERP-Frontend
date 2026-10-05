@@ -9,7 +9,7 @@ import Topbar from "@/components/layout/Topbar"
 import { Skeleton } from "@/components/ui"
 import { useCompany } from "@/context/CompanyContext"
 import { searchLink, reportService, type GeneralLedgerReport, type GeneralLedgerRow, type GeneralLedgerColumn, type GeneralLedgerFilters } from "@/services"
-import { formatDate } from "@/lib/utils"
+import { formatDate, todayISO } from "@/lib/utils"
 import { DOCTYPE_ROUTES } from "@/lib/doctype-routes"
 
 const inputClass =
@@ -20,11 +20,11 @@ const checkClass = "rounded border-border"
 function monthAgo(): string {
   const d = new Date()
   d.setMonth(d.getMonth() - 1)
-  return d.toISOString().slice(0, 10)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
 }
 
 function today(): string {
-  return new Date().toISOString().slice(0, 10)
+  return todayISO()
 }
 
 function fmtCurrency(n: number | null | undefined, currency?: string): string {

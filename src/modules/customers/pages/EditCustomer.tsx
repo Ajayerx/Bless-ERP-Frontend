@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react"
 import { useParams, useNavigate } from "react-router-dom"
 import { motion } from "framer-motion"
-import { ArrowLeft, Save } from "lucide-react"
+import { ArrowLeft, Save, Landmark } from "lucide-react"
 import Topbar from "@/components/layout/Topbar"
 import { Button, Skeleton } from "@/components/ui"
 import { useToast } from "@/components/ui/toast"
@@ -41,6 +41,13 @@ export default function EditCustomer() {
             <p className="text-sm text-muted mt-0.5">{customer?.name ?? "Loading..."}</p>
           </div>
           <div className="flex items-center gap-3 ml-auto">
+            <Button
+              variant="outline"
+              onClick={() => navigate(`/bank-accounts/new?party_type=Customer&party=${encodeURIComponent(id ?? "")}`)}
+            >
+              <Landmark size={14} />
+              Bank Account
+            </Button>
             <Button variant="secondary" onClick={() => navigate(`/customers/${id}`)}>Cancel</Button>
             <Button type="submit" form="customer-form" disabled={saving} loading={saving}>
               <Save size={16} />

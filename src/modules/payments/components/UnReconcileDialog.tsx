@@ -138,7 +138,7 @@ export default function UnReconcileDialog({
   return (
     <Modal
       open={open}
-      onOpenChange={onOpenChange}
+      onClose={close}
       title="UnReconcile Allocations"
       description="Un-reconcile this document against one or more linked vouchers."
       size="xl"

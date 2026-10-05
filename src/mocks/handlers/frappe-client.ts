@@ -39,6 +39,45 @@ export const frappeClientHandlers = [
       result.default_letter_head = "Standard"
     }
 
+    if (doctype === "Supplier") {
+      const suppliers: Record<string, string> = {
+        "SUP-00001": "Northwind Foods",
+        "SUP-00002": "Great Lakes Packaging",
+        "SUP-00003": "Pacific Coast Seafood",
+        "SUP-00004": "Prairie Grain Co.",
+        "SUP-00005": "Summit Logistics",
+        "SUP-00007": "Eastern Paper Mills",
+        "SUP-00008": "Baker's Supply Depot",
+        "SUP-00009": "Harbor Freight Lines",
+        "SUP-00010": "Cedar Valley Timber",
+      }
+      const supplier_name = suppliers[docname]
+      if (!supplier_name) return HttpResponse.json({ message: `Supplier ${docname} not found` }, { status: 404 })
+      result.supplier_name = supplier_name
+    }
+
+    if (doctype === "Item") {
+      const items: Array<{ item_code: string; item_name: string }> = [
+        { item_code: "PRD-001", item_name: "Organic All-Purpose Flour" },
+        { item_code: "PRD-002", item_name: "Cold-Pressed Canola Oil" },
+        { item_code: "PRD-003", item_name: "Wild Blueberry Jam" },
+        { item_code: "PRD-004", item_name: "Atlantic Smoked Salmon" },
+        { item_code: "PRD-005", item_name: "Maple Syrup (Grade A)" },
+        { item_code: "PRD-006", item_name: "Canadian Hard Red Wheat" },
+        { item_code: "PRD-007", item_name: "Fresh Atlantic Cod Fillets" },
+        { item_code: "PRD-008", item_name: "Quebec Aged Cheddar" },
+        { item_code: "PRD-009", item_name: "Natural Canadian Honey" },
+        { item_code: "PRD-010", item_name: "Organic Mixed Greens" },
+        { item_code: "PRD-011", item_name: "Artisan Sourdough Bread" },
+        { item_code: "PRD-012", item_name: "Alberta Beef Jerky" },
+        { item_code: "PRD-013", item_name: "Frozen Wild Blueberries" },
+        { item_code: "PRD-014", item_name: "Craft Soda Sampler Pack" },
+      ]
+      const item = items.find((i) => i.item_code === docname)
+      if (!item) return HttpResponse.json({ message: `Item ${docname} not found` }, { status: 404 })
+      result.item_name = item.item_name
+    }
+
     return HttpResponse.json({ message: result })
   }),
 

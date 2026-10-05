@@ -1,7 +1,7 @@
 import { useState } from "react"
 import { Search, Loader2 } from "lucide-react"
 import Modal from "@/components/ui/Modal"
-import { cn } from "@/lib/utils"
+import { cn, todayISO } from "@/lib/utils"
 import LinkField from "./LinkField"
 import type { AccountingDimension } from "@/services"
 
@@ -36,13 +36,11 @@ interface GetOutstandingDialogProps {
 }
 
 function getDefaultFromDate(): string {
-  const d = new Date()
-  d.setDate(d.getDate() - 30)
-  return d.toISOString().slice(0, 10)
+  return todayISO(-30)
 }
 
 function getToday(): string {
-  return new Date().toISOString().slice(0, 10)
+  return todayISO()
 }
 
 const inputClass =

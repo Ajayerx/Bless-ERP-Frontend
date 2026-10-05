@@ -5,6 +5,72 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
+// Client-side id for unsaved child rows, toast handles and draft documents.
+// `crypto.randomUUID` is only exposed in a Secure Context (https, or
+// http://localhost), so it is simply absent when the dev server is reached
+// over the plain-HTTP LAN address and every call site throws a TypeError —
+// which is why "Add Customer" appeared to fail while the document itself had
+// already been created. Prefer randomUUID when it exists, fall back to an RFC
+// 4122 v4 built from crypto.getRandomValues (available on insecure contexts
+// too), and only then to Math.random.
+export function generateId(): string {
+  const webCrypto = globalThis.crypto
+
+  if (typeof webCrypto?.randomUUID === "function") {
+    return webCrypto.randomUUID()
+  }
+
+  const bytes = new Uint8Array(16)
+  if (typeof webCrypto?.getRandomValues === "function") {
+    webCrypto.getRandomValues(bytes)
+  } else {
+    for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256)
+  }
+
+  // RFC 4122 section 4.4: pin the version (4) and variant (10xx) bits.
+  bytes[6] = (bytes[6] & 0x0f) | 0x40
+  bytes[8] = (bytes[8] & 0x3f) | 0x80
+
+  const hex: string[] = []
+  for (let i = 0; i < bytes.length; i++) hex.push(bytes[i].toString(16).padStart(2, "0"))
+
+  return [
+    hex.slice(0, 4).join(""),
+    hex.slice(4, 6).join(""),
+    hex.slice(6, 8).join(""),
+    hex.slice(8, 10).join(""),
+    hex.slice(10, 16).join(""),
+  ].join("-")
+}
+
+// Local calendar date as YYYY-MM-DD, optionally offset by whole days.
+//
+// Never use `new Date().toISOString().slice(0, 10)` for a Frappe Date field:
+// toISOString() converts to UTC, so every zone west of UTC (e.g.
+// America/Toronto, UTC-4/5) reports *tomorrow* for any local time after
+// ~20:00. Building the string from local getFullYear/getMonth/getDate keeps a
+// "today"/"due in N days" default on the user's calendar day.
+export function todayISO(offsetDays = 0): string {
+  const d = new Date()
+  if (offsetDays) d.setDate(d.getDate() + offsetDays)
+  return localDateISO(d)
+}
+
+/**
+ * Local calendar date of an arbitrary Date as YYYY-MM-DD.
+ *
+ * Same rationale as `todayISO`: reading UTC via toISOString() shifts the day for
+ * anyone west of UTC. Use this whenever a `Date` instance has to become a
+ * Frappe Date field, including dates derived from `new Date("YYYY-MM-DD")` —
+ * that constructor parses as UTC midnight, so in UTC-5 it is still the previous
+ * local day.
+ */
+export function localDateISO(d: Date): string {
+  const mm = String(d.getMonth() + 1).padStart(2, "0")
+  const dd = String(d.getDate()).padStart(2, "0")
+  return `${d.getFullYear()}-${mm}-${dd}`
+}
+
 export function formatCurrency(n: number, currency = "CAD"): string {
   return new Intl.NumberFormat("en-CA", {
     style: "currency",
@@ -13,8 +79,55 @@ export function formatCurrency(n: number, currency = "CAD"): string {
   }).format(n)
 }
 
+// Frappe sends Date fields as a bare calendar date ("2026-09-23") and Datetime
+// fields with a time component ("2026-09-23 10:30:00.123456"). The ES spec
+// parses a bare YYYY-MM-DD as UTC midnight, so `new Date(iso)` followed by a
+// local-time format renders the *previous* day for every zone west of UTC
+// (America/Toronto among them). An exact YYYY-MM-DD match therefore has to be
+// formatted straight from its parts; real datetimes keep going through the Date
+// object because they do carry an instant.
+const CALENDAR_DATE_RE = /^(\d{4})-(\d{2})-(\d{2})$/
+
+export interface CalendarDate {
+  year: number
+  month: number
+  day: number
+}
+
+export function parseCalendarDate(value: string | null | undefined): CalendarDate | null {
+  const match = CALENDAR_DATE_RE.exec((value ?? "").trim())
+  if (!match) return null
+  const year = Number(match[1])
+  const month = Number(match[2])
+  const day = Number(match[3])
+  if (month < 1 || month > 12 || day < 1 || day > 31) return null
+  return { year, month, day }
+}
+
+const MONTH_ABBREVIATIONS = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+]
+
 export function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString("en-US", {
+  if (!iso) return ""
+  const calendar = parseCalendarDate(iso)
+  if (calendar) {
+    return `${MONTH_ABBREVIATIONS[calendar.month - 1]} ${calendar.day}, ${calendar.year}`
+  }
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return iso
+  return d.toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",
     year: "numeric",
@@ -23,6 +136,12 @@ export function formatDate(iso: string): string {
 
 export function formatDateUser(iso: string): string {
   if (!iso) return ""
+  const calendar = parseCalendarDate(iso)
+  if (calendar) {
+    const dd = String(calendar.day).padStart(2, "0")
+    const mm = String(calendar.month).padStart(2, "0")
+    return `${dd}-${mm}-${calendar.year}`
+  }
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return iso
   const dd = String(d.getDate()).padStart(2, "0")

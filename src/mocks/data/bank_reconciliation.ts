@@ -10,6 +10,7 @@
 // Entry into the Payment Reconciliation store (src/mocks/data/reconciliation.ts)
 // so the two tools stay consistent, matching the plan's shared-ledger design.
 
+import { localDateISO } from "@/lib/utils"
 import { reconState } from "./reconciliation"
 
 export interface BtPaymentEntry {
@@ -752,7 +753,7 @@ function normaliseDate(value: unknown): string {
     return `${us[3]}-${us[1].padStart(2, "0")}-${us[2].padStart(2, "0")}`
   }
   const parsed = new Date(raw)
-  if (!Number.isNaN(parsed.getTime())) return parsed.toISOString().slice(0, 10)
+  if (!Number.isNaN(parsed.getTime())) return localDateISO(parsed)
   throw new Error("Invalid date")
 }
 

@@ -1,5 +1,6 @@
 import { apiClient, apiClientWithBody, serverDownloadTemplate } from "@/services/api-client"
 import { postMethod } from "@/services/frappe-client"
+import { todayISO } from "@/lib/utils"
 import { buildTimelineItems, toQuillHtml } from "@/modules/payments/services"
 import type { DocInfo, PaymentActivityItem, PaymentComment } from "@/modules/payments/types"
 import type {
@@ -879,7 +880,7 @@ export const customerService = {
     const url = URL.createObjectURL(blob)
     const link = document.createElement("a")
     link.href = url
-    link.download = `customers_export_${new Date().toISOString().slice(0, 10)}.csv`
+    link.download = `customers_export_${todayISO()}.csv`
     link.click()
     URL.revokeObjectURL(url)
   },

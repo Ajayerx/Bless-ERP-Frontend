@@ -50,7 +50,7 @@ import GetItemsFromOpportunityDialog from "../components/GetItemsFromOpportunity
 import QuotationPrintPreviewDialog from "../components/QuotationPrintPreviewDialog"
 import SendQuotationEmailDialog from "../components/SendQuotationEmailDialog"
 import type { Quotation, QuotationStatus } from "../types"
-import { formatDate } from "@/lib/utils"
+import { formatDate, todayISO } from "@/lib/utils"
 
 const statusVariant: Record<QuotationStatus, "success" | "info" | "warning" | "danger" | "default"> = {
   Draft: "default",
@@ -227,7 +227,7 @@ export default function QuotationWorkspace({ mode, id }: QuotationWorkspaceProps
 
   const handleCreateSO = async () => {
     if (!quotation) return
-    const today = new Date().toISOString().slice(0, 10)
+    const today = todayISO()
     if (quotation.valid_till && quotation.valid_till < today) {
       showMessage("This quotation is expired. You cannot create a Sales Order.")
       return
@@ -550,6 +550,13 @@ export default function QuotationWorkspace({ mode, id }: QuotationWorkspaceProps
                   quotationName={quotation.name}
                   contactEmail={quotation.contact_email}
                   customerName={quotation.customer_name}
+                  doc={{
+                    name: quotation.name,
+                    customer_name: quotation.customer_name,
+                    grand_total: quotation.grand_total,
+                    valid_till: quotation.valid_till,
+                    transaction_date: quotation.transaction_date,
+                  }}
                 />
                 <SetLostDialog
                   open={lostOpen}
